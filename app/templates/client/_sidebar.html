@@ -1,0 +1,55 @@
+<aside class="staff-sidebar">
+  <nav class="staff-sidebar-nav" aria-label="客户端主导航">
+    <a class="staff-nav-link {% if request.endpoint == 'client.dashboard' %}active is-current{% endif %}" href="{{ url_for('client.dashboard') }}" data-tooltip="首页" data-spa-endpoint="client.dashboard" {% if request.endpoint == 'client.dashboard' %}aria-current="page"{% endif %}>
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
+        <span>首页</span>
+      </span>
+    </a>
+
+    <a class="staff-nav-link {% if request.endpoint in ['client.cases', 'client.case_detail'] %}active{% endif %}" href="{{ url_for('client.cases') }}" data-tooltip="案件列表" data-spa-endpoint="client.cases">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M9 12h6M9 16h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>案件列表</span>
+      </span>
+    </a>
+
+    <a class="staff-nav-link {% if request.endpoint == 'client.timeline' %}active{% endif %}" href="{{ url_for('client.timeline') }}" data-tooltip="状态时间轴" data-spa-endpoint="client.timeline">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="6" cy="12" r="2" stroke="currentColor" stroke-width="1.6"/>
+          <circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.6"/>
+          <circle cx="18" cy="12" r="2" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M8 12h2M14 12h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>状态时间轴</span>
+      </span>
+    </a>
+
+    <a class="staff-nav-link {% if request.endpoint == 'client.files' %}active{% endif %}" href="{{ url_for('client.files') }}" data-tooltip="文件下载" data-spa-endpoint="client.files">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 15V8m0 0-2.5 2.5M12 8l2.5 2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M5 16.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>文件下载</span>
+      </span>
+    </a>
+
+    <a class="staff-nav-link {% if request.endpoint == 'client.messages' %}active{% endif %}" href="{{ url_for('client.messages') }}" data-tooltip="在线留言" data-spa-endpoint="client.messages">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 6h16v10H9l-5 4V6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M8 10h8M8 13h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>在线留言</span>
+      </span>
+    </a>
+  </nav>
+</aside>

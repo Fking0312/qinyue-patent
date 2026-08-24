@@ -1,0 +1,86 @@
+<div class="staff-page-inner px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  <section class="qy-notification-hero mb-4">
+    <div class="qy-notification-hero__content">
+      <div>
+        <div class="qy-notification-hero__eyebrow">个人消息中心</div>
+        <h1 class="h4 mb-1">{{ greeting }}，{{ current_user.username }}</h1>
+        <p class="mb-0">案件进展、审核结果与待办事项，都为您整理在这里。</p>
+      </div>
+      {% if unread_count %}
+      <form method="post" action="{{ url_for('staff.notifications_read_all') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="status" value="{{ status_filter }}">
+        <input type="hidden" name="type" value="{{ type_filter }}">
+        <button class="btn btn-light btn-sm qy-notification-read-all" type="submit">全部标为已读</button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="qy-notification-summary-grid">
+      <a href="{{ url_for('staff.notifications', status='unread', type='all') }}" data-spa-endpoint="staff.notifications" class="qy-notification-summary-card">
+        <span>未读消息</span><strong>{{ unread_count }}</strong><small>需要您关注的新动态</small>
+      </a>
+      <a href="{{ url_for('staff.notifications', status='actionable', type='all') }}" data-spa-endpoint="staff.notifications" class="qy-notification-summary-card">
+        <span>待处理</span><strong>{{ actionable_count }}</strong><small>新分配与审核打回</small>
+      </a>
+      <a href="{{ url_for('staff.notifications', status='all', type='all') }}" data-spa-endpoint="staff.notifications" class="qy-notification-summary-card">
+        <span>今日动态</span><strong>{{ today_count }}</strong><small>今天收到的案件消息</small>
+      </a>
+    </div>
+  </section>
+
+  <header class="d-flex flex-wrap align-items-center justify-content-between gap-2 pb-3 mb-3 border-bottom border-secondary-subtle">
+    <div>
+      <h2 class="h6 mb-1 staff-page-title">消息动态</h2>
+      <div class="small text-muted">按时间和处理状态快速定位消息</div>
+    </div>
+    {% from "macros/staff_notification.html" import staff_notification_filters %}
+    {{ staff_notification_filters(status_filter, type_filter, unread_count, actionable_count, action_counts) }}
+  </header>
+
+  {% if notifications %}
+  {% from "macros/staff_notification.html" import staff_notification_item %}
+  <div class="qy-notification-timeline">
+    {% for group_label, group_items in notification_groups %}
+    <section class="qy-notification-day-group">
+      <div class="qy-notification-day-label"><span>{{ group_label }}</span><small>{{ group_items|length }} 条</small></div>
+      <div class="list-group qy-notification-list shadow-sm">
+        {% for notification in group_items %}
+        {{ staff_notification_item(notification, current_user) }}
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+
+  {% if pagination.pages > 1 %}
+  <nav class="mt-3" aria-label="消息通知分页">
+    <ul class="pagination pagination-sm justify-content-center mb-0">
+      {% for page_no in range(1, pagination.pages + 1) %}
+      <li class="page-item {% if page_no == pagination.page %}active{% endif %}">
+        <a class="page-link" href="{{ url_for('staff.notifications', status=status_filter, type=type_filter, page=page_no) }}" data-spa-endpoint="staff.notifications">{{ page_no }}</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </nav>
+  {% endif %}
+  {% else %}
+  <div class="card border-0 shadow-sm qy-notification-empty">
+    <div class="card-body py-5 text-center">
+      <div class="qy-notification-empty-icon mb-3" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+          <path d="M6 8.5A6 6 0 0 1 18 8.5v4.2l1.6 2.4H4.4L6 12.7V8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M10 18.5a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="h6 mb-1">暂无消息通知</div>
+      <div class="small text-muted mb-3">
+        {% if status_filter == 'actionable' %}目前没有需要处理的消息，工作节奏很好。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}案件分配、审核通过或打回后，提醒会显示在这里。{% endif %}
+      </div>
+      <div class="d-flex flex-wrap justify-content-center gap-2">
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.case_detail') }}" data-spa-endpoint="staff.case_detail">去案件列表</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('staff.task_board') }}" data-spa-endpoint="staff.task_board">去任务看板</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>

@@ -1,0 +1,35 @@
+{% macro case_type_selector(config, selected_code="") -%}
+<div class="qy-case-type-selector" data-selected="{{ selected_code or '' }}">
+  <input type="hidden" name="case_type_code" value="{{ selected_code or '' }}" required>
+  <script type="application/json" class="qy-case-type-config">{{ config|tojson }}</script>
+  <div class="qy-case-type-step" data-level="0">
+    <span class="qy-case-type-step-label">类型</span>
+    <div class="qy-case-type-options"></div>
+  </div>
+  <div class="qy-case-type-step" data-level="1" hidden>
+    <span class="qy-case-type-step-label">细分</span>
+    <div class="qy-case-type-options"></div>
+  </div>
+  <div class="qy-case-type-step" data-level="2" hidden>
+    <span class="qy-case-type-step-label">通道</span>
+    <div class="qy-case-type-options"></div>
+  </div>
+  <div class="qy-case-type-step" data-level="3" hidden>
+    <span class="qy-case-type-step-label">领域</span>
+    <div class="qy-case-type-options"></div>
+  </div>
+  <div class="qy-case-type-result" aria-live="polite"></div>
+</div>
+{%- endmacro %}
+
+{% macro case_type_badges(case_item) -%}
+  {% if case_item.case_type_labels %}
+    <span class="d-inline-flex flex-wrap gap-1 qy-case-type-badges">
+      {% for label in case_item.case_type_labels %}
+      <span class="badge qy-case-type-badge {% if loop.first %}qy-case-type-badge--primary{% else %}qy-case-type-badge--secondary{% endif %}">{{ label }}</span>
+      {% endfor %}
+    </span>
+  {% else %}
+    <span class="text-muted">—</span>
+  {% endif %}
+{%- endmacro %}

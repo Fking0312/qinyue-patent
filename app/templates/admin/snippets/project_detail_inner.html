@@ -1,0 +1,136 @@
+<div class="staff-page-inner p-3 p-md-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
+      <p class="text-muted mb-0">{{ page_desc }}</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('admin.project_initiation') }}" data-spa-endpoint="admin.project_initiation">返回项目立项</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('admin.cases', project_id=project.id) }}" data-spa-endpoint="admin.cases">案件列表（本项目）</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('admin.case_create', project_id=project.id) }}" data-spa-endpoint="admin.case_create">新建案件</a>
+      <a class="btn btn-primary" href="{{ url_for('admin.project_edit', project_id=project.id) }}" data-spa-endpoint="admin.project_edit">编辑项目</a>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small mb-1">项目名称</div>
+          <div class="fw-semibold">{{ project.name }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small mb-1">归属客户</div>
+          <div class="fw-semibold">{{ project.customer.name if project.customer else "—" }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small mb-1">关联案件数</div>
+          <div class="fw-semibold">{{ case_count }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h2 class="h6 mb-3">项目基础信息</h2>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="text-muted small mb-1">项目编码</div>
+          <div>{{ project.code or "—" }}</div>
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted small mb-1">截止时间</div>
+          <div>{{ project.due_at|qy_format_dt }}</div>
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted small mb-1">创建时间</div>
+          <div>{{ project.created_at|qy_format_dt }}</div>
+        </div>
+        <div class="col-12">
+          <div class="text-muted small mb-1">项目说明</div>
+          <div>{{ project.description or "—" }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h6 mb-0">关联案件</h2>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.case_create', project_id=project.id) }}" data-spa-endpoint="admin.case_create">新增案件</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th>案件标题</th>
+              <th>序列号</th>
+              <th>形式状态</th>
+              <th>创建时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for case_item in cases %}
+            <tr>
+              <td>{{ case_item.title }}</td>
+              <td>{{ case_item.application_no }}</td>
+              <td>{{ case_item.formal_status or "—" }}</td>
+              <td>{{ case_item.created_at|qy_format_dt }}</td>
+              <td><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.case_detail', case_id=case_item.id) }}" data-spa-endpoint="admin.case_detail">详情</a></td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5" class="text-center text-muted py-4">当前项目暂无案件</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <h2 class="h6 mb-3">最近任务动态</h2>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead>
+            <tr>
+              <th>任务 ID</th>
+              <th>案件标题</th>
+              <th>序列号</th>
+              <th>当前状态</th>
+              <th>最近更新时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in recent_tasks %}
+            <tr>
+              <td>#{{ task.id }}</td>
+              <td>{{ task.case.title if task.case else "—" }}</td>
+              <td>{{ task.case.application_no if task.case else "—" }}</td>
+              <td>{{ task.phase_status|qy_task_phase_label }}</td>
+              <td>{{ task.updated_at|qy_format_dt }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5" class="text-center text-muted py-4">当前项目暂无任务</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>

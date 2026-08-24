@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}琴岳知识产权 — 智慧案件协同平台{% endblock %}
+{% block main_class %}qy-home-main{% endblock %}
+{% block content %}
+<section class="qy-home-landing" aria-label="公司首页">
+  <div class="qy-home-landing-inner">
+    <header class="qy-home-brand">
+      <div class="qy-login-brand-lockup">
+        <span class="qy-login-brand-logo-wrap">
+          <img
+            src="{{ url_for('static', filename='assets/logo.png') }}"
+            alt="琴岳 Logo"
+            class="qy-login-brand-logo"
+          >
+        </span>
+        <span class="qy-login-brand-name">
+          <strong>琴岳知识产权</strong>
+          <small>QINYUE IP MANAGEMENT</small>
+        </span>
+      </div>
+      <p class="qy-login-brand-eyebrow">智慧案件协同平台</p>
+    </header>
+    <h1 class="qy-login-brand-title">让每一个案件进度<br><span>都清晰可见</span></h1>
+    <p class="qy-login-brand-tagline">从立案到交付，集中管理案件、材料、审核与期限，让团队协作更高效。</p>
+    <ul class="qy-login-brand-features qy-home-features">
+      <li>
+        <span class="qy-login-feature-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 5.5h16v13H4zM8 3v5M16 3v5M4 9.5h16M8 13h3M8 16h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span><strong>期限尽在掌握</strong><small>智能预警，关键节点不遗漏</small></span>
+      </li>
+      <li>
+        <span class="qy-login-feature-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M7 3.5h7l4 4v13H7zM14 3.5v4h4M10 12h5M10 15.5h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span><strong>材料规范有序</strong><small>版本集中管理，审核全程留痕</small></span>
+      </li>
+      <li>
+        <span class="qy-login-feature-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M8.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM15.5 12a3 3 0 1 0 0-6M3 20a5.5 5.5 0 0 1 11 0M14 15.5a4.5 4.5 0 0 1 7 3.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        </span>
+        <span><strong>多角色高效协同</strong><small>企业、员工与客户无缝连接</small></span>
+      </li>
+    </ul>
+    <div class="qy-home-landing__actions">
+      <a class="btn btn-lg qy-home-login-btn" href="{{ url_for('auth.login') }}">进入登录</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

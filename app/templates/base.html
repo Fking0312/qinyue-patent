@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="qy-deploy-version" content="{{ static_asset_version }}">
+  <title>{% block title %}琴岳专利管理系统{% endblock %}</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ static_asset_version }}">
+</head>
+<body class="{% if request.endpoint == 'index' %}qy-home-page{% elif request.endpoint == 'auth.login' %}qy-login-page{% endif %}">
+  {% if request.endpoint != 'auth.login' and request.endpoint != 'index' %}
+    <nav class="navbar navbar-expand-lg navbar-light qy-navbar{% if request.blueprint not in ['staff', 'admin', 'client'] %} mb-4{% endif %}">
+      <div class="container-fluid px-3 px-md-4">
+        <div class="d-flex align-items-center nav-brand-wrap">
+          <a class="navbar-brand d-flex align-items-center gap-2 mb-0" href="/">
+            <img src="{{ url_for('static', filename='assets/logo.png') }}" alt="琴岳 Logo" class="nav-brand-logo">
+            <span class="nav-brand-text">琴岳专利管理系统</span>
+          </a>
+          {% if request.blueprint in ['staff', 'admin', 'client'] %}
+            <button
+              type="button"
+              class="btn btn-sm sidebar-toggle-btn"
+              id="sidebarToggle"
+              aria-label="折叠侧边栏"
+              title="折叠侧边栏"
+            >
+              <img
+                src="{{ url_for('static', filename='assets/icons/sidebar-collapse.svg') }}"
+                alt=""
+                class="sidebar-toggle-icon sidebar-toggle-icon-collapse"
+                aria-hidden="true"
+              >
+              <img
+                src="{{ url_for('static', filename='assets/icons/sidebar-expand.svg') }}"
+                alt=""
+                class="sidebar-toggle-icon sidebar-toggle-icon-expand is-hidden"
+                aria-hidden="true"
+              >
+            </button>
+          {% endif %}
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-sm navbar-action-btn"
+            id="fullscreenToggle"
+            aria-label="进入全屏"
+            title="进入全屏"
+          >
+            <svg class="fullscreen-icon-enter" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <svg class="fullscreen-icon-exit d-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M9 9H6V6M15 9h3V6M9 15H6v3M15 15h3v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          {% if current_user.is_authenticated %}
+            <span class="small qy-navbar-user">当前用户：{{ current_user|qy_user_label }}</span>
+            <a class="btn btn-outline-primary btn-sm" href="{{ url_for('auth.logout') }}">退出</a>
+          {% else %}
+            <a class="btn btn-outline-primary btn-sm" href="{{ url_for('auth.login') }}">登录</a>
+          {% endif %}
+        </div>
+      </div>
+    </nav>
+  {% endif %}
+
+  <main class="{% block main_class %}container{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+
+  {% if request.endpoint != 'index' %}
+  <div class="theme-toggle-fab" id="themeToggleFab">
+    <button
+      type="button"
+      class="theme-toggle-btn"
+      id="themeToggle"
+      aria-label="切换黑夜模式"
+      title="点击切换白天/黑夜模式；长按隐藏直至下次退出并重新登录"
+    >
+      <span class="theme-icon-light" aria-hidden="true">☀</span>
+      <span class="theme-icon-dark d-none" aria-hidden="true">🌙</span>
+    </button>
+  </div>
+  {% endif %}
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}?v={{ static_asset_version }}"></script>
+</body>
+</html>

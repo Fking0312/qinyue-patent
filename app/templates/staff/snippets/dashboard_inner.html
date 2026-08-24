@@ -1,0 +1,13 @@
+<div class="staff-page-inner p-3 p-md-4">
+  <header class="d-flex flex-wrap align-items-center justify-content-between gap-2 pb-3 mb-3 border-bottom border-secondary-subtle">
+    <h1 class="h4 mb-0 staff-page-title">工作台</h1>
+    <span class="small text-muted">我的任务与消息概览</span>
+  </header>
+
+  {% include "partials/dashboard_stat_cards.html" %}
+
+  <section aria-labelledby="staff-dashboard-reminder-title">
+    <h2 id="staff-dashboard-reminder-title" class="h6 text-secondary mb-3">期限提醒</h2>
+    {% include "partials/deadline_reminder_inner.html" %}
+  </section>
+</div>

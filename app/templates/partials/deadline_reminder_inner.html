@@ -1,0 +1,314 @@
+{% from "macros/task_phase.html" import task_phase_badge %}
+{% macro reminder_table_colgroup() -%}
+<colgroup>
+  <col class="qy-reminder-col-title">
+  <col class="qy-reminder-col-serial">
+  <col class="qy-reminder-col-phase">
+  <col class="qy-reminder-col-deadline">
+</colgroup>
+{%- endmacro %}
+{% macro reminder_table_head() -%}
+{{ reminder_table_colgroup() }}
+<thead>
+  <tr>
+    <th scope="col">案件</th>
+    <th scope="col">序列号</th>
+    <th scope="col">阶段</th>
+    <th scope="col">截止时间</th>
+  </tr>
+</thead>
+{%- endmacro %}
+{% macro reminder_task_row(task, deadline_class, interactive=true) -%}
+{% if interactive and task.case and case_detail_endpoint %}
+<tr
+  class="qy-clickable-row"
+  data-href="{{ url_for(case_detail_endpoint, case_id=task.case.id) }}"
+  tabindex="0"
+  role="link"
+  aria-label="查看案件 {{ task.case.title }}"
+>
+{% else %}
+<tr>
+{% endif %}
+  <td class="qy-reminder-title-cell">
+    {% if interactive and task.case and case_detail_endpoint %}
+    <span class="qy-reminder-case-link" title="{{ task.case.title }}">{{ task.case.title }}</span>
+    {% else %}
+    {{ task.case.title if task.case else "—" }}
+    {% endif %}
+  </td>
+  <td class="text-nowrap font-monospace small qy-reminder-serial-cell">{{ task.case.application_no if task.case else "—" }}</td>
+  <td class="qy-reminder-phase-cell">{{ task_phase_badge(task|qy_effective_task_phase) }}</td>
+  <td class="text-nowrap qy-reminder-deadline-cell {{ deadline_class }}">{{ task|effective_task_due|qy_format_dt }}</td>
+</tr>
+{%- endmacro %}
+{% macro reminder_block(kind, tasks, title, desc, deadline_class, aria_id, empty_text, interactive=true) -%}
+<section class="qy-deadline-block qy-deadline-block--{{ kind }}" aria-labelledby="{{ aria_id }}">
+  <header class="qy-deadline-block__header">
+    <div class="qy-deadline-block__icon" aria-hidden="true">
+      {% if kind == 'overdue' %}
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      {% else %}
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      {% endif %}
+    </div>
+    <div class="qy-deadline-block__body">
+      <div class="qy-deadline-block__title-row">
+        <h3 id="{{ aria_id }}" class="qy-deadline-block__title">{{ title }}</h3>
+        <span class="qy-deadline-block__count">{{ tasks|length if tasks else 0 }}</span>
+      </div>
+      <p class="qy-deadline-block__desc">{{ desc }}</p>
+    </div>
+  </header>
+  {% if tasks and tasks|length > 0 %}
+  <div class="table-responsive qy-deadline-block__table-wrap">
+    <table class="table table-sm table-hover align-middle qy-reminder-table mb-0">
+      {{ reminder_table_head() }}
+      <tbody>
+        {% for task in tasks %}
+        {{ reminder_task_row(task, deadline_class, interactive) }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="qy-deadline-block__empty-body">
+    <p class="text-muted small mb-0">{{ empty_text }}</p>
+  </div>
+  {% endif %}
+</section>
+{%- endmacro %}
+
+{% macro deadline_calendar_legend() -%}
+<div class="qy-deadline-calendar-legend">
+  <span><i class="qy-deadline-cal-dot qy-deadline-cal-dot--overdue"></i>含超期</span>
+  <span><i class="qy-deadline-cal-dot qy-deadline-cal-dot--soon"></i>临期</span>
+  <span><i class="qy-deadline-cal-dot qy-deadline-cal-dot--future"></i>其他截止</span>
+</div>
+{%- endmacro %}
+
+{% macro deadline_calendar_cell(cell, endpoint, cal, selected_day, compact=false, readonly=false) -%}
+{% if cell.count %}
+{% if readonly %}
+<span
+  class="qy-deadline-cal-day qy-deadline-cal-day--marked qy-deadline-cal-day--{{ cell.severity }} qy-deadline-cal-day--load-{{ cell.load_level }}{% if cell.is_today %} is-today{% endif %}{% if cell.is_weekend %} is-weekend{% endif %}{% if compact %} is-compact{% endif %} is-readonly"
+  title="{{ cell.iso }}：{{ cell.count }} 件"
+>
+{% else %}
+<a
+  class="qy-deadline-cal-day qy-deadline-cal-day--marked qy-deadline-cal-day--{{ cell.severity }} qy-deadline-cal-day--load-{{ cell.load_level }}{% if cell.is_today %} is-today{% endif %}{% if cell.iso == selected_day %} is-selected{% endif %}{% if cell.is_weekend %} is-weekend{% endif %}{% if compact %} is-compact{% endif %}"
+  href="{{ url_for(endpoint, cal_year=cal.year, cal_month=cal.month, day=cell.iso) }}"
+  data-spa-endpoint="{{ endpoint }}"
+  data-spa-preserve-scroll
+  title="{{ cell.iso }}：{{ cell.count }} 件"
+>
+{% endif %}
+  <span class="qy-deadline-cal-day__top">
+    <span class="qy-deadline-cal-day__num">{{ cell.day }}</span>
+    {% if cell.is_today and not compact %}<small>今天</small>{% elif cell.is_today and compact %}<small class="qy-deadline-cal-day__today-dot" aria-label="今天"></small>{% endif %}
+  </span>
+  {% if not compact %}
+  <span class="qy-deadline-cal-day__event">{{ cell.count }} 项截止{% if cell.load_level == "high" %}<em>高负荷</em>{% endif %}</span>
+  <span class="qy-deadline-cal-day__bars" aria-hidden="true">
+    {% if cell.severity_counts.overdue %}<i class="is-overdue" style="flex: {{ cell.severity_counts.overdue }}"></i>{% endif %}
+    {% if cell.severity_counts.due_soon %}<i class="is-soon" style="flex: {{ cell.severity_counts.due_soon }}"></i>{% endif %}
+    {% if cell.severity_counts.future %}<i class="is-future" style="flex: {{ cell.severity_counts.future }}"></i>{% endif %}
+  </span>
+  {% else %}
+  <span class="qy-deadline-cal-day__bars qy-deadline-cal-day__bars--compact" aria-hidden="true">
+    {% if cell.severity_counts.overdue %}<i class="is-overdue" style="flex: {{ cell.severity_counts.overdue }}"></i>{% endif %}
+    {% if cell.severity_counts.due_soon %}<i class="is-soon" style="flex: {{ cell.severity_counts.due_soon }}"></i>{% endif %}
+    {% if cell.severity_counts.future %}<i class="is-future" style="flex: {{ cell.severity_counts.future }}"></i>{% endif %}
+  </span>
+  {% endif %}
+{% if readonly %}</span>{% else %}</a>{% endif %}
+{% else %}
+<span class="qy-deadline-cal-day{% if cell.is_today %} is-today{% endif %}{% if cell.is_weekend %} is-weekend{% endif %}{% if compact %} is-compact{% endif %}{% if readonly %} is-readonly{% endif %}">
+  <span class="qy-deadline-cal-day__top">
+    <span class="qy-deadline-cal-day__num">{{ cell.day }}</span>
+    {% if cell.is_today and not compact %}<small>今天</small>{% elif cell.is_today and compact %}<small class="qy-deadline-cal-day__today-dot" aria-label="今天"></small>{% endif %}
+  </span>
+  {% if compact %}
+  <span class="qy-deadline-cal-day__bars qy-deadline-cal-day__bars--compact qy-deadline-cal-day__bars--placeholder" aria-hidden="true"></span>
+  {% endif %}
+</span>
+{% endif %}
+{%- endmacro %}
+
+{% macro deadline_calendar_agenda_panel(compact=false) -%}
+<aside class="qy-deadline-calendar-agenda{% if compact %} qy-deadline-calendar-agenda--mini{% endif %}" aria-live="polite">
+  {% if deadline_calendar_selected_day and deadline_calendar_selected_tasks %}
+  <div class="qy-deadline-calendar-agenda__header">
+    <div>
+      <span>选中日期</span>
+      <h3 class="h6 mb-0">{{ deadline_calendar_selected_day }}</h3>
+    </div>
+    <strong>{{ deadline_calendar_selected_tasks|length }} 件</strong>
+  </div>
+  <div class="qy-deadline-calendar-agenda__list">
+    {% for task in deadline_calendar_selected_tasks %}
+    <article class="qy-deadline-calendar-agenda__item">
+      <div class="d-flex align-items-start justify-content-between gap-2">
+        <div class="min-w-0">
+          <div class="fw-semibold text-truncate" title="{{ task.case.title if task.case else '—' }}">{{ task.case.title if task.case else "—" }}</div>
+          <div class="small text-muted font-monospace mt-1">{{ task.case.application_no if task.case else "—" }}</div>
+        </div>
+        {{ task_phase_badge(task|qy_effective_task_phase) }}
+      </div>
+      <div class="qy-deadline-calendar-agenda__due">截止 {{ task|effective_task_due|qy_format_dt }}</div>
+      {% if task.case and case_detail_endpoint %}
+      <a class="btn btn-sm btn-outline-primary w-100 mt-2" href="{{ url_for(case_detail_endpoint, case_id=task.case.id) }}" data-spa-endpoint="{{ case_detail_endpoint }}">查看案件</a>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% if compact and deadline_calendar_page_endpoint %}
+  <a class="btn btn-sm btn-link w-100 mt-2 px-0" href="{{ url_for(deadline_calendar_page_endpoint, cal_year=deadline_calendar.year, cal_month=deadline_calendar.month, day=deadline_calendar_selected_day) }}" data-spa-endpoint="{{ deadline_calendar_page_endpoint }}">在完整日历中打开 →</a>
+  {% endif %}
+  {% else %}
+  <div class="qy-deadline-calendar-agenda__empty">
+    <div class="qy-deadline-calendar-agenda__empty-icon" aria-hidden="true">⌁</div>
+    <h3 class="h6 mt-3 mb-1">选择一个截止日</h3>
+    <p class="small text-muted mb-0">点击带有彩色事件条的日期，查看当天案件安排。</p>
+  </div>
+  {% endif %}
+</aside>
+{%- endmacro %}
+
+{% macro deadline_calendar_grid(cal, endpoint, selected_day, compact=false, readonly=false) -%}
+<div class="qy-deadline-cal-grid{% if compact %} is-compact{% endif %}{% if readonly %} is-readonly{% endif %}">
+  {% for label in cal.weekday_labels %}
+  <div class="qy-deadline-cal-weekday">{{ label }}</div>
+  {% endfor %}
+  {% for week in cal.weeks %}
+    {% for cell in week %}
+      {% if cell %}{{ deadline_calendar_cell(cell, endpoint, cal, selected_day, compact, readonly) }}
+      {% else %}<span class="qy-deadline-cal-day is-empty{% if compact %} is-compact{% endif %}" aria-hidden="true"></span>{% endif %}
+    {% endfor %}
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% if reminder_page_title %}
+<div class="staff-page-inner p-3 p-md-4">
+  <h1 class="h4 mb-2 staff-page-title">{{ reminder_page_title }}</h1>
+  <p class="text-muted mb-4">已超期任务会显示在下方并自动标记为超期阶段；临期指截止日在未来 {{ due_soon_days }} 个自然日内、尚未超期的任务。</p>
+{% endif %}
+
+{% set has_overdue = overdue_tasks and overdue_tasks|length > 0 %}
+{% set has_soon = due_soon_tasks and due_soon_tasks|length > 0 %}
+{% set reminder_interactive = reminder_page_title|length > 0 %}
+
+{% if has_overdue or has_soon %}
+<div class="qy-deadline-grid mb-4{% if not reminder_interactive %} qy-deadline-grid--readonly{% endif %}">
+  {{ reminder_block(
+    'overdue',
+    overdue_tasks,
+    '已超期',
+    '共 ' ~ (overdue_tasks|length if overdue_tasks else 0) ~ ' 件任务已超过截止时间，请尽快处理。',
+    'text-danger fw-semibold',
+    'qy-deadline-overdue-title',
+    '暂无超期任务',
+    reminder_interactive
+  ) }}
+  {{ reminder_block(
+    'due-soon',
+    due_soon_tasks,
+    '临期',
+    '共 ' ~ (due_soon_tasks|length if due_soon_tasks else 0) ~ ' 件任务将在 ' ~ due_soon_days ~ ' 天内截止，请提前安排。',
+    'text-warning-emphasis fw-semibold',
+    'qy-deadline-soon-title',
+    '暂无临期任务',
+    reminder_interactive
+  ) }}
+</div>
+{% endif %}
+
+{% if show_deadline_calendar_full and deadline_calendar_page_endpoint %}
+{% set cal_nav = deadline_calendar_nav_endpoint or deadline_calendar_page_endpoint %}
+<section class="qy-deadline-calendar-card mb-4" aria-labelledby="qy-deadline-calendar-title">
+  <header class="qy-deadline-calendar-card__hero">
+    <div>
+      <div class="qy-deadline-calendar-card__eyebrow">DEADLINE SCHEDULE</div>
+      <h2 id="qy-deadline-calendar-title" class="h5 mb-1">{{ deadline_calendar.year }} 年 {{ deadline_calendar.month }} 月截止安排</h2>
+      <p class="mb-0">按北京时间汇总有效截止日，提前识别工作高峰。</p>
+    </div>
+    <div class="qy-deadline-calendar-card__stats">
+      <span><small>本月截止</small><strong>{{ deadline_calendar.month_counts.total }}</strong></span>
+      <span class="is-danger"><small>超期</small><strong>{{ deadline_calendar.month_counts.overdue }}</strong></span>
+      <span class="is-warning"><small>临期</small><strong>{{ deadline_calendar.month_counts.due_soon }}</strong></span>
+      <span class="is-primary"><small>其他</small><strong>{{ deadline_calendar.month_counts.future }}</strong></span>
+    </div>
+  </header>
+
+  <div class="qy-deadline-calendar-toolbar">
+    {{ deadline_calendar_legend() }}
+    <div class="qy-deadline-calendar-nav">
+      <a class="qy-deadline-calendar-nav__arrow" href="{{ url_for(cal_nav, cal_year=deadline_calendar.prev_year, cal_month=deadline_calendar.prev_month) }}" data-spa-endpoint="{{ cal_nav }}" data-spa-preserve-scroll aria-label="上个月">‹</a>
+      <a class="qy-deadline-calendar-nav__today" href="{{ url_for(cal_nav, cal_year=deadline_calendar.today_year, cal_month=deadline_calendar.today_month, day=deadline_calendar.today_iso) }}" data-spa-endpoint="{{ cal_nav }}" data-spa-preserve-scroll>回到今天</a>
+      <a class="qy-deadline-calendar-nav__arrow" href="{{ url_for(cal_nav, cal_year=deadline_calendar.next_year, cal_month=deadline_calendar.next_month) }}" data-spa-endpoint="{{ cal_nav }}" data-spa-preserve-scroll aria-label="下个月">›</a>
+    </div>
+  </div>
+
+  <div class="qy-deadline-calendar-layout">
+    <div class="qy-deadline-calendar-main">
+      {{ deadline_calendar_grid(deadline_calendar, cal_nav, deadline_calendar_selected_day) }}
+    </div>
+    {{ deadline_calendar_agenda_panel() }}
+  </div>
+</section>
+{% endif %}
+
+{% if reminder_page_title and not has_overdue and not has_soon %}
+<div class="qy-deadline-empty">
+  <div class="qy-deadline-empty__icon" aria-hidden="true">
+    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+    </svg>
+  </div>
+  <p class="qy-deadline-empty__text mb-0">当前没有需要关注的超期或临期任务。</p>
+</div>
+{% elif not reminder_page_title and not has_overdue and not has_soon %}
+<p class="text-muted small mb-0">暂无超期或临期任务。</p>
+{% endif %}
+
+{% if show_deadline_calendar_mini and deadline_calendar_page_endpoint %}
+<section class="qy-deadline-calendar-card qy-deadline-calendar-card--mini qy-deadline-calendar-card--readonly mt-3" aria-labelledby="qy-deadline-calendar-mini-title">
+  <header class="qy-deadline-calendar-card__hero qy-deadline-calendar-card__hero--mini">
+    <div>
+      <div class="qy-deadline-calendar-card__eyebrow">DEADLINE SCHEDULE</div>
+      <h3 id="qy-deadline-calendar-mini-title" class="h6 mb-1">{{ deadline_calendar.year }} 年 {{ deadline_calendar.month }} 月截止安排</h3>
+      <p class="mb-0">首页仅展示本月截止分布；选日期、切月份与查看详情请进入完整日历。</p>
+    </div>
+    <div class="qy-deadline-calendar-card__stats qy-deadline-calendar-card__stats--mini">
+      <span><small>本月</small><strong>{{ deadline_calendar.month_counts.total }}</strong></span>
+      <span class="is-danger"><small>超期</small><strong>{{ deadline_calendar.month_counts.overdue }}</strong></span>
+      <span class="is-warning"><small>临期</small><strong>{{ deadline_calendar.month_counts.due_soon }}</strong></span>
+      <span class="is-primary"><small>其他</small><strong>{{ deadline_calendar.month_counts.future }}</strong></span>
+    </div>
+  </header>
+
+  <div class="qy-deadline-calendar-toolbar qy-deadline-calendar-toolbar--mini">
+    {{ deadline_calendar_legend() }}
+    <div class="qy-deadline-calendar-nav">
+      <a class="qy-deadline-calendar-nav__full" href="{{ url_for(deadline_calendar_page_endpoint, cal_year=deadline_calendar.year, cal_month=deadline_calendar.month) }}" data-spa-endpoint="{{ deadline_calendar_page_endpoint }}">完整日历 →</a>
+    </div>
+  </div>
+
+  <div class="qy-deadline-calendar-main qy-deadline-calendar-main--mini-readonly">
+    {{ deadline_calendar_grid(deadline_calendar, deadline_calendar_page_endpoint, "", compact=true, readonly=true) }}
+  </div>
+</section>
+{% endif %}
+
+{% if reminder_page_title %}
+</div>
+{% endif %}

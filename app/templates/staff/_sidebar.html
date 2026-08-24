@@ -1,0 +1,156 @@
+{# 员工端侧边栏：撰写师保持现有菜单；流程/业务只展示各自首页与后续占位入口 #}
+{% set staff_fn = current_user.staff_function_normalized if current_user.is_authenticated else 'writer' %}
+<aside class="staff-sidebar">
+  <nav class="staff-sidebar-nav" aria-label="员工端主导航">
+    {% if staff_fn == 'process' %}
+    <a class="staff-nav-link {% if request.endpoint == 'staff.process_dashboard' %}active is-current{% endif %}" href="{{ url_for('staff.process_dashboard') }}" data-tooltip="首页" data-spa-endpoint="staff.process_dashboard" {% if request.endpoint == 'staff.process_dashboard' %}aria-current="page"{% endif %}>
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
+        <span>首页</span>
+      </span>
+    </a>
+    <a class="staff-nav-link {% if request.endpoint == 'staff.process_followup' %}active{% endif %}" href="{{ url_for('staff.process_followup') }}" data-tooltip="审核案件跟进" data-spa-endpoint="staff.process_followup">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M9 12h6M9 16h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>审核案件跟进</span>
+      </span>
+    </a>
+
+    {% elif staff_fn == 'business' %}
+    <a class="staff-nav-link {% if request.endpoint == 'staff.business_dashboard' %}active is-current{% endif %}" href="{{ url_for('staff.business_dashboard') }}" data-tooltip="首页" data-spa-endpoint="staff.business_dashboard" {% if request.endpoint == 'staff.business_dashboard' %}aria-current="page"{% endif %}>
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
+        <span>首页</span>
+      </span>
+    </a>
+    <a class="staff-nav-link {% if request.endpoint == 'staff.business_orders' %}active{% endif %}" href="{{ url_for('staff.business_orders') }}" data-tooltip="下单" data-spa-endpoint="staff.business_orders">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M9 13h6M9 16h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>下单</span>
+      </span>
+    </a>
+    <a class="staff-nav-link {% if request.endpoint == 'staff.business_collections' %}active{% endif %}" href="{{ url_for('staff.business_collections') }}" data-tooltip="收账" data-spa-endpoint="staff.business_collections">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="4" y="6" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M4 10h16" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M8 14h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>收账</span>
+      </span>
+    </a>
+
+    {% else %}
+    <a class="staff-nav-link {% if request.endpoint == 'staff.dashboard' %}active is-current{% endif %}" href="{{ url_for('staff.dashboard') }}" data-tooltip="首页" data-spa-endpoint="staff.dashboard" {% if request.endpoint == 'staff.dashboard' %}aria-current="page"{% endif %}>
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
+        <span>首页</span>
+      </span>
+    </a>
+
+    <a class="staff-nav-link {% if request.endpoint == 'staff.task_board' %}active{% endif %}" href="{{ url_for('staff.task_board') }}" data-tooltip="任务看板" data-spa-endpoint="staff.task_board">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M4 10h16" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M9 14h6M9 17h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>任务看板</span>
+      </span>
+    </a>
+
+    {% set casework_endpoints = ['staff.case_detail', 'staff.case_detail_by_id', 'staff.progress_update', 'staff.deadline_reminder', 'staff.deliverable_upload'] %}
+    <div class="staff-nav-group staff-casework-group">
+      <button class="staff-nav-link staff-nav-toggle staff-casework-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#staffNavCaseWork" aria-expanded="{% if request.endpoint in casework_endpoints %}true{% else %}false{% endif %}" aria-controls="staffNavCaseWork">
+        <span class="staff-nav-link-inner">
+          <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          </svg>
+          <span>案件处理</span>
+        </span>
+        <svg class="staff-nav-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div id="staffNavCaseWork" class="collapse {% if request.endpoint in casework_endpoints %}show{% endif %} staff-nav-submenu">
+        <a class="staff-nav-sublink task-sublink {% if request.endpoint in ['staff.case_detail', 'staff.case_detail_by_id'] %}active{% endif %}" href="{{ url_for('staff.case_detail') }}" data-spa-endpoint="staff.case_detail">
+          <span class="staff-nav-sublink-inner">
+            <svg class="staff-nav-subicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+              <path d="M9 12h6M9 16h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <span>案件列表</span>
+          </span>
+        </a>
+        <a class="staff-nav-sublink task-sublink {% if request.endpoint == 'staff.progress_update' %}active{% endif %}" href="{{ url_for('staff.progress_update') }}" data-spa-endpoint="staff.progress_update">
+          <span class="staff-nav-sublink-inner">
+            <svg class="staff-nav-subicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 4v16M4 12h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/>
+            </svg>
+            <span>进度更新</span>
+          </span>
+        </a>
+        <a class="staff-nav-sublink task-sublink {% if request.endpoint == 'staff.deadline_reminder' %}active{% endif %}" href="{{ url_for('staff.deadline_reminder') }}" data-spa-endpoint="staff.deadline_reminder">
+          <span class="staff-nav-sublink-inner">
+            <svg class="staff-nav-subicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M12 8v4l2.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <span>期限提醒</span>
+          </span>
+        </a>
+        <a class="staff-nav-sublink task-sublink {% if request.endpoint == 'staff.deliverable_upload' %}active{% endif %}" href="{{ url_for('staff.deliverable_upload') }}" data-spa-endpoint="staff.deliverable_upload">
+          <span class="staff-nav-sublink-inner">
+            <svg class="staff-nav-subicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 16V8m0 0-2.5 2.5M12 8l2.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M5 16.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <span>成果上传</span>
+          </span>
+        </a>
+      </div>
+    </div>
+
+    <a class="staff-nav-link {% if request.endpoint == 'staff.worklog' %}active{% endif %}" href="{{ url_for('staff.worklog') }}" data-tooltip="月度统计" data-spa-endpoint="staff.worklog">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 4h10a1 1 0 0 1 1 1v14l-3-2-3 2-3-2-3 2V5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M9 9h6M9 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>月度统计</span>
+      </span>
+    </a>
+
+    <a class="staff-nav-link {% if request.endpoint == 'staff.notifications' %}active{% endif %}" href="{{ url_for('staff.notifications') }}" data-tooltip="消息通知" data-spa-endpoint="staff.notifications">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M19 16.5V11a7 7 0 1 0-14 0v5.5l-1 1.5h16l-1-1.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M10 20h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>消息通知</span>
+      </span>
+      <span
+        id="qyStaffNotificationBadge"
+        class="qy-review-unread-badge {% if not staff_notification_unread %}d-none{% endif %}"
+        data-status-url="{{ url_for('staff.notifications_status') }}"
+        aria-label="未读消息 {{ staff_notification_unread or 0 }} 条"
+      >{{ staff_notification_unread or 0 }}</span>
+    </a>
+    {% endif %}
+  </nav>
+</aside>

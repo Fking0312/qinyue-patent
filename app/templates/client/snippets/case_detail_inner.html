@@ -1,0 +1,95 @@
+<div class="staff-page-inner p-3 p-md-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
+      <p class="text-muted mb-0">{{ page_desc }}</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('client.cases') }}" data-spa-endpoint="client.cases">返回案件列表</a>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small mb-1">案件标题</div>
+          <div class="fw-semibold">{{ case.title }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small mb-1">序列号</div>
+          <div class="fw-semibold">{{ case.application_no }}</div>
+          <div class="text-muted small mb-1 mt-2">申请号</div>
+          <div class="fw-semibold">{{ case.patent_application_no or "—" }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small mb-1">当前状态</div>
+          <div class="fw-semibold">{{ task.phase_status|qy_task_phase_label if task else "—" }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <h2 class="h6 mb-3">状态时间轴</h2>
+      <ul class="mb-0">
+        <li>下单时间：{{ case.order_at|qy_format_dt }}</li>
+        <li>应返稿时间：{{ case.expected_return_at|qy_format_dt }}</li>
+        <li>实际返稿时间：{{ case.actual_return_at|qy_format_dt }}</li>
+        <li>最近更新时间：{{ task.updated_at|qy_format_dt if task else "—" }}</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h2 class="h6 mb-0">材料下载</h2>
+        <div class="btn-group btn-group-sm" role="group" aria-label="材料版本筛选">
+          <a class="btn {% if material_version_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('client.case_detail', case_id=case.id, material_version='all') }}" data-spa-endpoint="client.case_detail">全部</a>
+          <a class="btn {% if material_version_filter == 'draft' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('client.case_detail', case_id=case.id, material_version='draft') }}" data-spa-endpoint="client.case_detail">仅初稿</a>
+          <a class="btn {% if material_version_filter == 'final' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('client.case_detail', case_id=case.id, material_version='final') }}" data-spa-endpoint="client.case_detail">仅定稿</a>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>文件名</th>
+              <th>版本</th>
+              <th>上传人</th>
+              <th>时间</th>
+              <th>备注</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for file_item in material_files %}
+            <tr>
+              <td>{{ file_item.original_name }}</td>
+              <td>{{ "定稿" if file_item.version_tag == "final" else "初稿" }}</td>
+              <td>{{ file_item.uploaded_by|qy_user_label if file_item.uploaded_by else "—" }}</td>
+              <td>{{ file_item.created_at|qy_format_dt }}</td>
+              <td>{{ file_item.note or "—" }}</td>
+              <td>
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('client.case_material_download', case_id=case.id, material_id=file_item.id) }}" download>下载</a>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" class="text-muted text-center">暂无可下载材料</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>

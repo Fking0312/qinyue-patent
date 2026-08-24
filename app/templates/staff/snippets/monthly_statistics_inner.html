@@ -1,0 +1,208 @@
+<div class="staff-page-inner staff-page-inner--admin px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  <section class="qy-monthly-hero mb-4" aria-labelledby="qy-monthly-title">
+    <div class="qy-monthly-hero__top">
+      <div>
+        <div class="qy-monthly-hero__eyebrow">MY MONTHLY REPORT</div>
+        <h1 id="qy-monthly-title" class="h4 mb-1">{{ statistics.year }} 年 {{ statistics.month }} 月 · 我的月度统计</h1>
+        <p class="mb-0">仅统计当前账号负责的案件，帮助您快速回顾本月工作成果。</p>
+      </div>
+      <a class="btn btn-light btn-sm qy-monthly-export" href="{{ url_for('staff.worklog_export', year=statistics.year, month=statistics.month, basis=statistics.basis) }}">导出 Excel</a>
+    </div>
+    <div class="qy-monthly-hero__result">
+      <div>
+        <span>{% if statistics.basis == "completed" %}本月实际返稿{% else %}本月新建案件{% endif %}</span>
+        <strong>{{ statistics.total }}</strong><small>件</small>
+      </div>
+      <p class="mb-0">
+        {% if statistics.month_change > 0 %}
+        较上月增加 <strong>{{ statistics.month_change }}</strong> 件{% if statistics.month_change_percent is not none %}，增长 {{ statistics.month_change_percent }}%{% endif %}
+        {% elif statistics.month_change < 0 %}
+        较上月减少 <strong>{{ -statistics.month_change }}</strong> 件{% if statistics.month_change_percent is not none %}，下降 {{ -statistics.month_change_percent }}%{% endif %}
+        {% else %}与上月持平，继续保持稳定节奏{% endif %}
+      </p>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm qy-monthly-filter-card mb-4" aria-labelledby="qy-staff-stat-filter-title">
+    <div class="card-body p-3">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h2 id="qy-staff-stat-filter-title" class="h6 mb-0">统计条件</h2>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('staff.worklog', year=statistics.previous_year, month=statistics.previous_month, basis=statistics.basis) }}" data-spa-endpoint="staff.worklog">上月</a>
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.worklog', year=statistics.current_year, month=statistics.current_month, basis=statistics.basis) }}" data-spa-endpoint="staff.worklog">本月</a>
+        </div>
+      </div>
+      <form method="get" action="{{ url_for('staff.worklog') }}" class="row g-2 align-items-end">
+        <div class="col-12 col-md-3">
+          <label class="form-label mb-1" for="staffStatisticsBasis">统计口径</label>
+          <select id="staffStatisticsBasis" class="form-select" name="basis">
+            <option value="created" {% if statistics.basis == "created" %}selected{% endif %}>按创建时间</option>
+            <option value="completed" {% if statistics.basis == "completed" %}selected{% endif %}>按实际返稿时间</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label mb-1" for="staffStatisticsYear">年份</label>
+          <select id="staffStatisticsYear" class="form-select" name="year">
+            {% for year in available_years %}
+            <option value="{{ year }}" {% if year == statistics.year %}selected{% endif %}>{{ year }} 年</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label mb-1" for="staffStatisticsMonth">月份</label>
+          <select id="staffStatisticsMonth" class="form-select" name="month">
+            {% for month in range(1, 13) %}
+            <option value="{{ month }}" {% if month == statistics.month %}selected{% endif %}>{{ month }} 月</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-auto">
+          <button class="btn btn-primary w-100" type="submit">查询统计</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="row g-3 mb-4" aria-label="月度统计摘要">
+    <div class="col-12 col-md-6 col-xl-4">
+      <div class="card border-0 shadow-sm h-100 qy-monthly-metric qy-monthly-metric--blue">
+        <div class="card-body">
+          <div class="qy-monthly-metric__icon" aria-hidden="true">✓</div>
+          <div class="text-muted small mb-1">本月案件</div>
+          <div class="display-6 fw-semibold">{{ statistics.total }}<small> 件</small></div>
+          <div class="small text-muted mt-1">按{{ statistics.basis_label }}统计</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 col-xl-4">
+      <div class="card border-0 shadow-sm h-100 qy-monthly-metric qy-monthly-metric--purple">
+        <div class="card-body">
+          <div class="qy-monthly-metric__icon" aria-hidden="true">↗</div>
+          <div class="text-muted small mb-1">上月完成案件</div>
+          <div class="display-6 fw-semibold">{{ statistics.previous_total }}<small> 件</small></div>
+          <div class="small mt-1 {% if statistics.month_change > 0 %}text-success{% elif statistics.month_change < 0 %}text-danger{% else %}text-muted{% endif %}">
+            较上月{% if statistics.month_change > 0 %}增加 {{ statistics.month_change }} 件{% elif statistics.month_change < 0 %}减少 {{ -statistics.month_change }} 件{% else %}持平{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-xl-4">
+      <div class="card border-0 shadow-sm h-100 qy-monthly-metric {% if statistics.unclassified %}qy-monthly-metric--orange{% else %}qy-monthly-metric--neutral{% endif %}">
+        <div class="card-body">
+          <div class="qy-monthly-metric__icon" aria-hidden="true">!</div>
+          <div class="text-muted small mb-1">未分类案件</div>
+          <div class="display-6 fw-semibold">{{ statistics.unclassified }}<small> 件</small></div>
+          <div class="small text-muted mt-1">未设置有效案件类型标签</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm qy-monthly-trend-card mb-4" aria-labelledby="qy-monthly-trend-title">
+    <div class="card-header bg-transparent border-0 px-3 px-md-4 pt-4 pb-0">
+      <div class="d-flex flex-wrap align-items-end justify-content-between gap-2">
+        <div>
+          <div class="qy-monthly-section-eyebrow">SIX-MONTH TREND</div>
+          <h2 id="qy-monthly-trend-title" class="h6 mb-1">近 6 个月趋势</h2>
+          <p class="small text-muted mb-0">按{{ statistics.basis_label }}统计，点击月份可切换查看。</p>
+        </div>
+        <div class="qy-monthly-trend-summary">
+          <span>月均 <strong>{{ trend.average }}</strong> 件</span>
+          <span>半年合计 <strong>{{ trend.total }}</strong> 件</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body px-3 px-md-4 pt-3 pb-4">
+      <div class="qy-monthly-trend-chart" role="img" aria-label="近六个月案件数量柱状图">
+        {% for point in trend.points %}
+        <a
+          class="qy-monthly-trend-point {% if point.is_selected %}is-selected{% endif %}"
+          href="{{ url_for('staff.worklog', year=point.year, month=point.month, basis=statistics.basis) }}"
+          data-spa-endpoint="staff.worklog"
+          title="{{ point.full_label }}：{{ point.count }} 件"
+        >
+          <strong>{{ point.count }}</strong>
+          <span class="qy-monthly-trend-track">
+            <span class="qy-monthly-trend-bar" style="height: {{ point.bar_percent }}%"></span>
+          </span>
+          <small>{{ point.label }}</small>
+        </a>
+        {% endfor %}
+      </div>
+      <div class="qy-monthly-trend-insight">
+        {% if trend.change > 0 %}
+        所选月份较前一个月增加 <strong>{{ trend.change }}</strong> 件，工作量呈上升趋势。
+        {% elif trend.change < 0 %}
+        所选月份较前一个月减少 <strong>{{ -trend.change }}</strong> 件，工作节奏有所放缓。
+        {% else %}
+        所选月份与前一个月数量持平，整体工作节奏稳定。
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm qy-monthly-ranking-card" aria-labelledby="qy-staff-stat-breakdown-title">
+    <div class="card-header bg-transparent border-0 px-3 px-md-4 pt-4 pb-2">
+      <div class="d-flex flex-wrap justify-content-between align-items-end gap-2">
+        <div>
+          <div class="qy-monthly-section-eyebrow">CASE TYPE RANKING</div>
+          <h2 id="qy-staff-stat-breakdown-title" class="h6 mb-1">案件类型构成</h2>
+          <p class="small text-muted mb-0">按数量从高到低排列，点击分类可展开完整明细。</p>
+        </div>
+        <span class="small text-muted">共 {{ statistics.total }} 件</span>
+      </div>
+    </div>
+    <div class="card-body px-3 px-md-4 pb-4">
+      {% set ns = namespace(has_data=false, rank=0) %}
+      <div class="qy-monthly-ranking-list">
+        {% for row in statistics.rows|sort(attribute='count', reverse=true) %}
+        {% if row.count %}
+        {% set ns.has_data = true %}
+        {% set ns.rank = ns.rank + 1 %}
+        <details class="qy-monthly-rank-item">
+          <summary>
+            <span class="qy-monthly-rank-number">{{ ns.rank }}</span>
+            <span class="qy-monthly-rank-name">{{ row.label }}</span>
+            <span class="qy-monthly-rank-bar"><span style="width: {{ row.percent }}%"></span></span>
+            <strong>{{ row.count }} 件</strong>
+            <small>{{ row.percent }}%</small>
+          </summary>
+          <div class="qy-monthly-rank-details">
+            <div class="qy-monthly-rank-detail-grid">
+              {% for detail in row.details %}
+              <div class="qy-monthly-rank-detail-card">
+                <span>{{ detail.label }}</span>
+                <span class="fw-semibold text-nowrap">{{ detail.count }} 件</span>
+              </div>
+              {% endfor %}
+            </div>
+            <a
+              class="btn btn-sm btn-outline-primary"
+              {% if statistics.basis == "completed" %}
+              href="{{ url_for('staff.case_detail', case_type_primary=row.code, actual_return_year=statistics.year, actual_return_month=statistics.month) }}"
+              {% else %}
+              href="{{ url_for('staff.case_detail', case_type_primary=row.code, created_year=statistics.year, created_month=statistics.month) }}"
+              {% endif %}
+              data-spa-endpoint="staff.case_detail"
+            >查看相关案件</a>
+          </div>
+        </details>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% if not ns.has_data %}
+      <div class="qy-monthly-empty text-center py-5">
+        <div class="qy-monthly-empty__icon" aria-hidden="true">⌁</div>
+        <h3 class="h6 mt-3 mb-1">本月暂无统计数据</h3>
+        <p class="small text-muted mb-3">切换月份或统计口径，查看其他时间段的工作成果。</p>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.case_detail') }}" data-spa-endpoint="staff.case_detail">查看我的案件</a>
+      </div>
+      {% endif %}
+      {% if statistics.unclassified %}
+      <div class="alert alert-warning mt-3 mb-0 small">
+        另有 {{ statistics.unclassified }} 件案件尚未设置有效类型，请联系管理员补充。
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</div>

@@ -1,0 +1,44 @@
+{% macro empty_state(title, description=None, icon='inbox', compact=False) -%}
+<div class="card border-0 shadow-sm qy-empty-state-card{% if compact %} qy-empty-state-card--compact{% endif %}" role="status" aria-live="polite">
+  <div class="card-body qy-empty-state text-center py-5 px-3">
+    <div class="qy-empty-state-icon text-muted mb-3" aria-hidden="true">
+      {% if icon == 'folder' %}
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" opacity="0.35">
+        <path d="M.54 3.87 1.5 3.2a2 2 0 0 1 1.59-.8H4.5A2 2 0 0 1 6 4h4a2 2 0 0 1 1.59.8l.96.67A2 2 0 0 1 14 7.5v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 .54-1.63Z"/>
+      </svg>
+      {% elif icon == 'tasks' %}
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none" viewBox="0 0 24 24" opacity="0.35">
+        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" stroke="currentColor" stroke-width="1.6"/>
+        <rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      {% elif icon == 'review' %}
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none" viewBox="0 0 24 24" opacity="0.35">
+        <path d="M12 3l7 4v6c0 4.4-3 7.4-7 8-4-.6-7-3.6-7-8V7l7-4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      {% elif icon == 'users' %}
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" opacity="0.35">
+        <path d="M7 14s-1 0-1-1 1-4 5-4 5 3 5 4-1 1-1 1H7Zm4-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+        <path fill-rule="evenodd" d="M5.216 14A2.238 2.238 0 0 1 5 13c0-1.355.68-2.75 1.936-3.72A6.325 6.325 0 0 0 5 9c-4 0-5 3-5 4s1 1 1 1h4.216Z"/>
+        <path d="M4.5 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/>
+      </svg>
+      {% else %}
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none" viewBox="0 0 24 24" opacity="0.35">
+        <path d="M6 8.5A6 6 0 0 1 18 8.5v4.2l1.6 2.4H4.4L6 12.7V8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M10 18.5a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      {% endif %}
+    </div>
+    <p class="fw-semibold mb-1">{{ title }}</p>
+    {% if description %}
+    <p class="text-muted small mb-0">{{ description }}</p>
+    {% endif %}
+    {% if caller %}
+    <div class="d-flex flex-wrap justify-content-center gap-2 mt-3">
+      {{ caller() }}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{%- endmacro %}

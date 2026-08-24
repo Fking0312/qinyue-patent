@@ -1,0 +1,7 @@
+{% macro task_phase_badge(phase_status) -%}
+  {% if phase_status %}
+  <span class="qy-phase-badge qy-phase-badge--{{ phase_status|qy_task_phase_tone }}">{{ phase_status|qy_task_phase_label }}</span>
+  {% else %}
+  <span class="text-muted">—</span>
+  {% endif %}
+{%- endmacro %}

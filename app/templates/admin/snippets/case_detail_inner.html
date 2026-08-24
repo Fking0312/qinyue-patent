@@ -1,0 +1,453 @@
+{% from "admin/macros/staff_kind.html" import staff_kind_badge %}
+{% from "macros/case_type.html" import case_type_badges %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/case_download_logs.html" import case_download_logs %}
+<div class="staff-page-inner p-3 p-md-4 qy-case-detail-page">
+  {% call page_header(page_title) %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin.cases') }}" data-spa-endpoint="admin.cases">返回案件列表</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('admin.project_detail', project_id=case.project_id) }}" data-spa-endpoint="admin.project_detail">查看项目</a>
+    <a class="btn btn-primary" href="{{ url_for('admin.case_edit', case_id=case.id) }}" data-spa-endpoint="admin.case_edit">编辑案件</a>
+  {% endcall %}
+
+  <section class="qy-case-hero card border-0 shadow-sm mb-4" aria-label="案件概览">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+        <div class="min-w-0 flex-grow-1">
+          <h2 class="h5 mb-2 text-break">{{ case.title }}</h2>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="font-monospace small text-muted">{{ case.application_no }}</span>
+            {{ task_phase_badge(task.phase_status if task else '') }}
+            {{ case_type_badges(case) }}
+            {% if case.formal_status %}
+            <span class="badge text-bg-light border">{{ case.formal_status }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="qy-case-hero-meta text-end">
+          {% if case.project %}
+          <div class="text-muted small">所属项目</div>
+          <div class="fw-semibold">{{ case.project.name }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <ul class="nav nav-tabs qy-case-detail-tabs mb-3" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="case-tab-info-btn" data-bs-toggle="tab" data-bs-target="#case-tab-info" type="button" role="tab" aria-controls="case-tab-info" aria-selected="true">基础信息</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="case-tab-materials-btn" data-bs-toggle="tab" data-bs-target="#case-tab-materials" type="button" role="tab" aria-controls="case-tab-materials" aria-selected="false">材料</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="case-tab-task-btn" data-bs-toggle="tab" data-bs-target="#case-tab-task" type="button" role="tab" aria-controls="case-tab-task" aria-selected="false">任务与审核</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="case-tab-downloads-btn" data-bs-toggle="tab" data-bs-target="#case-tab-downloads" type="button" role="tab" aria-controls="case-tab-downloads" aria-selected="false">下载留痕</button>
+    </li>
+  </ul>
+
+  <div class="tab-content qy-case-detail-tab-content">
+    <div class="tab-pane fade show active" id="case-tab-info" role="tabpanel" aria-labelledby="case-tab-info-btn" tabindex="0">
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6 mb-3">归属信息</h2>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="text-muted small mb-1">所属项目</div>
+              <div>{{ case.project.name if case.project else "—" }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted small mb-1">所属客户</div>
+              <div>{{ case.project.customer.name if case.project and case.project.customer else "—" }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted small mb-1">创建时间</div>
+              <div>{{ case.created_at|qy_format_dt }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <h2 class="h6 mb-3">甲方要求字段</h2>
+          <div class="row g-3">
+            <div class="col-md-3">
+              <div class="text-muted small mb-1">申请号</div>
+              <div>{{ case.patent_application_no or "—" }}</div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-muted small mb-1">指派员工</div>
+              <div class="d-flex flex-wrap align-items-center gap-2">
+                <span>{% if case.business_owner_user %}{{ case.business_owner_user|qy_user_label }}{% else %}—{% endif %}</span>
+                {{ staff_kind_badge(case.business_owner_user) }}
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-muted small mb-1">下单时间</div>
+              <div>{{ case.order_at|qy_format_dt }}</div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-muted small mb-1">应返稿时间</div>
+              <div>{{ case.expected_return_at|qy_format_dt }}</div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-muted small mb-1">实际返稿时间</div>
+              <div>{{ case.actual_return_at|qy_format_dt }}</div>
+            </div>
+            <div class="col-12">
+              <section class="qy-case-note-callout" aria-label="案件备注">
+                <div class="qy-case-note-callout-title">案件备注</div>
+                <div class="qy-case-note-callout-content text-break">{{ case.case_note or "暂无备注" }}</div>
+              </section>
+            </div>
+            <div class="col-12">
+              <div class="text-muted small mb-1">案件交底材料上传端口</div>
+              {% if case.material_upload_port %}
+              <div class="qy-upload-port-callout">
+                <a class="btn btn-primary" href="{{ case.material_upload_port }}" target="_blank" rel="noopener noreferrer">打开外部上传端口</a>
+                <span class="small text-break">{{ case.material_upload_port }}</span>
+              </div>
+              {% else %}
+              <div>—</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="case-tab-materials" role="tabpanel" aria-labelledby="case-tab-materials-btn" tabindex="0">
+      <div class="card border-0 shadow-sm qy-material-upload-card" id="qy-case-material-upload">
+        <div class="card-body">
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+            <div class="d-flex align-items-start gap-2">
+              <span class="qy-material-upload-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                  <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+                </svg>
+              </span>
+              <div>
+                <h2 class="h5 mb-1 qy-material-upload-title">材料上传</h2>
+                <p class="text-muted small mb-0">在此上传交底材料；支持 pdf、Office、图片、压缩包等常见格式。</p>
+              </div>
+            </div>
+            <span class="badge text-bg-primary qy-material-upload-badge align-self-center">交底材料</span>
+          </div>
+
+          <div class="qy-material-upload-panel qy-dropzone mb-4">
+            <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="form_action" value="upload_material">
+              <div class="col-lg-4 col-md-6">
+                <label class="form-label fw-semibold" for="adminMaterialFileInput">选择文件</label>
+                <input id="adminMaterialFileInput" class="form-control" type="file" name="material_file">
+              </div>
+              <div class="col-lg-2 col-md-3">
+                <label class="form-label fw-semibold" for="adminMaterialVersionInput">版本</label>
+                <select id="adminMaterialVersionInput" class="form-select" name="material_version_tag">
+                  <option value="draft">初稿</option>
+                  <option value="final">定稿</option>
+                </select>
+              </div>
+              <div class="col-lg-4 col-md-6">
+                <label class="form-label fw-semibold" for="adminMaterialNoteInput">备注</label>
+                <input id="adminMaterialNoteInput" class="form-control" type="text" name="material_note" maxlength="200" value="交底材料" placeholder="上传备注（默认：交底材料）">
+              </div>
+              <div class="col-lg-2 col-md-3 d-grid">
+                <button class="btn btn-primary qy-upload-submit" type="submit">上传文件</button>
+              </div>
+            </form>
+            <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽文件到此区域，松开后自动上传；也可点击上方选择文件。</div>
+          </div>
+
+          <div class="btn-group btn-group-sm mb-3" role="group" aria-label="材料版本筛选">
+            <a class="btn {% if material_version_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('admin.case_detail', case_id=case.id, material_version='all') }}" data-spa-endpoint="admin.case_detail">全部</a>
+            <a class="btn {% if material_version_filter == 'draft' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('admin.case_detail', case_id=case.id, material_version='draft') }}" data-spa-endpoint="admin.case_detail">仅初稿</a>
+            <a class="btn {% if material_version_filter == 'final' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('admin.case_detail', case_id=case.id, material_version='final') }}" data-spa-endpoint="admin.case_detail">仅定稿</a>
+          </div>
+
+          <div class="fw-semibold mb-2">已上传交底材料</div>
+          <div class="table-responsive mb-4">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>文件名</th>
+                  <th>版本</th>
+                  <th>上传人</th>
+                  <th>时间</th>
+                  <th>备注</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for file_item in disclosure_material_files %}
+                <tr>
+                  <td>{{ file_item.original_name }}</td>
+                  <td>{{ "定稿" if file_item.version_tag == "final" else "初稿" }}</td>
+                  <td>{{ file_item.uploaded_by|qy_user_label if file_item.uploaded_by else "—" }}</td>
+                  <td>{{ file_item.created_at|qy_format_dt }}</td>
+                  <td>{{ file_item.note or "—" }}</td>
+                  <td>
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.case_material_download', case_id=case.id, material_id=file_item.id) }}" download>下载</a>
+                    <form method="post" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="form_action" value="delete_material">
+                      <input type="hidden" name="material_id" value="{{ file_item.id }}">
+                      <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('确认删除该材料？')">删除</button>
+                    </form>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="6" class="p-0">
+                    <div class="qy-material-empty-state">
+                      <div class="fw-semibold mb-1">暂无交底材料</div>
+                      <div class="text-muted small">请在上方选择文件，点击「上传文件」完成上传。</div>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="fw-semibold mb-2">已上传撰写材料</div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>文件名</th>
+                  <th>版本</th>
+                  <th>上传人</th>
+                  <th>时间</th>
+                  <th>备注</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for file_item in writing_material_files %}
+                <tr>
+                  <td>
+                    {% if file_item.staff_upload_filename_visible_to(current_user) %}
+                    {{ file_item.original_name }}
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if file_item.staff_upload_filename_visible_to(current_user) %}
+                    {{ "定稿" if file_item.version_tag == "final" else "初稿" }}
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ file_item.uploaded_by|qy_user_label if file_item.uploaded_by else "—" }}</td>
+                  <td>{{ file_item.created_at|qy_format_dt }}</td>
+                  <td>{{ file_item.note or "—" }}</td>
+                  <td>
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.case_material_download', case_id=case.id, material_id=file_item.id) }}" download>下载</a>
+                    <form method="post" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="form_action" value="delete_material">
+                      <input type="hidden" name="material_id" value="{{ file_item.id }}">
+                      <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('确认删除该材料？')">删除</button>
+                    </form>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="6" class="p-0">
+                    <div class="qy-material-empty-state">
+                      <div class="fw-semibold mb-1">暂无撰写材料</div>
+                      <div class="text-muted small">员工上传后将在此显示；当前可由员工端上传撰写文件。</div>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="case-tab-task" role="tabpanel" aria-labelledby="case-tab-task-btn" tabindex="0">
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6 mb-3">当前任务</h2>
+          {% if task %}
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="text-muted small mb-1">任务 ID</div>
+              <div>#{{ task.id }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted small mb-1">任务状态</div>
+              <div>{{ task_phase_badge(task.phase_status) }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted small mb-1">更新时间</div>
+              <div>{{ task.updated_at|qy_format_dt }}</div>
+            </div>
+          </div>
+          <hr>
+          <form method="post" class="row g-2 align-items-end mb-2" id="adminCasePhaseForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="form_action" value="update_phase">
+            <div class="col-md-5">
+              <label class="form-label mb-1" for="adminCasePhaseInput">修改状态</label>
+              <select id="adminCasePhaseInput" class="form-select" name="phase_status">
+                {% for phase in phase_options %}
+                <option value="{{ phase }}" {% if phase == phase_selected_value %}selected{% endif %}>{{ phase|qy_task_phase_label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4" id="adminCaseActualReturnWrap">
+              <label class="form-label mb-1" for="adminCaseActualReturnAtInput">实际返稿时间 <span class="text-danger">*</span></label>
+              <input
+                id="adminCaseActualReturnAtInput"
+                class="form-control"
+                type="datetime-local"
+                name="actual_return_at"
+                value="{{ actual_return_at_input }}"
+              >
+              <div class="form-text">改为已完成时必填；若留空将尝试按审核/材料自动推算。</div>
+            </div>
+            <div class="col-md-3 d-grid">
+              <button class="btn btn-primary" type="submit">保存状态</button>
+            </div>
+          </form>
+          <script>
+          (function () {
+            var select = document.getElementById("adminCasePhaseInput");
+            var wrap = document.getElementById("adminCaseActualReturnWrap");
+            var input = document.getElementById("adminCaseActualReturnAtInput");
+            if (!select || !wrap || !input) return;
+            function sync() {
+              var need = select.value === "completed";
+              wrap.classList.toggle("d-none", !need);
+              input.required = need && !input.value;
+            }
+            select.addEventListener("change", sync);
+            sync();
+          })();
+          </script>
+          {% if task.phase_status == 'pending_review' or task.phase_status == 'overdue_pending_review' %}
+          <hr>
+          <div class="row g-2 align-items-end">
+            <div class="col-md-8">
+              <label class="form-label mb-1" for="adminRejectNoteInput">打回原因（必填）</label>
+              <form method="post" class="d-flex gap-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input id="adminRejectNoteInput" class="form-control" type="text" name="reject_note" maxlength="500" placeholder="请输入打回原因">
+                <input type="hidden" name="review_action" value="reject">
+                <button class="btn btn-outline-danger" type="submit">打回</button>
+              </form>
+            </div>
+            <div class="col-md-4 d-flex justify-content-md-end">
+              <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="review_action" value="approve">
+                <button class="btn btn-primary" type="submit">审核通过</button>
+              </form>
+            </div>
+          </div>
+          {% endif %}
+          {% if latest_reject_log and latest_reject_log.note %}
+          <hr>
+          <div class="text-muted small mb-1">最近一次打回原因</div>
+          <div class="alert alert-warning mb-0">{{ latest_reject_log.note }}</div>
+          {% endif %}
+          {% else %}
+          <div class="text-muted">该案件暂无任务。</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h2 class="h6 mb-0">审核历史</h2>
+            <div class="btn-group btn-group-sm" role="group" aria-label="审核动作筛选">
+              <a class="btn {% if review_action_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('admin.case_detail', case_id=case.id, review_action='all', review_operator=review_operator_filter, review_page=1) }}" data-spa-endpoint="admin.case_detail">全部</a>
+              <a class="btn {% if review_action_filter == 'approve' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('admin.case_detail', case_id=case.id, review_action='approve', review_operator=review_operator_filter, review_page=1) }}" data-spa-endpoint="admin.case_detail">仅通过</a>
+              <a class="btn {% if review_action_filter == 'reject' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('admin.case_detail', case_id=case.id, review_action='reject', review_operator=review_operator_filter, review_page=1) }}" data-spa-endpoint="admin.case_detail">仅打回</a>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label mb-1" for="adminReviewOperatorFilter">操作人</label>
+            <select
+              id="adminReviewOperatorFilter"
+              class="form-select form-select-sm"
+              onchange="window.location.href=this.value"
+            >
+              <option value="{{ url_for('admin.case_detail', case_id=case.id, review_action=review_action_filter, review_operator='all', review_page=1) }}" {% if review_operator_filter == 'all' %}selected{% endif %}>全部操作人</option>
+              {% for operator_name in review_operator_options %}
+              <option value="{{ url_for('admin.case_detail', case_id=case.id, review_action=review_action_filter, review_operator=operator_name, review_page=1) }}" {% if review_operator_filter == operator_name %}selected{% endif %}>{{ operator_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>动作</th>
+                  <th>操作人</th>
+                  <th>备注</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for log in review_logs %}
+                <tr>
+                  <td>{{ log.created_at|qy_format_dt }}</td>
+                  <td>
+                    {% if log.action == "approve" %}
+                    <span class="badge text-bg-success">通过</span>
+                    {% else %}
+                    <span class="badge text-bg-warning">打回</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ log.operator|qy_user_label if log.operator else "—" }}</td>
+                  <td>{{ log.note or "—" }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="4" class="text-center text-muted py-4">暂无审核历史</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if review_total_pages > 1 %}
+          <nav class="mt-3" aria-label="审核历史分页">
+            <ul class="pagination pagination-sm mb-0">
+              {% for p in range(1, review_total_pages + 1) %}
+              <li class="page-item {% if p == review_page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('admin.case_detail', case_id=case.id, review_page=p, review_action=review_action_filter, review_operator=review_operator_filter) }}" data-spa-endpoint="admin.case_detail">{{ p }}</a>
+              </li>
+              {% endfor %}
+            </ul>
+          </nav>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-pane fade" id="case-tab-downloads" role="tabpanel" aria-labelledby="case-tab-downloads-btn" tabindex="0">
+      {{ case_download_logs(
+        'admin.case_detail',
+        case.id,
+        material_download_logs,
+        download_role_filter,
+        download_page,
+        download_total_pages,
+        url_for('admin.case_material_download_logs_export', case_id=case.id, download_role=download_role_filter)
+      ) }}
+    </div>
+  </div>
+</div>

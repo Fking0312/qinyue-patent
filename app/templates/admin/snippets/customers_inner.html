@@ -1,0 +1,378 @@
+<div class="staff-page-inner staff-page-inner--admin qy-admin-page qy-customers-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  <header class="qy-admin-page-header pb-3 mb-3 mb-md-4 border-bottom border-secondary-subtle">
+    <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
+    <p class="text-muted small mb-0">{{ page_desc }}</p>
+  </header>
+
+  <section class="qy-admin-section qy-admin-section--filter mb-3 mb-md-4" aria-labelledby="qy-customers-filter-heading">
+    <h2 id="qy-customers-filter-heading" class="h6 text-secondary mb-2">筛选条件</h2>
+    <div class="card border-0 shadow-sm qy-admin-filter-card">
+      <div class="card-body p-3 p-md-4">
+      <form
+        method="get"
+        action="{{ url_for('admin.customers') }}"
+        id="qy-customers-filter-form"
+        class="qy-customers-filter-form"
+      >
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-md-4 col-lg-3">
+            <label class="form-label mb-1" for="customerNameKeyword">客户名称</label>
+            <input id="customerNameKeyword" class="form-control" type="text" name="q" value="{{ q }}" maxlength="200" placeholder="模糊匹配名称" autocomplete="off">
+          </div>
+          <div class="col-md-4 col-lg-3">
+            <label class="form-label mb-1" for="customerNoteKeyword">备注关键词</label>
+            <input id="customerNoteKeyword" class="form-control" type="text" name="note_q" value="{{ note_q }}" maxlength="200" placeholder="模糊匹配备注全文" autocomplete="off">
+          </div>
+          <div class="col-md-4 col-lg-2">
+            <label class="form-label mb-1" for="customerKindFilter">客户类型</label>
+            <select id="customerKindFilter" class="form-select" name="kind">
+              <option value="">全部</option>
+              <option value="{{ customer_kind_company }}" {% if kind_filter == customer_kind_company %}selected{% endif %}>公司</option>
+              <option value="{{ customer_kind_individual }}" {% if kind_filter == customer_kind_individual %}selected{% endif %}>个人</option>
+            </select>
+          </div>
+          <div class="col-md-6 col-lg-2">
+            <label class="form-label mb-1" for="customerCreatedFrom">创建时间（起）</label>
+            <input id="customerCreatedFrom" class="form-control" type="date" name="created_from" value="{{ created_from }}">
+          </div>
+          <div class="col-md-6 col-lg-2">
+            <label class="form-label mb-1" for="customerCreatedTo">创建时间（止）</label>
+            <input id="customerCreatedTo" class="form-control" type="date" name="created_to" value="{{ created_to }}">
+          </div>
+        </div>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-6 col-lg-4">
+            <label class="form-label mb-1" for="customerCreatedBy">创建人</label>
+            <select id="customerCreatedBy" class="form-select" name="created_by">
+              <option value="">全部</option>
+              {% for u in creator_options %}
+              <option value="{{ u.id }}" {% if created_by_filter == (u.id|string) %}selected{% endif %}>{{ u.username }}（{{ u.role }}）</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3 col-lg-2">
+            <label class="form-label mb-1" for="customerPerPage">每页条数</label>
+            <select id="customerPerPage" class="form-select" name="per_page">
+              <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+              <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
+              <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+            </select>
+          </div>
+          <div class="col-12 col-lg-6 d-flex flex-wrap gap-2 justify-content-lg-end pt-lg-3">
+            <button type="submit" class="btn btn-primary" id="qy-customers-query-btn" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="按当前条件筛选列表">
+              <span class="qy-customers-query-label">查询</span>
+            </button>
+            <a class="btn btn-outline-secondary" href="{{ url_for('admin.customers') }}" data-spa-endpoint="admin.customers" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="清空条件并回到默认列表">重置</a>
+          </div>
+        </div>
+      </form>
+      </div>
+    </div>
+  </section>
+
+  <div class="qy-admin-toolbar d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center justify-content-between gap-3 mb-3 mb-md-4 pb-3 border-bottom border-secondary-subtle">
+    <p class="text-muted small mb-0 flex-grow-1">支持筛选、分页与弹窗新增客户。</p>
+    <button type="button" class="btn btn-primary flex-shrink-0" data-bs-toggle="modal" data-bs-target="#qyCustomerCreateModal" title="打开表单新增客户档案">
+      新增客户
+    </button>
+  </div>
+
+  <div class="modal fade" id="qyCustomerCreateModal" tabindex="-1" aria-labelledby="qyCustomerCreateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="qyCustomerCreateModalLabel">新增客户</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+        </div>
+        <div class="modal-body">
+          <div id="qy-customer-create-errors" class="alert alert-danger py-2 px-3 small d-none" role="alert"></div>
+          <form
+            id="qy-customer-create-form"
+            class="needs-validation"
+            novalidate
+            data-create-url="{{ url_for('admin.customers_create') }}"
+          >
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <fieldset class="mb-4">
+              <legend class="form-label fw-semibold text-secondary small text-uppercase mb-3">基本信息</legend>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label" for="qyModalCustomerName">客户名称 <span class="text-danger">*</span></label>
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="qyModalCustomerName"
+                    name="name"
+                    maxlength="200"
+                    autocomplete="organization"
+                    required
+                    aria-required="true"
+                    placeholder="必填"
+                  >
+                  <div class="invalid-feedback" id="qyModalFeedback-name">请输入客户名称。</div>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="qyModalCustomerKind">客户类型 <span class="text-danger">*</span></label>
+                  <select class="form-select" id="qyModalCustomerKind" name="kind" required aria-required="true">
+                    <option value="{{ customer_kind_company }}">公司</option>
+                    <option value="{{ customer_kind_individual }}">个人</option>
+                  </select>
+                  <div class="invalid-feedback" id="qyModalFeedback-kind">请选择客户类型。</div>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="qyModalContactName">联系人</label>
+                  <input type="text" class="form-control" id="qyModalContactName" name="contact_name" maxlength="120" autocomplete="name" placeholder="选填">
+                  <div class="invalid-feedback" id="qyModalFeedback-contact_name"></div>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label" for="qyModalContactPhone">电话</label>
+                  <input type="text" class="form-control" id="qyModalContactPhone" name="contact_phone" maxlength="40" autocomplete="tel" placeholder="选填，如 13800138000">
+                  <div class="invalid-feedback" id="qyModalFeedback-contact_phone"></div>
+                </div>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend class="form-label fw-semibold text-secondary small text-uppercase mb-3">附加信息</legend>
+              <div class="row g-3">
+                <div class="col-12">
+                  <label class="form-label" for="qyModalCustomerNote">备注</label>
+                  <textarea class="form-control" id="qyModalCustomerNote" name="note" rows="2" maxlength="5000" placeholder="选填（导入时可将展示名称写在首行）"></textarea>
+                  <div class="invalid-feedback" id="qyModalFeedback-note"></div>
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="qyModalFeeStandard">收费标准</label>
+                  <textarea class="form-control" id="qyModalFeeStandard" name="fee_standard" rows="2" maxlength="5000" placeholder="选填"></textarea>
+                  <div class="invalid-feedback" id="qyModalFeedback-fee_standard"></div>
+                </div>
+              </div>
+            </fieldset>
+          </form>
+        </div>
+        <div class="modal-footer flex-column flex-sm-row gap-2">
+          <button type="button" class="btn btn-outline-secondary order-2 order-sm-1" data-bs-dismiss="modal">取消</button>
+          <button type="submit" class="btn btn-primary order-1 order-sm-2 ms-sm-auto" id="qy-customer-create-submit" form="qy-customer-create-form">
+            <span class="qy-customer-create-submit-label">提交</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="application/json" id="qy-customers-filter-json">{{ filter_url_kwargs | tojson }}</script>
+  <section class="qy-admin-section qy-admin-section--list" aria-labelledby="qy-customers-list-heading">
+  <div
+    id="qy-customers-list-root"
+    class="card border-0 shadow-sm qy-admin-list-card"
+    data-list-base="{{ url_for('admin.customers') }}"
+    data-export-url="{{ url_for('admin.customers_export') }}"
+    data-bulk-delete-url="{{ url_for('admin.customers_bulk_delete') }}"
+  >
+    <div class="card-header bg-transparent border-bottom py-2 px-3 px-md-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <h2 id="qy-customers-list-heading" class="h6 mb-0 fw-semibold text-body">客户列表</h2>
+      <span class="text-muted small" id="qy-customers-count" aria-live="polite">共 {{ pagination.total }} 条</span>
+    </div>
+    <div class="card-body px-0 pt-3 pb-0">
+
+      {% if customer_rows %}
+      {% set pg_total = pagination.pages if pagination.pages > 0 else 1 %}
+      <div
+        id="qy-customers-bulk-bar"
+        class="qy-bulk-action-bar qy-customers-bulk-bar mx-2 mx-md-3 mb-3 py-2 px-3 rounded-3 border d-none flex-wrap align-items-center justify-content-between gap-2"
+        role="region"
+        aria-label="批量操作"
+      >
+        <span class="small fw-semibold mb-0 text-body" id="qy-customers-bulk-count">已选 0 条</span>
+        <div class="d-flex flex-wrap gap-2 w-100 w-sm-auto justify-content-stretch justify-content-sm-end">
+          <button type="button" class="btn btn-sm btn-danger flex-grow-1 flex-sm-grow-0" id="qy-customers-bulk-delete-btn" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="删除无关联项目的选中客户">批量删除</button>
+          <button type="button" class="btn btn-sm btn-outline-primary flex-grow-1 flex-sm-grow-0" id="qy-customers-bulk-export-btn" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="导出为 Excel 文件">导出 Excel</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1 flex-sm-grow-0" id="qy-customers-bulk-clear-btn" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="取消全部勾选">清除选择</button>
+        </div>
+      </div>
+      <div
+        class="table-responsive qy-table-panel px-2 px-md-3"
+        data-qy-table="customers"
+        role="region"
+        aria-label="客户列表"
+        aria-busy="false"
+      >
+        <table class="table table-sm table-hover table-striped qy-data-table qy-customers-table mb-0">
+          <thead class="table-light">
+            <tr>
+              <th scope="col" class="text-center" style="width: 2.5rem;">
+                <input class="form-check-input" type="checkbox" id="qy-customer-select-all" aria-label="全选本页" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="全选本页全部客户">
+              </th>
+              <th scope="col">客户名称</th>
+              <th scope="col">类型</th>
+              <th scope="col">联系人</th>
+              <th scope="col">联系方式</th>
+              <th scope="col">备注</th>
+              <th scope="col">创建人</th>
+              <th scope="col">创建时间</th>
+              <th scope="col" class="text-end text-nowrap">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in customer_rows %}
+            {% set c = row.customer %}
+            <tr>
+              <td class="text-center align-middle">
+                <input class="form-check-input qy-customer-cb" type="checkbox" value="{{ c.id }}" name="customer_id" aria-label="选择 {{ row.display_name }}">
+              </td>
+              <td>
+                <span class="fw-medium">{{ row.display_name }}</span>
+                {% if row.system_name_hint %}
+                <span class="d-block small text-muted text-truncate" title="{{ row.system_name_hint }}">系统：{{ row.system_name_hint }}</span>
+                {% endif %}
+              </td>
+              <td class="align-middle">
+                {% if c.kind == customer_kind_company %}
+                <span class="badge rounded-pill qy-badge-kind qy-badge-kind--company">公司</span>
+                {% else %}
+                <span class="badge rounded-pill qy-badge-kind qy-badge-kind--individual">个人</span>
+                {% endif %}
+              </td>
+              <td class="text-break">{{ row.contact_summary or "—" }}</td>
+              <td class="text-break small">{{ row.contact_accounts or "—" }}</td>
+              <td class="text-muted">{{ c.note or "—" }}</td>
+              <td class="text-nowrap small">{{ row.created_by_username or "—" }}</td>
+              <td class="text-nowrap small">{{ c.created_at|qy_format_dt }}</td>
+              <td class="text-end">
+                <div class="d-inline-flex gap-1 justify-content-end" role="group" aria-label="操作">
+                  <a
+                    class="btn btn-sm btn-outline-primary qy-icon-btn"
+                    href="{{ url_for('admin.customer_detail', customer_id=c.id) }}"
+                    data-spa-endpoint="admin.customer_detail"
+                    aria-label="查看客户详情"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    data-bs-title="查看客户详情"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                      <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zm-8 4.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>
+                      <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"/>
+                    </svg>
+                  </a>
+                  <a
+                    class="btn btn-sm btn-outline-secondary qy-icon-btn"
+                    href="{{ url_for('admin.customer_edit', customer_id=c.id) }}"
+                    data-spa-endpoint="admin.customer_edit"
+                    aria-label="编辑客户资料"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    data-bs-title="编辑客户资料"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                      <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.5 14.793 3.207 12.793 1.207 11.5 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+                    </svg>
+                  </a>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mt-3 pt-3 border-top qy-customers-pagination-wrap mx-2 mx-md-3 mb-3 px-0">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+          <div class="small text-muted">
+            共 <strong>{{ pagination.total }}</strong> 条 · 每页 <strong>{{ per_page }}</strong> 条 · 第 <strong>{{ pagination.page }}</strong> / <strong>{{ pg_total }}</strong> 页
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2 flex-grow-1 flex-sm-grow-0 justify-content-between justify-content-sm-end">
+            <label class="small mb-0 text-nowrap" for="qy-customers-per-page-go">每页</label>
+            <select class="form-select form-select-sm qy-customers-per-page-select" id="qy-customers-per-page-go" aria-label="每页条数">
+              <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+              <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
+              <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+            </select>
+            <span class="small text-muted">条</span>
+          </div>
+        </div>
+        <nav aria-label="客户列表分页">
+          <ul class="pagination pagination-sm justify-content-center flex-wrap mb-2">
+            {% if pagination.has_prev %}
+            <li class="page-item">
+              <a class="page-link" href="{{ url_for('admin.customers', page=1, **filter_url_kwargs) }}" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="第一页">«</a>
+            </li>
+            <li class="page-item">
+              <a class="page-link" href="{{ url_for('admin.customers', page=pagination.prev_num, **filter_url_kwargs) }}" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="上一页">上一页</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">«</span></li>
+            <li class="page-item disabled"><span class="page-link">上一页</span></li>
+            {% endif %}
+            {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+              {% if p %}
+                <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                  {% if p == pagination.page %}
+                  <span class="page-link">{{ p }}</span>
+                  {% else %}
+                  <a class="page-link" href="{{ url_for('admin.customers', page=p, **filter_url_kwargs) }}" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="第 {{ p }} 页">{{ p }}</a>
+                  {% endif %}
+                </li>
+              {% else %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+              {% endif %}
+            {% endfor %}
+            {% if pagination.has_next %}
+            <li class="page-item">
+              <a class="page-link" href="{{ url_for('admin.customers', page=pagination.next_num, **filter_url_kwargs) }}" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="下一页">下一页</a>
+            </li>
+            <li class="page-item">
+              <a class="page-link" href="{{ url_for('admin.customers', page=pg_total, **filter_url_kwargs) }}" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="最后一页">»</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">下一页</span></li>
+            <li class="page-item disabled"><span class="page-link">»</span></li>
+            {% endif %}
+          </ul>
+        </nav>
+        <form class="row g-2 align-items-center justify-content-center gx-2" id="qy-customers-jump-form" novalidate>
+          <div class="col-12 col-sm-auto text-center text-sm-start">
+            <label class="small mb-0" for="qy-customers-jump-page">跳至页码</label>
+          </div>
+          <div class="col col-sm-auto" style="min-width: 5rem; max-width: 7rem;">
+            <input type="number" class="form-control form-control-sm" id="qy-customers-jump-page" min="1" max="{{ pg_total }}" value="{{ pagination.page }}" inputmode="numeric" aria-label="跳页页码">
+          </div>
+          <div class="col-12 col-sm-auto d-grid d-sm-block">
+            <button type="submit" class="btn btn-sm btn-outline-secondary w-100" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="跳转到指定页">跳转</button>
+          </div>
+        </form>
+      </div>
+
+      {% else %}
+      <div class="qy-empty-state text-center py-5 px-3 pb-md-4" role="status" aria-live="polite">
+        <div class="qy-empty-state-icon text-muted mb-3" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" viewBox="0 0 16 16" opacity="0.35">
+            <path d="M7 14s-1 0-1-1 1-4 5-4 5 3 5 4-1 1-1 1H7Zm4-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+            <path fill-rule="evenodd" d="M5.216 14A2.238 2.238 0 0 1 5 13c0-1.355.68-2.75 1.936-3.72A6.325 6.325 0 0 0 5 9c-4 0-5 3-5 4s1 1 1 1h4.216Z"/>
+            <path d="M4.5 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/>
+          </svg>
+        </div>
+        <p class="fw-medium mb-1">暂无客户</p>
+        <p class="text-muted small mb-0">调整筛选条件，或点击「新增客户」创建档案。</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  </section>
+
+  <div class="modal fade" id="qyCustomerBulkDeleteModal" tabindex="-1" aria-labelledby="qyCustomerBulkDeleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="qyCustomerBulkDeleteModalLabel">确认批量删除</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2" id="qy-customer-bulk-delete-msg">将删除选中的客户。无关联项目的客户才会被删除；已绑定项目的客户将保留并提示原因。此操作不可撤销。</p>
+          <p class="small text-danger mb-0 fw-semibold" id="qy-customer-bulk-delete-summary" aria-live="polite"></p>
+        </div>
+        <div class="modal-footer flex-column flex-sm-row gap-2">
+          <button type="button" class="btn btn-outline-secondary order-2 order-sm-1" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-danger order-1 order-sm-2 ms-sm-auto" id="qy-customer-bulk-delete-confirm" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="不可撤销，请谨慎操作">确认删除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

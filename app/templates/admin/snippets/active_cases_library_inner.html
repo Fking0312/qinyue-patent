@@ -1,0 +1,148 @@
+{% from "admin/macros/staff_kind.html" import staff_kind_badge %}
+{% from "macros/case_type.html" import case_type_badges %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+<div class="staff-page-inner staff-page-inner--admin qy-admin-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  {% call page_header(page_title, page_desc, extra_class='qy-admin-page-header') %}
+    <a class="btn btn-outline-secondary flex-shrink-0" href="{{ url_for('admin.cases') }}" data-spa-endpoint="admin.cases">全部案件列表</a>
+  {% endcall %}
+
+  <section class="qy-admin-section qy-admin-section--filter mb-3 mb-md-4" aria-labelledby="qy-active-cases-filter-heading">
+    <h2 id="qy-active-cases-filter-heading" class="h6 text-secondary mb-2">筛选与排序</h2>
+    <div class="card border-0 shadow-sm qy-admin-filter-card">
+      <div class="card-body p-3 p-md-4">
+        <form method="get" action="{{ url_for('admin.active_cases_library') }}" class="qy-cases-filter-form">
+          <div class="row g-2 g-lg-3 align-items-end">
+            <div class="col-md-6 col-lg-3">
+              <label class="form-label mb-1" for="activeCaseSearchInput">关键词</label>
+              <input id="activeCaseSearchInput" class="form-control" type="text" name="q" value="{{ q }}" maxlength="200" placeholder="标题、序列号或申请号" autocomplete="off">
+            </div>
+            <div class="col-md-6 col-lg-3">
+              <label class="form-label mb-1" for="activeCaseStaffFilter">负责员工</label>
+              <select id="activeCaseStaffFilter" class="form-select" name="staff_id">
+                <option value="">全部员工</option>
+                {% for user in staff_options %}
+                <option value="{{ user.id }}" {% if staff_id_filter == user.id|string %}selected{% endif %}>{{ user|qy_user_label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-3">
+              <label class="form-label mb-1" for="activeCaseCustomerFilter">所属客户</label>
+              <select id="activeCaseCustomerFilter" class="form-select" name="customer_id">
+                <option value="">全部客户</option>
+                {% for customer in customers %}
+                <option value="{{ customer.id }}" {% if customer_id_filter == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-3">
+              <label class="form-label mb-1" for="activeCaseProjectFilter">所属项目</label>
+              <select id="activeCaseProjectFilter" class="form-select" name="project_id">
+                <option value="">全部项目</option>
+                {% for project in projects %}
+                <option value="{{ project.id }}" {% if project_id_filter == project.id|string %}selected{% endif %}>{{ project.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-3">
+              <label class="form-label mb-1" for="activeCaseSort">截止日期排序</label>
+              <select id="activeCaseSort" class="form-select" name="sort">
+                <option value="deadline" {% if sort_by == "deadline" %}selected{% endif %}>截止日升序（近→远）</option>
+                <option value="deadline_desc" {% if sort_by == "deadline_desc" %}selected{% endif %}>截止日降序（远→近）</option>
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-3">
+              <label class="form-label mb-1" for="activeCaseGroupBy">分类展示</label>
+              <select id="activeCaseGroupBy" class="form-select" name="group_by">
+                <option value="none" {% if group_by == "none" %}selected{% endif %}>不分组（按截止日一条列表）</option>
+                <option value="customer" {% if group_by == "customer" %}selected{% endif %}>按客户分类</option>
+                <option value="project" {% if group_by == "project" %}selected{% endif %}>按项目分类</option>
+              </select>
+            </div>
+            <div class="col-12 col-lg-6 d-flex flex-wrap justify-content-end align-items-end gap-2">
+              <a class="btn btn-outline-secondary" href="{{ url_for('admin.active_cases_library') }}" data-spa-endpoint="admin.active_cases_library">重置</a>
+              <button class="btn btn-primary" type="submit">查询</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <script type="application/json" id="qy-active-cases-project-options-json">{{ project_filter_options | tojson }}</script>
+
+  <section class="qy-admin-section qy-admin-section--list" aria-labelledby="qy-active-cases-list-heading">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h2 id="qy-active-cases-list-heading" class="h6 mb-0 fw-semibold text-body">在办案件</h2>
+      <span class="text-muted small">未完成且已分配 · 共 {{ cases_total }} 件</span>
+    </div>
+
+    {% if groups and cases_total > 0 %}
+      {% for group in groups %}
+      {% if group.kind != "flat" %}
+      <div class="card border-0 shadow-sm qy-case-group mb-3 mb-md-4">
+        <div class="card-header bg-transparent border-bottom py-2 px-3 px-md-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div class="min-w-0">
+            {% if group.kind == "customer" %}
+            <span class="fw-semibold text-body">客户：</span>
+            <span class="fw-semibold">{{ group.customer.name if group.customer else "—" }}</span>
+            {% else %}
+            <span class="fw-semibold text-body">项目：</span>
+            {% if group.project %}
+            <a class="fw-semibold link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{{ url_for('admin.project_detail', project_id=group.project.id) }}" data-spa-endpoint="admin.project_detail">{{ group.project.name }}</a>
+            {% else %}
+            <span class="fw-semibold">—</span>
+            {% endif %}
+            <span class="d-block d-sm-inline text-muted small mt-1 mt-sm-0 ms-sm-3">客户：{{ group.customer.name if group.customer else "—" }}</span>
+            {% endif %}
+          </div>
+          <span class="badge rounded-pill text-bg-secondary">{{ group.rows|length }} 件</span>
+        </div>
+        <div class="card-body p-0">
+          {% include "admin/snippets/_active_cases_table.html" %}
+        </div>
+      </div>
+      {% else %}
+      <div class="card border-0 shadow-sm mb-3 mb-md-4">
+        <div class="card-body p-0">
+          {% include "admin/snippets/_active_cases_table.html" %}
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+    {% else %}
+      {% call empty_state("暂无在办已分配案件", "当前没有未完成且已指派员工的案件；可调整筛选，或到案件列表指派承办人。", icon="folder") %}
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.cases', assignee='assigned') }}" data-spa-endpoint="admin.cases">查看已分配案件</a>
+      {% endcall %}
+    {% endif %}
+  </section>
+</div>
+<script>
+(function () {
+  var customerSelect = document.getElementById("activeCaseCustomerFilter");
+  var projectSelect = document.getElementById("activeCaseProjectFilter");
+  var optionsEl = document.getElementById("qy-active-cases-project-options-json");
+  if (!customerSelect || !projectSelect || !optionsEl) return;
+  var allProjects = [];
+  try { allProjects = JSON.parse(optionsEl.textContent || "[]"); } catch (e) { allProjects = []; }
+  var selectedProject = projectSelect.value;
+  function refill() {
+    var cid = customerSelect.value;
+    projectSelect.innerHTML = '<option value=\"\">全部项目</option>';
+    allProjects.forEach(function (p) {
+      if (cid && String(p.customer_id) !== cid) return;
+      var opt = document.createElement("option");
+      opt.value = String(p.id);
+      opt.textContent = p.name;
+      if (String(p.id) === selectedProject) opt.selected = true;
+      projectSelect.appendChild(opt);
+    });
+  }
+  customerSelect.addEventListener("change", function () {
+    selectedProject = "";
+    refill();
+  });
+  refill();
+})();
+</script>
