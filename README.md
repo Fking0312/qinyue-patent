@@ -106,6 +106,13 @@ app/
   workflow.py               # 任务阶段、超期映射、员工可迁阶段
   spa_helpers.py            # 全页 / SPA 片段
   blueprints/               # admin / staff / client / auth
+    staff/                  # 单一 staff_bp，内部按职能分子模块
+      guards.py             # ensure_staff / ensure_staff_function / ensure_writer
+      utils.py              # 北京时区与时间文本
+      common/               # 通知口径、侧栏未读数、职能占位工作台渲染
+      writer/               # 撰写师：看板、案件、材料、期限、月度统计
+      process/              # 流程人员：审核案件跟进（占位）
+      business/             # 业务人员：下单与收账（占位）
   templates/                # 全页 + snippets（SPA 内层）
   static/
 scripts/                    # 演示数据与清库
@@ -115,6 +122,8 @@ migrations/versions/        # Alembic，需提交进仓库
 ```
 
 案件看板、案件类型、材料上传、登录锁定、会话失效等按主题拆在 `app/` 根目录，不要把新逻辑继续堆进已经很长的 `blueprints/admin/routes.py`。
+
+`staff` 四个子模块共用同一个 `staff_bp`，endpoint 仍是 `staff.xxx`，模板和 `data-spa-endpoint` 不受影响。加员工页面时放进对应职能的 `routes.py`；三职能都要用的东西才进 `common/`。等某个职能真有业务逻辑了再给它加 `services.py`，别先建空文件。
 
 默认库：`instance/patent.db`。上传也在 instance 下。测试**不会**写这份库。
 
@@ -193,6 +202,24 @@ User.role = admin | staff | client
 | 账号分发 | 职能标签、筛选；筛选栏对齐 |
 | 角色权限 | 可改员工职能 |
 | 公司首页 | 蓝色渐变落地页（不再用宣传大图） |
+
+### 重构（不改行为）
+
+**staff 蓝图按职能分模块。** 原来 920 行的 `app/blueprints/staff/routes.py` 已删除，拆成：
+
+| 新文件 | 内容 |
+| --- | --- |
+| `staff/__init__.py` | 创建 `staff_bp`，末尾导入四个子模块 |
+| `staff/guards.py` | `ensure_staff` / `ensure_staff_function` / `ensure_writer` |
+| `staff/utils.py` | 北京时区 `CN_TZ`、`beijing_datetime_text` |
+| `staff/common/routes.py` | 通知查询口径、侧栏未读数注入、职能占位工作台渲染 |
+| `staff/writer/routes.py` | 撰写师：看板、案件列表/详情、材料上传下载、期限提醒、月度统计、消息通知 |
+| `staff/process/routes.py` | 流程人员：流程工作台、审核案件跟进（占位） |
+| `staff/business/routes.py` | 业务人员：业务工作台、下单、收账（占位） |
+
+四个子模块共用同一个 `staff_bp`，所以 **20 个 endpoint 和 URL 全部保持原样**（`staff.dashboard`、`staff.case_detail_by_id` 等），模板、`url_for`、`data-spa-endpoint`、`models.py` 的 `home_endpoint` 都没动。跨模块共享的三个权限闸去掉了下划线前缀（`_ensure_writer` → `ensure_writer`），仅撰写师内部使用的辅助函数仍留在 `writer/routes.py`。
+
+上线时：**不需要跑迁移，不需要改模板或 Nginx**，`git pull` + 重启服务即可。若用复制而非 `git pull` 部署，确认服务器上的旧 `app/blueprints/staff/routes.py` 一并删掉；即使残留也不会被导入，但留着会误导人。重启后建议点一遍员工工作台、案件详情、消息通知，以及流程/业务账号的占位工作台。
 
 ### 安全（上线时注意密钥）
 | 更新 | 说明 |

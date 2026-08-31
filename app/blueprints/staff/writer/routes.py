@@ -1,4 +1,4 @@
-"""员工端视图：任务看板、材料上传与下载留痕导出（案件状态仅管理端可改）。"""
+"""撰写师视图：任务看板、材料上传与下载留痕导出（案件状态仅管理端可改）。"""
 
 import csv
 from io import BytesIO, StringIO
@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Response, abort, current_app, jsonify, redirect, request, send_file, send_from_directory, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
+
 from app.case_material_upload import case_material_dir, fetch_case_materials_grouped, save_case_material_upload
 from app.case_statistics import (
     case_statistics_available_years,
@@ -23,6 +24,15 @@ from app.case_types import (
     legacy_values_for_primary,
 )
 from app.blueprints.staff import staff_bp
+from app.blueprints.staff.common.routes import (
+    STAFF_NOTIFICATION_ACTIONABLE,
+    STAFF_NOTIFICATION_ACTIONS,
+    mark_staff_notification_read,
+    notification_group_label,
+    staff_review_notifications_query,
+)
+from app.blueprints.staff.guards import ensure_writer
+from app.blueprints.staff.utils import CN_TZ, beijing_datetime_text
 from app.extensions import db
 from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CaseReviewLog, Task, User
 from app.dashboard_stats import dashboard_page_kwargs
@@ -34,86 +44,6 @@ from app.workflow import (
     phase_for_workflow,
     staff_submit_case_for_review,
 )
-
-_CN_TZ = timezone(timedelta(hours=8))
-
-
-def _beijing_datetime_text(value: datetime | None) -> str:
-    """将数据库 UTC 时间转换为北京时间文本。"""
-    if value is None:
-        return ""
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(_CN_TZ).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _ensure_staff():
-    """权限闸：仅角色为 staff 的用户可继续访问，否则 403。"""
-    if current_user.role != "staff":
-        abort(403)
-
-
-def _ensure_staff_function(*allowed: str):
-    """权限闸：仅指定职能的员工可继续访问，否则 403。"""
-    _ensure_staff()
-    if current_user.staff_function_normalized not in allowed:
-        abort(403)
-
-
-def _ensure_writer():
-    """撰写相关页面仅撰写师可访问，不能只靠隐藏菜单。"""
-    _ensure_staff_function(User.STAFF_FUNCTION_WRITER)
-
-
-STAFF_NOTIFICATION_ACTIONS = ("approve", "reject", "assigned")
-STAFF_NOTIFICATION_ACTIONABLE = ("reject", "assigned")
-
-
-def _staff_review_notifications_query(user_id: int):
-    """当前员工收到的案件通知（分配 / 审核通过 / 打回）。"""
-    return CaseReviewLog.query.filter(
-        CaseReviewLog.action.in_(STAFF_NOTIFICATION_ACTIONS),
-        CaseReviewLog.recipient_id == user_id,
-    )
-
-
-def _mark_staff_notification_read(log_id: int) -> CaseReviewLog | None:
-    """将指定通知标记为已读；仅本人收件且尚未已读时生效。"""
-    log = (
-        _staff_review_notifications_query(current_user.id)
-        .filter_by(id=log_id)
-        .first()
-    )
-    if log is None or log.read_at is not None:
-        return log
-    log.read_at = datetime.now(timezone.utc)
-    db.session.commit()
-    return log
-
-
-def _notification_group_label(value: datetime | None, today) -> str:
-    """按北京时间将通知归入今天、昨天或更早。"""
-    if value is None:
-        return "更早"
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    notice_date = value.astimezone(_CN_TZ).date()
-    if notice_date == today:
-        return "今天"
-    if notice_date == today - timedelta(days=1):
-        return "昨天"
-    return "更早"
-
-
-@staff_bp.app_context_processor
-def _staff_notification_nav_context():
-    """给员工侧边栏注入未读通知数量。"""
-    if not current_user.is_authenticated or current_user.role != "staff":
-        return {}
-    unread = _staff_review_notifications_query(current_user.id).filter(
-        CaseReviewLog.read_at.is_(None)
-    ).count()
-    return {"staff_notification_unread": unread}
 
 
 def _ensure_staff_case_assignee(case: Case):
@@ -163,7 +93,7 @@ def _case_material_download_query(case_id: int, role_filter: str):
 @login_required
 def dashboard():
     """员工工作台：以提醒摘要为主，作为日常入口。"""
-    _ensure_writer()
+    ensure_writer()
     return render_spa_or_full(
         full_template="staff/dashboard.html",
         inner_template="staff/snippets/dashboard_inner.html",
@@ -177,9 +107,7 @@ def dashboard():
 @login_required
 def task_board():
     """员工任务看板：仅看本人负责的任务，支持状态筛选与排序。"""
-    _ensure_writer()
-    from flask import request
-
+    ensure_writer()
     status_filter = request.args.get("status", "all").strip()
     sort_by = request.args.get("sort", "deadline").strip()
     if status_filter not in {"all", "in_progress", "pending_review", "overdue"}:
@@ -208,7 +136,7 @@ def task_board():
 @login_required
 def case_detail():
     """员工案件列表：仅显示任务已分配给当前员工的全部案件。"""
-    _ensure_writer()
+    ensure_writer()
     keyword = request.args.get("q", "").strip()
     case_type_primary = request.args.get("case_type_primary", "").strip()
     created_year_raw = request.args.get("created_year", "").strip()
@@ -301,7 +229,7 @@ def case_detail():
 @login_required
 def case_detail_by_id(case_id: int):
     """员工案件详情：GET 渲染状态/材料/留痕；POST 处理材料上传（不可手动改状态）。"""
-    _ensure_writer()
+    ensure_writer()
     case = Case.query.options(joinedload(Case.business_owner_user)).filter_by(id=case_id).first()
     if case is None:
         abort(404)
@@ -474,7 +402,7 @@ def case_detail_by_id(case_id: int):
 @login_required
 def case_material_download(case_id: int, material_id: int):
     """员工下载案件材料：写入留痕后以 send_from_directory 返回文件。"""
-    _ensure_writer()
+    ensure_writer()
     case = db.session.get(Case, case_id)
     if case is None:
         abort(404)
@@ -503,7 +431,7 @@ def case_material_download(case_id: int, material_id: int):
 @login_required
 def case_material_download_logs_export(case_id: int):
     """导出当前案件的材料下载留痕为 CSV，可按角色过滤。"""
-    _ensure_writer()
+    ensure_writer()
     case = db.session.get(Case, case_id)
     if case is None:
         abort(404)
@@ -519,7 +447,7 @@ def case_material_download_logs_export(case_id: int):
     for item in rows:
         writer.writerow(
             [
-                _beijing_datetime_text(item.created_at),
+                beijing_datetime_text(item.created_at),
                 item.operator.username if item.operator else "",
                 item.operator_role,
                 item.material.original_name if item.material else "",
@@ -537,7 +465,7 @@ def case_material_download_logs_export(case_id: int):
 @login_required
 def progress_update():
     """进度更新占位页：后续将提供一键状态变更与统一通知能力。"""
-    _ensure_writer()
+    ensure_writer()
     return render_spa_or_full(
         full_template="staff/page.html",
         inner_template="partials/role_placeholder_inner.html",
@@ -552,7 +480,7 @@ def progress_update():
 @login_required
 def deadline_reminder():
     """期限提醒页：复用 reminder_template_kwargs 的已超期/临期分组。"""
-    _ensure_writer()
+    ensure_writer()
     from app.deadline_calendar import parse_calendar_month
 
     cal_year, cal_month = parse_calendar_month(
@@ -579,7 +507,7 @@ def deadline_reminder():
 @login_required
 def deliverable_upload():
     """成果上传占位页：后续承载申请文件、OA 答复等带版本标记的上传流程。"""
-    _ensure_writer()
+    ensure_writer()
     return render_spa_or_full(
         full_template="staff/page.html",
         inner_template="partials/role_placeholder_inner.html",
@@ -594,7 +522,7 @@ def deliverable_upload():
 @login_required
 def worklog():
     """员工月度统计：按创建时间或实际返稿时间汇总本人负责案件。"""
-    _ensure_writer()
+    ensure_writer()
     basis = case_statistics_basis(request.args.get("basis", "").strip())
     year, month = case_statistics_month(
         request.args.get("year", "").strip(),
@@ -617,7 +545,7 @@ def worklog():
     )
     statistics["previous_year"] = previous_month_end.year
     statistics["previous_month"] = previous_month_end.month
-    now_cn = datetime.now(timezone.utc).astimezone(_CN_TZ)
+    now_cn = datetime.now(timezone.utc).astimezone(CN_TZ)
     statistics["current_year"] = now_cn.year
     statistics["current_month"] = now_cn.month
     trend = case_statistics_trend_data(
@@ -648,7 +576,7 @@ def worklog():
 @login_required
 def worklog_export():
     """导出员工本人指定月份的案件统计 Excel。"""
-    _ensure_writer()
+    ensure_writer()
     basis = case_statistics_basis(request.args.get("basis", "").strip())
     year, month = case_statistics_month(
         request.args.get("year", "").strip(),
@@ -673,14 +601,14 @@ def worklog_export():
 @login_required
 def notifications():
     """员工消息通知：展示案件分配、审核通过/打回结果；点击「查看」后标记已读。"""
-    _ensure_writer()
+    ensure_writer()
     status_filter = request.args.get("status", "all").strip()
     if status_filter not in {"all", "unread", "actionable"}:
         status_filter = "all"
     type_filter = request.args.get("type", "all").strip()
     if type_filter not in {"all", "assigned", "approve", "reject"}:
         type_filter = "all"
-    query = _staff_review_notifications_query(current_user.id).options(
+    query = staff_review_notifications_query(current_user.id).options(
         joinedload(CaseReviewLog.case).joinedload(Case.project),
         joinedload(CaseReviewLog.case).joinedload(Case.task),
         joinedload(CaseReviewLog.operator),
@@ -700,28 +628,28 @@ def notifications():
         CaseReviewLog.created_at.desc(),
         CaseReviewLog.id.desc(),
     ).paginate(page=page, per_page=20, error_out=False)
-    unread_count = _staff_review_notifications_query(current_user.id).filter(
+    unread_count = staff_review_notifications_query(current_user.id).filter(
         CaseReviewLog.read_at.is_(None)
     ).count()
-    actionable_count = _staff_review_notifications_query(current_user.id).filter(
+    actionable_count = staff_review_notifications_query(current_user.id).filter(
         CaseReviewLog.read_at.is_(None),
         CaseReviewLog.action.in_(STAFF_NOTIFICATION_ACTIONABLE),
     ).count()
-    now_beijing = datetime.now(timezone.utc).astimezone(_CN_TZ)
+    now_beijing = datetime.now(timezone.utc).astimezone(CN_TZ)
     today = now_beijing.date()
-    today_start = datetime.combine(today, datetime.min.time(), tzinfo=_CN_TZ).astimezone(timezone.utc)
-    today_count = _staff_review_notifications_query(current_user.id).filter(
+    today_start = datetime.combine(today, datetime.min.time(), tzinfo=CN_TZ).astimezone(timezone.utc)
+    today_count = staff_review_notifications_query(current_user.id).filter(
         CaseReviewLog.created_at >= today_start
     ).count()
     action_counts = {
-        action: _staff_review_notifications_query(current_user.id)
+        action: staff_review_notifications_query(current_user.id)
         .filter(CaseReviewLog.action == action)
         .count()
         for action in STAFF_NOTIFICATION_ACTIONS
     }
     grouped: dict[str, list[CaseReviewLog]] = {"今天": [], "昨天": [], "更早": []}
     for notification in pagination.items:
-        grouped[_notification_group_label(notification.created_at, today)].append(notification)
+        grouped[notification_group_label(notification.created_at, today)].append(notification)
     notification_groups = [(label, grouped[label]) for label in ("今天", "昨天", "更早") if grouped[label]]
     hour = now_beijing.hour
     greeting = "上午好" if 5 <= hour < 12 else "下午好" if hour < 18 else "晚上好"
@@ -748,9 +676,9 @@ def notifications():
 @login_required
 def notifications_read_all():
     """将当前员工的全部未读通知标记为已读。"""
-    _ensure_writer()
+    ensure_writer()
     updated = (
-        _staff_review_notifications_query(current_user.id)
+        staff_review_notifications_query(current_user.id)
         .filter(CaseReviewLog.read_at.is_(None))
         .update({CaseReviewLog.read_at: datetime.now(timezone.utc)}, synchronize_session=False)
     )
@@ -768,8 +696,8 @@ def notifications_read_all():
 @login_required
 def notification_read(log_id: int):
     """点击「查看」：标记单条通知已读并跳转案件详情。"""
-    _ensure_writer()
-    log = _mark_staff_notification_read(log_id)
+    ensure_writer()
+    log = mark_staff_notification_read(log_id)
     if log is None:
         abort(404)
     case = log.case
@@ -789,132 +717,8 @@ def notification_read(log_id: int):
 @login_required
 def notifications_status():
     """员工侧边栏轮询：返回未读案件审核结果数量。"""
-    _ensure_writer()
-    unread = _staff_review_notifications_query(current_user.id).filter(
+    ensure_writer()
+    unread = staff_review_notifications_query(current_user.id).filter(
         CaseReviewLog.read_at.is_(None)
     ).count()
     return jsonify(ok=True, unread=unread)
-
-
-def _render_function_workspace(
-    *,
-    endpoint: str,
-    title: str,
-    document_title: str,
-    page_desc: str,
-    cards: list[dict],
-    allowed: str,
-):
-    """流程/业务占位工作台：独立标题、职责说明与「功能建设中」卡片。"""
-    _ensure_staff_function(allowed)
-    return render_spa_or_full(
-        full_template="staff/function_workspace.html",
-        inner_template="staff/snippets/function_workspace_inner.html",
-        spa_endpoint=endpoint,
-        spa_document_title=document_title,
-        page_title=title,
-        page_desc=page_desc,
-        placeholder_cards=cards,
-    )
-
-
-@staff_bp.route("/process-dashboard")
-@login_required
-def process_dashboard():
-    """流程人员首页：后续承接审核案件跟进。"""
-    return _render_function_workspace(
-        endpoint="staff.process_dashboard",
-        title="流程工作台",
-        document_title="流程工作台 — 琴岳专利管理系统",
-        page_desc="你的职责是审核案件跟进。本页为独立入口，后续将在此接入审核进度与跟进记录。",
-        cards=[
-            {
-                "title": "审核案件跟进",
-                "desc": "查看待审案件、跟进审核意见并回写处理结果。",
-                "endpoint": "staff.process_followup",
-            }
-        ],
-        allowed=User.STAFF_FUNCTION_PROCESS,
-    )
-
-
-@staff_bp.route("/process-followup")
-@login_required
-def process_followup():
-    """流程人员后续入口：审核案件跟进（建设中）。"""
-    return _render_function_workspace(
-        endpoint="staff.process_followup",
-        title="审核案件跟进",
-        document_title="审核案件跟进 — 琴岳专利管理系统",
-        page_desc="后续将在此处理案件审核与跟进，当前仅预留稳定入口。",
-        cards=[
-            {
-                "title": "审核案件跟进",
-                "desc": "审核记录、打回意见与跟进状态将在此集中处理。",
-            }
-        ],
-        allowed=User.STAFF_FUNCTION_PROCESS,
-    )
-
-
-@staff_bp.route("/business-dashboard")
-@login_required
-def business_dashboard():
-    """业务人员首页：后续承接下单与收账。"""
-    return _render_function_workspace(
-        endpoint="staff.business_dashboard",
-        title="业务工作台",
-        document_title="业务工作台 — 琴岳专利管理系统",
-        page_desc="你的职责是下单与收账。本页为独立入口，后续将在此接入委托下单和收款核对。",
-        cards=[
-            {
-                "title": "下单",
-                "desc": "为客户创建委托并进入后续办理流程。",
-                "endpoint": "staff.business_orders",
-            },
-            {
-                "title": "收账",
-                "desc": "登记与核对客户款项，跟踪未收款。",
-                "endpoint": "staff.business_collections",
-            },
-        ],
-        allowed=User.STAFF_FUNCTION_BUSINESS,
-    )
-
-
-@staff_bp.route("/business-orders")
-@login_required
-def business_orders():
-    """业务人员后续入口：下单（建设中）。"""
-    return _render_function_workspace(
-        endpoint="staff.business_orders",
-        title="下单",
-        document_title="下单 — 琴岳专利管理系统",
-        page_desc="后续将在此创建客户委托订单，当前仅预留稳定入口。",
-        cards=[
-            {
-                "title": "下单",
-                "desc": "客户委托、案件立项与下单确认将在此处理。",
-            }
-        ],
-        allowed=User.STAFF_FUNCTION_BUSINESS,
-    )
-
-
-@staff_bp.route("/business-collections")
-@login_required
-def business_collections():
-    """业务人员后续入口：收账（建设中）。"""
-    return _render_function_workspace(
-        endpoint="staff.business_collections",
-        title="收账",
-        document_title="收账 — 琴岳专利管理系统",
-        page_desc="后续将在此登记与核对收款，当前仅预留稳定入口。",
-        cards=[
-            {
-                "title": "收账",
-                "desc": "收款登记、未收款跟踪与对账将在此处理。",
-            }
-        ],
-        allowed=User.STAFF_FUNCTION_BUSINESS,
-    )
