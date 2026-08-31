@@ -221,6 +221,17 @@ User.role = admin | staff | client
 
 上线时：**不需要跑迁移，不需要改模板或 Nginx**，`git pull` + 重启服务即可。若用复制而非 `git pull` 部署，确认服务器上的旧 `app/blueprints/staff/routes.py` 一并删掉；即使残留也不会被导入，但留着会误导人。重启后建议点一遍员工工作台、案件详情、消息通知，以及流程/业务账号的占位工作台。
 
+### 缺陷修复
+
+| 修复 | 说明 |
+| --- | --- |
+| 标签栏「首页」按职能取 | 原来写死 `/staff/dashboard`，流程/业务人员点固定的首页标签必然 403。改为读服务端注入的 `data-spa-home`（`url_for(current_user.home_endpoint)`） |
+| 标签缓存按账号隔离 | `sessionStorage` 的标签 key 原来只按区域（`qySpaTabs:v1:/staff`），同一浏览器换账号登录会继承上一个人的标签，点开全是无权页面。key 现掺入账号与首页路径，改职能后旧标签也自动失效 |
+| 员工端/客户端 Toast 失效 | `#qyToastContainer` 只写在 `admin/layout.html`，导致员工端与客户端所有 `redirect_with_qy_toast` 提示（上传成功、提交审核等）被静默丢弃。容器已移到 `base.html` 三端共用 |
+| 无权访问不再整页跳错误页 | SPA 请求收到 403 原来 `location.assign` 跳到 403 页，标签栏一起丢失。改为留在当前页、弹权限提示并摘掉该标签 |
+
+服务端跨职能 403 的口径未放宽，仍是硬边界；以上都是前端修复。上线只需 `git pull` + 重启，**注意静态资源版本号由 `create_app()` 计算，必须重启进程**，否则浏览器仍拿旧的 `main.js`。
+
 ### 安全（上线时注意密钥）
 | 更新 | 说明 |
 | --- | --- |

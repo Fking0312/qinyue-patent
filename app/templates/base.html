@@ -89,6 +89,9 @@
   </div>
   {% endif %}
 
+  {# Toast 容器放在 base，管理端/员工端/客户端共用；缺了它 qyShowToast 会静默失效 #}
+  <div id="qyToastContainer" class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1090;"></div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="{{ url_for('static', filename='js/main.js') }}?v={{ static_asset_version }}"></script>
 </body>

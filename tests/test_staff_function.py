@@ -274,6 +274,59 @@ def test_staff_function_login_redirects_and_forbidden_writer_pages():
     assert business_client.get("/staff/case-detail").status_code == 403
 
 
+def test_spa_home_tab_follows_staff_function_and_toast_host_exists():
+    """标签栏「首页」按职能取，标签缓存按账号隔离，Toast 容器各端都在。"""
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        writer = _make_user(
+            username=f"_fn_home_writer_{suffix}",
+            role="staff",
+            staff_function="writer",
+        )
+        process = _make_user(
+            username=f"_fn_home_proc_{suffix}",
+            role="staff",
+            staff_function="process",
+        )
+        business = _make_user(
+            username=f"_fn_home_biz_{suffix}",
+            role="staff",
+            staff_function="business",
+        )
+        admin = _make_user(username=f"_fn_home_admin_{suffix}", role="admin")
+        cases = [
+            (writer.username, "/staff/dashboard", writer.id),
+            (process.username, "/staff/process-dashboard", process.id),
+            (business.username, "/staff/business-dashboard", business.id),
+            (admin.username, "/admin/dashboard", admin.id),
+        ]
+
+    for name, home_path, user_id in cases:
+        http = app.test_client()
+        login = http.post("/auth/login", data={"username": name, "password": "secret"})
+        assert login.status_code == 302
+        assert home_path in login.headers["Location"]
+
+        page = http.get(home_path)
+        assert page.status_code == 200
+        html = page.data.decode("utf-8")
+        # 前端据此渲染固定在最左的「首页」标签；写死 /dashboard 会让流程/业务点出 403。
+        assert f'data-spa-home="{home_path}"' in html
+        # 标签缓存 key 掺入账号，避免同一浏览器换人登录后继承上一个人的标签。
+        assert f'data-spa-scope="{user_id}"' in html
+        # 缺少容器时 qyShowToast 会静默返回，所有操作提示都看不到。
+        assert html.count('id="qyToastContainer"') == 1
+
+    # 流程与业务人员的侧栏不应出现任何撰写师专属链接。
+    for name, own_home, _user_id in cases[1:3]:
+        http = app.test_client()
+        http.post("/auth/login", data={"username": name, "password": "secret"})
+        html = http.get(own_home).data.decode("utf-8")
+        assert 'href="/staff/dashboard"' not in html
+        assert 'href="/staff/task-board"' not in html
+
+
 def test_only_writers_enter_case_assignment_pool():
     app = create_app()
     suffix = uuid4().hex[:8]

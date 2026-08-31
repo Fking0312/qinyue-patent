@@ -701,8 +701,28 @@ if (popupNavGroups.length > 0) {
   const SPA_HEADER = "X-Qy-Spa";
   const spaAreaPrefix = (spaLayout.dataset.spaArea || "").replace(/\/$/, "");
   const tabsScroll = document.querySelector("#qySpaTabsBar .qy-spa-tabs-scroll");
-  const tabStorageKey = `qySpaTabs:v1:${spaAreaPrefix || "/"}`;
-  const homePathname = `${spaAreaPrefix}/dashboard`;
+
+  // 首页标签必须用当前身份的真实首页：员工端撰写师是 /staff/dashboard，
+  // 流程和业务人员分别是 process-dashboard、business-dashboard，写死会 403。
+  const homePathname = (() => {
+    const fallback = `${spaAreaPrefix}/dashboard`;
+    const declared = (spaLayout.dataset.spaHome || "").trim();
+    if (!declared) {
+      return fallback;
+    }
+    try {
+      return new URL(declared, window.location.origin).pathname;
+    } catch {
+      return declared.split("?")[0] || fallback;
+    }
+  })();
+
+  // 标签缓存按「用户 + 首页」隔离。sessionStorage 在同一浏览器会话里是共享的，
+  // 不隔离的话换账号登录会继承上一个人的标签，点开全是无权访问的页面；
+  // 首页入 key 还能让管理员改职能后自动弃用旧标签。
+  const tabStorageKey = `qySpaTabs:v1:${spaAreaPrefix || "/"}:${
+    spaLayout.dataset.spaScope || "anon"
+  }:${homePathname}`;
 
   const isHomeTabHref = (pathQuery) => {
     try {
@@ -1000,8 +1020,13 @@ if (popupNavGroups.length > 0) {
         return;
       }
 
+      // 无权访问：留在当前页面并摘掉该标签。整页跳到 403 页会连标签栏一起丢掉，
+      // 用户还得重新登录式地点回来。
       if (response.status === 403) {
-        window.location.assign(pathQuery);
+        dropSpaTab(tabKeyForPath(pathQuery));
+        if (typeof window.qyShowToast === "function") {
+          window.qyShowToast("你没有访问该页面的权限。", "warning");
+        }
         return;
       }
 
@@ -1074,6 +1099,25 @@ if (popupNavGroups.length > 0) {
       window.clearTimeout(loadingTimer);
       spaBody?.classList.remove("qy-spa-loading");
     }
+  };
+
+  // 只摘掉标签，不做跳转：用于无权访问时清掉残留标签，让用户留在当前页面。
+  const dropSpaTab = (key) => {
+    if (!tabsScroll) {
+      return;
+    }
+    const idx = tabState.tabs.findIndex((t) => t.key === key);
+    if (idx < 0 || isHomeTabHref(tabState.tabs[idx].href)) {
+      return;
+    }
+    tabState.tabs.splice(idx, 1);
+    if (tabState.activeKey === key) {
+      tabState.activeKey = tabKeyForPath(
+        window.location.pathname + window.location.search
+      );
+    }
+    persistTabState();
+    renderSpaTabs();
   };
 
   const closeSpaTab = (key) => {
