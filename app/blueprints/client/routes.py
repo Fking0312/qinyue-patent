@@ -19,10 +19,25 @@ def _ensure_client():
 
 
 def _client_case_query():
-    """构造仅包含当前客户名下案件的查询；未绑定客户时返回空集合。"""
+    """构造仅包含当前客户名下案件的查询；未绑定客户时返回空集合。
+
+    退稿后转为内部案件的不再对客户可见（客户看到的是另行新补的那件）。
+    """
     if current_user.customer_id is None:
         return Case.query.filter(False)
-    return Case.query.join(Case.project).filter_by(customer_id=current_user.customer_id)
+    return (
+        Case.query.join(Case.project)
+        .filter_by(customer_id=current_user.customer_id)
+        .filter(Case.attribution_filter(Case.ATTRIBUTION_CUSTOMER))
+    )
+
+
+def _ensure_client_case_visible(case: Case):
+    """案件必须属于当前客户且不是内部案件；否则 403（挡直接拼 URL 访问）。"""
+    if current_user.customer_id is None or case.project.customer_id != current_user.customer_id:
+        abort(403)
+    if case.is_internal:
+        abort(403)
 
 
 @client_bp.route("/dashboard")
@@ -73,8 +88,7 @@ def case_detail(case_id: int):
     case = db.session.get(Case, case_id)
     if case is None:
         abort(404)
-    if current_user.customer_id is None or case.project.customer_id != current_user.customer_id:
-        abort(403)
+    _ensure_client_case_visible(case)
     task = case.task
     material_version_filter = request.args.get("material_version", "all").strip()
     if material_version_filter not in {"all", "draft", "final"}:
@@ -105,8 +119,7 @@ def case_material_download(case_id: int, material_id: int):
     case = db.session.get(Case, case_id)
     if case is None:
         abort(404)
-    if current_user.customer_id is None or case.project.customer_id != current_user.customer_id:
-        abort(403)
+    _ensure_client_case_visible(case)
     material = db.session.get(CaseMaterial, material_id)
     if material is None or material.case_id != case.id:
         abort(404)
