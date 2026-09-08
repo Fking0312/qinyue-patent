@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block main_class %}container-fluid px-0 staff-main-outer{% endblock %}
+{% block content %}
+<div class="staff-layout d-flex align-items-stretch" id="qy-spa-layout" data-spa-area="/staff/">
+  {% include "staff/_sidebar.html" %}
+  <div class="staff-content flex-grow-1 min-w-0 d-flex flex-column">
+    {% include "partials/spa_tabs_bar.html" %}
+    <div class="staff-spa-body">
+      <div id="qy-spa-main" data-spa-endpoint="{{ request.endpoint }}" data-spa-document-title="{% block spa_document_title %}琴岳专利管理系统{% endblock %}">
+        {% block staff_content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{# 管理端：员工下拉按正式 / 外包分区（仅管理端可见） #}
+{% macro staff_kind_optgroups(formal_users, outsource_users, selected_id=None, empty_label=None) -%}
+  {% if empty_label is not none %}
+  <option value="">{{ empty_label }}</option>
+  {% endif %}
+  {% if formal_users %}
+  <optgroup label="正式员工">
+    {% for u in formal_users %}
+    <option value="{{ u.id }}" {% if selected_id == u.id %}selected{% endif %}>{{ u|qy_user_label }}</option>
+    {% endfor %}
+  </optgroup>
+  {% endif %}
+  {% if outsource_users %}
+  <optgroup label="外包员工">
+    {% for u in outsource_users %}
+    <option value="{{ u.id }}" {% if selected_id == u.id %}selected{% endif %}>{{ u|qy_user_label }}</option>
+    {% endfor %}
+  </optgroup>
+  {% endif %}
+{%- endmacro %}
+
+{% macro staff_kind_badge(user) -%}
+  {% if user and user.role == 'staff' and user.staff_kind_label %}
+  {% if user.staff_kind_normalized == 'outsource' %}
+  <span class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle">{{ user.staff_kind_label }}</span>
+  {% else %}
+  <span class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle">{{ user.staff_kind_label }}</span>
+  {% endif %}
+  {% endif %}
+{%- endmacro %}

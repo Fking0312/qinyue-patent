@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}琴岳科技 — 智联未来 创新无限{% endblock %}
+{% block main_class %}qy-home-main{% endblock %}
+{% block content %}
+<section class="qy-home-landing" aria-label="公司首页">
+  <div class="qy-home-landing__media">
+    <img
+      class="qy-home-landing__img"
+      src="{{ url_for('static', filename='assets/home-hero.png') }}"
+      srcset="{{ url_for('static', filename='assets/home-hero.png') }} 1024w, {{ url_for('static', filename='assets/home-hero@2x.png') }} 2048w"
+      sizes="(max-width: 1024px) 100vw, 1024px"
+      alt="智联未来 创新无限"
+      width="1024"
+      height="546"
+      decoding="async"
+      fetchpriority="high"
+    >
+  </div>
+  <div class="qy-home-landing__actions">
+    <a class="btn btn-lg qy-home-login-btn shadow" href="{{ url_for('auth.login') }}">进入登录</a>
+  </div>
+</section>
+{% endblock %}

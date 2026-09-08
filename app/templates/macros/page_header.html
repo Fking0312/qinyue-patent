@@ -1,0 +1,15 @@
+{% macro page_header(title, subtitle=None, size='h4', extra_class='') -%}
+<header class="qy-page-header d-flex flex-column flex-sm-row flex-sm-wrap align-items-start justify-content-between gap-3 pb-3 mb-3 mb-md-4 border-bottom border-secondary-subtle {{ extra_class }}">
+  <div class="flex-grow-1 min-w-0">
+    <h1 class="{{ size }} mb-0 staff-page-title">{{ title }}</h1>
+    {% if subtitle %}
+    <p class="text-muted small mb-0 mt-1">{{ subtitle }}</p>
+    {% endif %}
+  </div>
+  {% if caller %}
+  <div class="d-flex flex-wrap gap-2 align-self-stretch align-self-sm-center justify-content-stretch justify-content-sm-end">
+    {{ caller() }}
+  </div>
+  {% endif %}
+</header>
+{%- endmacro %}

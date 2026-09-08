@@ -1,0 +1,54 @@
+<div class="staff-page-inner p-3 p-md-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
+      <p class="text-muted mb-0">{{ page_desc }}</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin.project_initiation') }}" data-spa-endpoint="admin.project_initiation">返回项目立项</a>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <form method="post" class="row g-3 qy-project-edit-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-lg-4 col-md-6">
+          <label class="form-label" for="projectEditCustomerInput">归属客户 <span class="text-danger">*</span></label>
+          <select id="projectEditCustomerInput" class="form-select" name="customer_id" required aria-required="true">
+            {% for customer in customers %}
+            <option value="{{ customer.id }}" {% if project.customer_id == customer.id %}selected{% endif %}>{{ customer.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">请选择本项目归属客户。</div>
+        </div>
+        <div class="col-lg-4 col-md-6">
+          <label class="form-label" for="projectEditNameInput">项目名称 <span class="text-danger">*</span></label>
+          <input id="projectEditNameInput" class="form-control" type="text" name="name" required maxlength="200" autocomplete="off" placeholder="必填" value="{{ project.name }}" aria-required="true">
+          <div class="form-text">必填，不超过 200 个字符。</div>
+        </div>
+        <div class="col-lg-4 col-md-6">
+          <label class="form-label" for="projectEditCodeDisplay">项目编码</label>
+          <div id="projectEditCodeDisplay" class="form-control bg-body-tertiary text-muted">{{ project.code or "—" }}</div>
+          <div class="form-text">系统自动生成（年月+当月序号），不可修改。</div>
+        </div>
+        <div class="col-lg-4 col-md-6">
+          <label class="form-label" for="projectEditInitiatedInput">立项时间 <span class="text-danger">*</span></label>
+          <input id="projectEditInitiatedInput" class="form-control" type="datetime-local" name="initiated_at" value="{{ initiated_at_input }}" max="{{ initiated_at_max_input }}" required aria-required="true">
+          <div class="form-text">默认为创建时间，不可晚于当前时间。</div>
+        </div>
+        <div class="col-lg-4 col-md-6">
+          <label class="form-label" for="projectEditDueInput">截止时间</label>
+          <input id="projectEditDueInput" class="form-control" type="datetime-local" name="due_at" value="{{ due_at_input }}">
+          <div class="form-text">选填；留空表示不设截止时间。</div>
+        </div>
+        <div class="col-12">
+          <label class="form-label" for="projectEditDescInput">项目说明</label>
+          <textarea id="projectEditDescInput" class="form-control" name="description" rows="2" maxlength="1000" placeholder="选填">{{ project.description or '' }}</textarea>
+          <div class="form-text">选填，不超过 1000 字。</div>
+        </div>
+        <div class="col-12 d-flex justify-content-end pt-1">
+          <button class="btn btn-primary" type="submit">保存修改</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

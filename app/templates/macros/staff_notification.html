@@ -1,0 +1,89 @@
+{% macro staff_notification_filters(status_filter, type_filter, unread_count, actionable_count, action_counts) -%}
+<div class="d-flex flex-wrap align-items-center gap-2">
+  <div class="qy-notification-filter-tabs" role="group" aria-label="通知状态筛选">
+    <a class="{% if status_filter == 'all' %}is-active{% endif %}" href="{{ url_for('staff.notifications', status='all', type=type_filter) }}" data-spa-endpoint="staff.notifications">全部</a>
+    <a class="{% if status_filter == 'actionable' %}is-active{% endif %}" href="{{ url_for('staff.notifications', status='actionable', type=type_filter) }}" data-spa-endpoint="staff.notifications">
+      待处理{% if actionable_count %}<span>{{ actionable_count }}</span>{% endif %}
+    </a>
+    <a class="{% if status_filter == 'unread' %}is-active{% endif %}" href="{{ url_for('staff.notifications', status='unread', type=type_filter) }}" data-spa-endpoint="staff.notifications">
+      未读{% if unread_count %}<span>{{ unread_count }}</span>{% endif %}
+    </a>
+  </div>
+  <div class="dropdown">
+    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+      {% if type_filter == 'assigned' %}案件分配{% elif type_filter == 'approve' %}审核通过{% elif type_filter == 'reject' %}审核打回{% else %}全部类型{% endif %}
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end">
+      <li><a class="dropdown-item {% if type_filter == 'all' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='all') }}" data-spa-endpoint="staff.notifications">全部类型</a></li>
+      <li><a class="dropdown-item {% if type_filter == 'assigned' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='assigned') }}" data-spa-endpoint="staff.notifications">案件分配 <span class="text-muted ms-1">{{ action_counts.assigned }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'approve' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='approve') }}" data-spa-endpoint="staff.notifications">审核通过 <span class="text-muted ms-1">{{ action_counts.approve }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'reject' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='reject') }}" data-spa-endpoint="staff.notifications">审核打回 <span class="text-muted ms-1">{{ action_counts.reject }}</span></a></li>
+    </ul>
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro staff_notification_item(notification, current_user) -%}
+  {% if notification.action == "assigned" %}
+    {% set tone = "primary" %}{% set icon = "folder" %}{% set label = "新案件已分配" %}
+  {% elif notification.action == "approve" %}
+    {% set tone = "success" %}{% set icon = "check" %}{% set label = "案件审核已通过" %}
+  {% else %}
+    {% set tone = "danger" %}{% set icon = "alert" %}{% set label = "案件审核被打回" %}
+  {% endif %}
+  {% set can_open = notification.case.task and notification.case.task.assignee_id == current_user.id %}
+  {% set open_href = url_for('staff.notification_read', log_id=notification.id) %}
+  {% if can_open %}
+  <a
+    class="list-group-item list-group-item-action qy-notification-item qy-notification-item--clickable qy-notification-item--{{ tone }} {% if notification.read_at %}qy-notification-item--read{% else %}qy-notification-item--unread{% endif %}"
+    href="{{ open_href }}"
+    aria-label="{{ label }}：{{ notification.case.title }}，点击查看"
+  >
+  {% else %}
+  <div class="list-group-item qy-notification-item qy-notification-item--{{ tone }} {% if notification.read_at %}qy-notification-item--read{% else %}qy-notification-item--unread{% endif %}">
+  {% endif %}
+    <div class="d-flex align-items-start gap-3">
+      <span class="qy-notification-dot qy-notification-dot--{{ tone }}" aria-hidden="true">
+        {% if icon == "folder" %}
+        <svg viewBox="0 0 24 24" fill="none"><path d="M3.5 6.5h6l2 2h9v9.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        {% elif icon == "check" %}
+        <svg viewBox="0 0 24 24" fill="none"><path d="m6 12.5 4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        {% else %}
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5M12 17h.01M10.3 4.8 3.4 17a2 2 0 0 0 1.7 3h13.8a2 2 0 0 0 1.7-3L13.7 4.8a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        {% endif %}
+      </span>
+      <div class="flex-grow-1 min-w-0">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span class="qy-notification-kicker qy-notification-kicker--{{ tone }}">{{ label }}</span>
+          {% if not notification.read_at %}<span class="qy-notification-new-dot" title="未读"></span>{% endif %}
+        </div>
+        <div class="fw-semibold qy-notification-title mt-1">{{ notification.case.title }}</div>
+        {% if notification.action == "assigned" %}
+        <div class="small text-body-secondary mt-1">您好，新的案件已由管理员分配给您，请及时查看案件要求与返稿期限。</div>
+        {% elif notification.action == "approve" %}
+        <div class="small text-success-emphasis mt-1">您的撰写材料已通过审核，案件现已进入待递交阶段。</div>
+        {% else %}
+        <div class="small text-danger-emphasis mt-1"><span class="fw-semibold">打回原因：</span>{{ notification.note or "管理员未填写打回原因" }}</div>
+        {% endif %}
+        <div class="qy-notification-meta mt-2">
+          <span>{{ notification.case.application_no }}</span>
+          {% if notification.case.project and notification.case.project.customer %}<span>{{ notification.case.project.customer.name }}</span>{% endif %}
+          {% if notification.case.task and notification.case.task|effective_task_due %}<span>返稿 {{ notification.case.task|effective_task_due|qy_format_dt }}</span>{% endif %}
+          <span data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="{{ notification.created_at|qy_format_dt }}">{{ notification.created_at|qy_relative_dt }}</span>
+          {% if notification.operator %}<span>操作人 {{ notification.operator|qy_user_label }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="flex-shrink-0 qy-notification-item__action">
+        {% if can_open %}
+        <span class="btn btn-sm btn-outline-{{ tone }}">{% if notification.action == "reject" %}立即修改{% else %}查看案件{% endif %}</span>
+        {% else %}
+        <span class="badge rounded-pill text-bg-secondary">已转派</span>
+        {% endif %}
+      </div>
+    </div>
+  {% if can_open %}
+  </a>
+  {% else %}
+  </div>
+  {% endif %}
+{%- endmacro %}

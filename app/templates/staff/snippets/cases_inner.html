@@ -1,0 +1,134 @@
+{% from "macros/case_type.html" import case_type_badges %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+<div class="staff-page-inner px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  {% call page_header(page_title, size='h4') %}
+    <span class="badge rounded-pill text-bg-primary align-self-center">{{ pagination.total }} 件</span>
+  {% endcall %}
+
+  <section class="card border-0 shadow-sm qy-admin-filter-card mb-4" aria-labelledby="staff-cases-filter-title">
+    <div class="card-body p-3">
+      <h2 id="staff-cases-filter-title" class="h6 mb-3">筛选案件</h2>
+      <form method="get" action="{{ url_for('staff.case_detail') }}" class="row g-2 align-items-end">
+        <div class="col-12 col-md-6">
+          <label class="form-label mb-1" for="staffCaseKeyword">关键词</label>
+          <input
+            id="staffCaseKeyword"
+            class="form-control"
+            type="text"
+            name="q"
+            value="{{ q }}"
+            maxlength="200"
+            placeholder="按案件标题、序列号或申请号搜索"
+          >
+        </div>
+        <div class="col-8 col-md-3">
+          <label class="form-label mb-1" for="staffCaseType">案件类型</label>
+          <select id="staffCaseType" class="form-select" name="case_type_primary">
+            <option value="">全部类型</option>
+            {% for value, label in case_type_primary_options %}
+            <option value="{{ value }}" {% if case_type_primary == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-4 col-md-auto">
+          <button class="btn btn-primary w-100" type="submit">查询</button>
+        </div>
+        <div class="col-12 col-md-auto">
+          <a class="btn btn-outline-secondary w-100" href="{{ url_for('staff.case_detail') }}" data-spa-endpoint="staff.case_detail">重置</a>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  {% if cases %}
+  <section class="card border-0 shadow-sm" aria-labelledby="staff-cases-list-title">
+    <div class="card-header bg-transparent py-3">
+      <h2 id="staff-cases-list-title" class="h6 mb-0">分配给我的案件</h2>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive qy-cases-table-wrap">
+        <table class="table table-hover table-striped align-middle mb-0 qy-data-table qy-staff-cases-table">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">案件标题</th>
+              <th scope="col">序列号</th>
+              <th scope="col">案件类型</th>
+              <th scope="col">备注</th>
+              <th scope="col">状态</th>
+              <th scope="col">应返稿时间</th>
+              <th scope="col">实际返稿时间</th>
+              <th scope="col" class="qy-staff-actions-col">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for case_item in cases %}
+            <tr class="{{ case_item.task|qy_task_urgency_row_class }}">
+              <td class="qy-case-title-cell">
+                <span
+                  class="qy-case-title-text"
+                  tabindex="0"
+                  data-bs-toggle="tooltip"
+                  data-bs-placement="top"
+                  data-bs-custom-class="qy-case-note-tooltip"
+                  data-bs-title="{{ case_item.title }}"
+                >{{ case_item.title }}</span>
+              </td>
+              <td class="text-nowrap small">{{ case_item.application_no }}</td>
+              <td class="qy-case-type-cell">{{ case_type_badges(case_item) }}</td>
+              <td class="qy-case-note-cell">
+                {% if case_item.case_note %}
+                <span
+                  class="qy-case-note-preview"
+                  tabindex="0"
+                  data-bs-toggle="tooltip"
+                  data-bs-placement="top"
+                  data-bs-custom-class="qy-case-note-tooltip"
+                  data-bs-title="{{ case_item.case_note }}"
+                >{{ case_item.case_note }}</span>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td class="text-nowrap">{{ task_phase_badge(case_item.task.phase_status if case_item.task else '') }}</td>
+              <td class="text-nowrap small {% if case_item.task and case_item.task|qy_task_urgency_row_class == 'qy-row-overdue' %}text-danger fw-semibold{% elif case_item.task and case_item.task|qy_task_urgency_row_class == 'qy-row-due-soon' %}text-warning-emphasis fw-semibold{% endif %}">{{ case_item.expected_return_at|qy_format_dt }}</td>
+              <td class="text-nowrap small">{{ case_item.actual_return_at|qy_format_dt }}</td>
+              <td class="qy-staff-actions-col">
+                <a
+                  class="btn btn-sm btn-outline-primary"
+                  href="{{ url_for('staff.case_detail_by_id', case_id=case_item.id) }}"
+                  data-spa-endpoint="staff.case_detail_by_id"
+                >详情</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {% if pagination.pages > 1 %}
+  <nav class="mt-3" aria-label="案件列表分页">
+    <ul class="pagination pagination-sm justify-content-center mb-0">
+      {% if pagination.has_prev %}
+      <li class="page-item">
+        <a class="page-link" href="{{ url_for('staff.case_detail', page=pagination.prev_num, q=q, case_type_primary=case_type_primary) }}" data-spa-endpoint="staff.case_detail">上一页</a>
+      </li>
+      {% endif %}
+      <li class="page-item disabled"><span class="page-link">第 {{ pagination.page }} / {{ pagination.pages }} 页</span></li>
+      {% if pagination.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="{{ url_for('staff.case_detail', page=pagination.next_num, q=q, case_type_primary=case_type_primary) }}" data-spa-endpoint="staff.case_detail">下一页</a>
+      </li>
+      {% endif %}
+    </ul>
+  </nav>
+  {% endif %}
+  {% else %}
+  {% call empty_state("暂无分配给你的案件", "管理员分配案件后，将在此显示并可查看详情。", icon="folder") %}
+    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.task_board') }}" data-spa-endpoint="staff.task_board">去任务看板</a>
+  {% endcall %}
+  {% endif %}
+</div>

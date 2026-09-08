@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}登录{% endblock %}
+{% block main_class %}qy-login-main{% endblock %}
+{% block content %}
+<div class="qy-login-shell">
+  <aside class="qy-login-brand-panel" aria-hidden="false">
+    <div class="qy-login-brand-panel-inner">
+      <div class="qy-login-brand-lockup">
+        <span class="qy-login-brand-logo-wrap">
+          <img
+            src="{{ url_for('static', filename='assets/logo.png') }}"
+            alt="琴岳 Logo"
+            class="qy-login-brand-logo"
+          >
+        </span>
+        <span class="qy-login-brand-name">
+          <strong>琴岳知识产权</strong>
+          <small>QINYUE IP MANAGEMENT</small>
+        </span>
+      </div>
+      <p class="qy-login-brand-eyebrow">智慧案件协同平台</p>
+      <h1 class="qy-login-brand-title">让每一个案件进度<br><span>都清晰可见</span></h1>
+      <p class="qy-login-brand-tagline">从立案到交付，集中管理案件、材料、审核与期限，让团队协作更高效。</p>
+      <ul class="qy-login-brand-features">
+        <li>
+          <span class="qy-login-feature-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 5.5h16v13H4zM8 3v5M16 3v5M4 9.5h16M8 13h3M8 16h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span><strong>期限尽在掌握</strong><small>智能预警，关键节点不遗漏</small></span>
+        </li>
+        <li>
+          <span class="qy-login-feature-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M7 3.5h7l4 4v13H7zM14 3.5v4h4M10 12h5M10 15.5h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span><strong>材料规范有序</strong><small>版本集中管理，审核全程留痕</small></span>
+        </li>
+        <li>
+          <span class="qy-login-feature-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M8.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM15.5 12a3 3 0 1 0 0-6M3 20a5.5 5.5 0 0 1 11 0M14 15.5a4.5 4.5 0 0 1 7 3.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </span>
+          <span><strong>多角色高效协同</strong><small>企业、员工与客户无缝连接</small></span>
+        </li>
+      </ul>
+    </div>
+  </aside>
+  <section class="qy-login-form-panel">
+    <div class="qy-login-form-wrap">
+      <div class="card login-card border-0">
+        <div class="card-body p-4 p-md-5">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                  {{ message }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+          <div class="mb-4 login-brand">
+            <h2 class="h4 mb-1">欢迎登录</h2>
+            <p class="text-muted mb-0">使用管理员分发的账号进入工作台</p>
+          </div>
+          <form method="post" class="login-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+              <label for="username" class="form-label">用户名/手机号</label>
+              <input type="text" class="form-control" id="username" name="username" required autocomplete="username">
+            </div>
+            <div class="mb-4">
+              <label for="password" class="form-label">密码</label>
+              <div class="input-group">
+                <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
+                <button
+                  class="btn btn-outline-secondary password-toggle-btn"
+                  type="button"
+                  id="togglePassword"
+                  aria-label="显示密码"
+                  aria-controls="password"
+                >
+                  <svg class="password-icon password-icon-show" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M1.5 12S5.5 5.5 12 5.5 22.5 12 22.5 12 18.5 18.5 12 18.5 1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+                  </svg>
+                  <svg class="password-icon password-icon-hide d-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M3 3L21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M9.9 5.9C10.57 5.64 11.28 5.5 12 5.5C18.5 5.5 22.5 12 22.5 12C21.89 12.98 21.14 13.86 20.27 14.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M6.13 8.12C3.84 9.9 2.36 12 1.5 12C1.5 12 5.5 18.5 12 18.5C13.66 18.5 15.14 18.08 16.45 17.44" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">登录</button>
+            <p class="text-center mt-3 mb-0 text-muted small">当前版本暂不开放自助注册，请联系管理员分发账号。</p>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

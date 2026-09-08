@@ -1,0 +1,291 @@
+{% from "admin/macros/staff_kind.html" import staff_kind_badge %}
+{% from "macros/case_type.html" import case_type_badges %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+<div class="staff-page-inner staff-page-inner--admin qy-admin-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  {% call page_header(page_title, page_desc, extra_class='qy-admin-page-header') %}
+    <a class="btn btn-outline-secondary flex-shrink-0" href="{{ url_for('admin.project_initiation') }}" data-spa-endpoint="admin.project_initiation">项目立项</a>
+    <a class="btn btn-primary flex-shrink-0" href="{{ url_for('admin.case_create') }}" data-spa-endpoint="admin.case_create">新建案件</a>
+  {% endcall %}
+
+  {% if filtered_customer and not filtered_project %}
+  <div class="alert alert-light border shadow-sm py-2 px-3 mb-3 mb-md-4 d-flex flex-column flex-sm-row flex-wrap align-items-sm-center justify-content-between gap-2" role="status">
+    <span class="small mb-0">
+      当前筛选客户：<span class="fw-semibold text-body">{{ filtered_customer.name }}</span>
+    </span>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.cases') }}" data-spa-endpoint="admin.cases">查看全部案件</a>
+  </div>
+  {% endif %}
+  {% if filtered_project %}
+  <div class="alert alert-light border shadow-sm py-2 px-3 mb-3 mb-md-4 d-flex flex-column flex-sm-row flex-wrap align-items-sm-center justify-content-between gap-2" role="status">
+    <span class="small mb-0">
+      当前筛选：<span class="fw-semibold text-body">{{ filtered_project.name }}</span>
+      <span class="text-muted">（{{ filtered_project.customer.name if filtered_project.customer else "—" }}）</span>
+    </span>
+    <span class="d-flex flex-wrap gap-2">
+      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.project_detail', project_id=filtered_project.id) }}" data-spa-endpoint="admin.project_detail">项目详情</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.cases') }}" data-spa-endpoint="admin.cases">查看全部案件</a>
+    </span>
+  </div>
+  {% endif %}
+  {% if (created_year and created_month) or (actual_return_year and actual_return_month) %}
+  <div class="alert alert-info border py-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2" role="status">
+    {% if actual_return_year and actual_return_month %}
+    <span class="small mb-0">实际返稿月份：<strong>{{ actual_return_year }} 年 {{ actual_return_month }} 月</strong></span>
+    {% else %}
+    <span class="small mb-0">创建月份：<strong>{{ created_year }} 年 {{ created_month }} 月</strong></span>
+    {% endif %}
+    <a
+      class="btn btn-sm btn-outline-primary"
+      href="{{ url_for('admin.cases', case_type_primary=case_type_primary) }}"
+      data-spa-endpoint="admin.cases"
+    >清除月份筛选</a>
+  </div>
+  {% endif %}
+
+  <section class="qy-admin-section qy-admin-section--filter mb-3 mb-md-4" aria-labelledby="qy-cases-filter-heading">
+    <h2 id="qy-cases-filter-heading" class="h6 text-secondary mb-2">筛选条件</h2>
+    <div class="card border-0 shadow-sm qy-admin-filter-card">
+      <div class="card-body p-3 p-md-4">
+        <form id="qy-cases-filter-form" method="get" action="{{ url_for('admin.cases') }}" class="qy-cases-filter-form">
+          {% if created_year and created_month %}
+          <input type="hidden" name="created_year" value="{{ created_year }}">
+          <input type="hidden" name="created_month" value="{{ created_month }}">
+          {% elif actual_return_year and actual_return_month %}
+          <input type="hidden" name="actual_return_year" value="{{ actual_return_year }}">
+          <input type="hidden" name="actual_return_month" value="{{ actual_return_month }}">
+          {% endif %}
+          <div class="row g-2 g-lg-3 align-items-end">
+            <div class="col-md-6 col-lg-4">
+              <label class="form-label mb-1" for="caseSearchInput">关键词</label>
+              <input id="caseSearchInput" class="form-control" type="text" name="q" value="{{ q }}" maxlength="200" placeholder="按案件标题、序列号或申请号搜索" autocomplete="off">
+            </div>
+            <div class="col-md-6 col-lg-2">
+              <label class="form-label mb-1" for="caseCustomerFilter">所属客户</label>
+              <select id="caseCustomerFilter" class="form-select" name="customer_id">
+                <option value="">全部客户</option>
+                {% for customer in customers %}
+                <option value="{{ customer.id }}" {% if customer_id_filter == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-2">
+              <label class="form-label mb-1" for="caseProjectFilter">所属项目</label>
+              <select id="caseProjectFilter" class="form-select" name="project_id">
+                <option value="">全部项目</option>
+                {% for project in projects %}
+                <option value="{{ project.id }}" {% if project_id_filter == project.id|string %}selected{% endif %}>{{ project.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-2">
+              <label class="form-label mb-1" for="caseTypePrimaryFilter">案件类型</label>
+              <select id="caseTypePrimaryFilter" class="form-select" name="case_type_primary">
+                <option value="">全部类型</option>
+                {% for value, label in case_type_primary_options %}
+                <option value="{{ value }}" {% if case_type_primary == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 col-lg-2">
+              <label class="form-label mb-1" for="caseAssigneeFilter">指派状态</label>
+              <select id="caseAssigneeFilter" class="form-select" name="assignee">
+                <option value="">全部</option>
+                <option value="unassigned" {% if assignee_filter == "unassigned" %}selected{% endif %}>未分配</option>
+                <option value="assigned" {% if assignee_filter == "assigned" %}selected{% endif %}>已分配</option>
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 g-lg-3 align-items-end qy-cases-filter-form__actions-row">
+            <div class="col-6 col-sm-4 col-lg-2">
+              <label class="form-label mb-1" for="casePerPage">每页项目数</label>
+              <select id="casePerPage" class="form-select" name="per_page">
+                <option value="5" {% if per_page == 5 %}selected{% endif %}>5</option>
+                <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+                <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
+              </select>
+            </div>
+            <div class="col-6 col-sm-8 col-lg-10 d-flex flex-wrap justify-content-end align-items-end gap-2">
+              <a class="btn btn-outline-secondary" href="{{ url_for('admin.cases') }}" data-spa-endpoint="admin.cases">重置</a>
+              <button id="qy-cases-query-btn" class="btn btn-primary" type="submit"><span class="qy-cases-query-label">查询</span></button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <script type="application/json" id="qy-cases-filter-json">{{ filter_url_kwargs | tojson }}</script>
+  <script type="application/json" id="qy-cases-project-options-json">{{ project_filter_options | tojson }}</script>
+  <section
+    id="qy-cases-list-root"
+    class="qy-admin-section qy-admin-section--list"
+    aria-labelledby="qy-cases-list-heading"
+    data-list-base="{{ url_for('admin.cases') }}"
+    data-bulk-delete-url="{{ url_for('admin.cases_bulk_delete') }}"
+  >
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h2 id="qy-cases-list-heading" class="h6 mb-0 fw-semibold text-body">案件列表</h2>
+      {% set pg_total = pagination.pages if pagination.pages > 0 else 1 %}
+      <span class="text-muted small" aria-live="polite">共 {{ cases_total }} 条 · {{ projects_total }} 个项目 · 第 {{ pagination.page }} / {{ pg_total }} 页（本页 {{ page_cases_total }} 条）</span>
+    </div>
+
+    {% if case_groups %}
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body py-2 px-3 px-md-4 d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
+          <label class="form-check mb-0 small fw-semibold text-body">
+            <input class="form-check-input me-1" type="checkbox" id="qy-case-select-all" aria-label="全选本页案件">
+            全选本页案件
+          </label>
+          <div
+            id="qy-cases-bulk-bar"
+            class="qy-bulk-action-bar d-none flex-wrap align-items-center justify-content-end gap-2"
+            role="region"
+            aria-label="案件批量操作"
+          >
+            <span class="small fw-semibold mb-0 text-body" id="qy-cases-bulk-count">已选 0 条</span>
+            <button type="button" class="btn btn-sm btn-danger" id="qy-cases-bulk-delete-btn" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="删除选中的案件及其从属任务、材料与留痕">批量删除</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="qy-cases-bulk-clear-btn" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="取消全部勾选">清除选择</button>
+          </div>
+        </div>
+      </div>
+      {% for group in case_groups %}
+      <div class="card border-0 shadow-sm qy-case-group mb-3 mb-md-4">
+        <div class="card-header bg-transparent border-bottom py-2 px-3 px-md-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div class="min-w-0">
+            <span class="fw-semibold text-body">所属项目：</span>
+            {% if group.project %}
+            <a class="fw-semibold link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{{ url_for('admin.project_detail', project_id=group.project.id) }}" data-spa-endpoint="admin.project_detail">{{ group.project.name }}</a>
+            {% else %}
+            <span class="fw-semibold text-body">—</span>
+            {% endif %}
+            <span class="d-block d-sm-inline text-muted small mt-1 mt-sm-0 ms-sm-3">客户：{{ group.project.customer.name if group.project and group.project.customer else "—" }}</span>
+          </div>
+          <span class="badge rounded-pill text-bg-secondary">{{ group.cases|length }} 件</span>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive qy-cases-table-wrap">
+            <table class="table table-sm table-hover table-striped align-middle mb-0 qy-data-table qy-cases-table">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col" class="text-center" style="width: 2.5rem;">选择</th>
+                  <th scope="col">案件标题</th>
+                  <th scope="col">序列号</th>
+                  <th scope="col">案件类型</th>
+                  <th scope="col">状态</th>
+                  <th scope="col">备注</th>
+                  <th scope="col">指派员工</th>
+                  <th scope="col">应返稿时间</th>
+                  <th scope="col" class="text-end text-nowrap">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for case_item in group.cases %}
+                <tr class="{{ case_item.task|qy_task_urgency_row_class }}">
+                  <td class="text-center">
+                    <input class="form-check-input qy-case-cb" type="checkbox" value="{{ case_item.id }}" aria-label="选择案件 {{ case_item.title }}">
+                  </td>
+                  <td class="qy-case-title-cell">
+                    <span class="qy-case-title-text">{{ case_item.title }}</span>
+                  </td>
+                  <td class="text-muted small text-nowrap">{{ case_item.application_no }}</td>
+                  <td class="qy-case-type-cell">{{ case_type_badges(case_item) }}</td>
+                  <td class="text-nowrap">{{ task_phase_badge(case_item.task.phase_status if case_item.task else '') }}</td>
+                  <td class="qy-case-note-cell">
+                    {% if case_item.case_note %}
+                    <span
+                      class="qy-case-note-preview"
+                      tabindex="0"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      data-bs-custom-class="qy-case-note-tooltip"
+                      data-bs-title="{{ case_item.case_note }}"
+                    >{{ case_item.case_note }}</span>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-nowrap small">
+                    {% if case_item.business_owner_user %}
+                    <span>{{ case_item.business_owner_user|qy_user_label }}</span>
+                    {{ staff_kind_badge(case_item.business_owner_user) }}
+                    {% else %}
+                    <span class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle">未分配</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-nowrap small {% if case_item.task and case_item.task|qy_task_urgency_row_class == 'qy-row-overdue' %}text-danger fw-semibold{% elif case_item.task and case_item.task|qy_task_urgency_row_class == 'qy-row-due-soon' %}text-warning-emphasis fw-semibold{% endif %}">{{ case_item.expected_return_at|qy_format_dt }}</td>
+                  <td class="text-end">
+                    <div class="d-inline-flex gap-1 justify-content-end flex-wrap" role="group" aria-label="操作">
+                      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.case_detail', case_id=case_item.id) }}" data-spa-endpoint="admin.case_detail">详情</a>
+                      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.case_edit', case_id=case_item.id) }}" data-spa-endpoint="admin.case_edit">编辑</a>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      {% if pagination.pages > 1 %}
+      <nav aria-label="案件列表分页" class="mt-3">
+        <ul class="pagination pagination-sm justify-content-center flex-wrap mb-0">
+          {% if pagination.has_prev %}
+          <li class="page-item">
+            <a class="page-link" href="{{ url_for('admin.cases', page=pagination.prev_num, **filter_url_kwargs) }}" data-spa-endpoint="admin.cases">上一页</a>
+          </li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">上一页</span></li>
+          {% endif %}
+          {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if p %}
+              <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                {% if p == pagination.page %}
+                <span class="page-link">{{ p }}</span>
+                {% else %}
+                <a class="page-link" href="{{ url_for('admin.cases', page=p, **filter_url_kwargs) }}" data-spa-endpoint="admin.cases">{{ p }}</a>
+                {% endif %}
+              </li>
+            {% else %}
+              <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+          {% endfor %}
+          {% if pagination.has_next %}
+          <li class="page-item">
+            <a class="page-link" href="{{ url_for('admin.cases', page=pagination.next_num, **filter_url_kwargs) }}" data-spa-endpoint="admin.cases">下一页</a>
+          </li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">下一页</span></li>
+          {% endif %}
+        </ul>
+      </nav>
+      {% endif %}
+    {% else %}
+      {% call empty_state("暂无案件数据", "调整筛选条件，或点击「新建案件」录入新案件。", icon="folder") %}
+        <a class="btn btn-sm btn-primary" href="{{ url_for('admin.case_create') }}" data-spa-endpoint="admin.case_create">新建案件</a>
+      {% endcall %}
+    {% endif %}
+  </section>
+
+  <div class="modal fade" id="qyCaseBulkDeleteModal" tabindex="-1" aria-labelledby="qyCaseBulkDeleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="qyCaseBulkDeleteModalLabel">确认批量删除</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2" id="qy-case-bulk-delete-msg">将删除选中的案件，并同步删除其任务、审核记录、材料记录、下载留痕与已上传文件。此操作不可撤销。</p>
+          <p class="small text-danger mb-0 fw-semibold" id="qy-case-bulk-delete-summary" aria-live="polite"></p>
+        </div>
+        <div class="modal-footer flex-column flex-sm-row gap-2">
+          <button type="button" class="btn btn-outline-secondary order-2 order-sm-1" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-danger order-1 order-sm-2 ms-sm-auto" id="qy-case-bulk-delete-confirm" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="不可撤销，请谨慎操作">确认删除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

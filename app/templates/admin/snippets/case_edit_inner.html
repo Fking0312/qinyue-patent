@@ -1,0 +1,123 @@
+{% from "admin/macros/staff_kind.html" import staff_kind_optgroups %}
+{% from "macros/case_type.html" import case_type_selector %}
+<div class="staff-page-inner p-3 p-md-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
+      <p class="text-muted mb-0">{{ page_desc }}</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin.case_detail', case_id=case.id) }}" data-spa-endpoint="admin.case_detail">返回案件详情</a>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-4">
+          <label class="form-label mb-1" for="caseEditProjectInput">所属项目</label>
+          <select id="caseEditProjectInput" class="form-select" name="project_id" required>
+            {% for project in projects %}
+            <option value="{{ project.id }}" {% if case.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label mb-1" for="caseEditTitleInput">案件标题</label>
+          <input id="caseEditTitleInput" class="form-control" type="text" name="title" required maxlength="200" value="{{ case.title }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label mb-1">序列号</label>
+          <div class="form-control bg-body-tertiary text-muted">{{ case.application_no }}</div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label mb-1" for="caseEditPatentApplicationNoInput">申请号</label>
+          <input id="caseEditPatentApplicationNoInput" class="form-control" type="text" name="patent_application_no" maxlength="100" value="{{ case.patent_application_no or '' }}" placeholder="选填，可后续补填">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label mb-1" for="caseEditFormalStatusInput">形式状态</label>
+          <input id="caseEditFormalStatusInput" class="form-control" type="text" name="formal_status" maxlength="80" value="{{ case.formal_status or '' }}">
+        </div>
+        <div class="col-12">
+          <label class="form-label mb-2">案件类型</label>
+          {{ case_type_selector(case_type_config, case_type_selected) }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label mb-1" for="caseEditBusinessOwnerInput">指派员工</label>
+          <select id="caseEditBusinessOwnerInput" class="form-select" name="business_owner_id">
+            {{ staff_kind_optgroups(staff_users_formal, staff_users_outsource, selected_id=case.business_owner_id, empty_label="未分配（待派单）") }}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label mb-1" for="caseEditOrderAtInput">下单时间</label>
+          <input id="caseEditOrderAtInput" class="form-control" type="datetime-local" name="order_at" value="{{ order_at_input }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label mb-1" for="caseEditExpectedReturnAtInput">应返稿时间</label>
+          <input id="caseEditExpectedReturnAtInput" class="form-control" type="datetime-local" name="expected_return_at" value="{{ expected_return_at_input }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label mb-1" for="caseEditActualReturnAtInput">实际返稿时间</label>
+          <input id="caseEditActualReturnAtInput" class="form-control" type="datetime-local" name="actual_return_at" value="{{ actual_return_at_input }}">
+          <div class="form-text">状态为「已完成」时必填（或可自动推算）。</div>
+        </div>
+        <div class="col-12">
+          <div class="row g-2 align-items-start">
+            <div class="col-md-6">
+              <label class="form-label mb-1" for="caseEditNoteInput">备注</label>
+              <textarea id="caseEditNoteInput" class="form-control" name="case_note" rows="2" placeholder="可自由填写补充说明、注意事项等">{{ case.case_note or '' }}</textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label mb-1" for="caseEditMaterialUploadPortInput">案件交底材料上传端口</label>
+              <input id="caseEditMaterialUploadPortInput" class="form-control" type="url" name="material_upload_port" maxlength="255" value="{{ case.material_upload_port or '' }}" placeholder="选填，外部网盘/收集表链接">
+            </div>
+            <div class="col-12">
+              <div class="form-text mb-0">填写「案件交底材料上传端口」后，案件详情可一键打开外部材料收集入口（不会自动同步到本系统）。</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="qy-material-upload-panel qy-dropzone">
+            <div class="d-flex align-items-start gap-2 mb-2">
+              <span class="qy-material-upload-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                  <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+                </svg>
+              </span>
+              <div>
+                <label class="form-label fw-semibold mb-0 qy-material-upload-title" for="caseEditAttachmentsInput">上传附件</label>
+                <div class="form-text mb-0">可一次选择多个文件；新增附件会追加到案件材料中，不影响已有材料。</div>
+              </div>
+            </div>
+            <input id="caseEditAttachmentsInput" class="form-control" type="file" name="attachments" multiple>
+            <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽多个文件到此区域，或点击上方选择文件。</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label mb-1" for="caseEditPhaseInput">任务状态</label>
+          <select id="caseEditPhaseInput" class="form-select" name="phase_status">
+            {% for phase in phase_options %}
+            <option value="{{ phase }}" {% if phase == current_phase %}selected{% endif %}>{{ phase|qy_task_phase_label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2 d-grid">
+          <button class="btn btn-primary" type="submit">保存修改</button>
+        </div>
+      </form>
+      <script>
+      (function () {
+        var phase = document.getElementById("caseEditPhaseInput");
+        var actual = document.getElementById("caseEditActualReturnAtInput");
+        if (!phase || !actual) return;
+        function sync() {
+          actual.required = phase.value === "completed" && !actual.value;
+        }
+        phase.addEventListener("change", sync);
+        actual.addEventListener("input", sync);
+        sync();
+      })();
+      </script>
+    </div>
+  </div>
+</div>

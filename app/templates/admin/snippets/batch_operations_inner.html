@@ -1,0 +1,78 @@
+<div class="staff-page-inner staff-page-inner--admin qy-admin-page qy-batch-operations-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  <header class="qy-admin-page-header pb-3 mb-3 mb-md-4 border-bottom border-secondary-subtle">
+    <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
+    <p class="text-muted small mb-0">{{ page_desc }}</p>
+  </header>
+
+  <section class="qy-admin-section mb-4 mb-md-5" aria-labelledby="qy-batch-how-heading">
+    <h2 id="qy-batch-how-heading" class="h6 text-secondary mb-2">如何使用</h2>
+    <div class="alert alert-light border shadow-sm mb-0 py-3" role="note">
+      <p class="small mb-2 mb-md-3">
+        在下列列表页中勾选多条记录后，页面会出现<strong>批量操作条</strong>，可进行导出 Excel、批量删除（符合规则时）等操作；删除类操作需二次确认。
+      </p>
+      <ul class="small mb-0 ps-3">
+        <li class="mb-1"><strong>客户档案</strong>：仅允许删除<strong>无关联项目</strong>的客户；已绑定项目的记录会跳过并提示原因。</li>
+        <li class="mb-1"><strong>项目立项</strong>：仅允许删除<strong>无关联案件</strong>的项目。</li>
+        <li><strong>案件列表</strong>：当前以「按项目分组」展示，便于检索；案件维度的批量改派、批量改期等功能将在后续版本接入。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="qy-admin-section mb-4" aria-labelledby="qy-batch-entry-heading">
+    <h2 id="qy-batch-entry-heading" class="h6 text-secondary mb-3">入口：带批量能力的列表</h2>
+    <div class="row g-3">
+      <div class="col-12 col-md-6 col-xl-4">
+        <div class="card border-0 shadow-sm h-100 qy-batch-hub-card position-relative">
+          <div class="card-body d-flex flex-column p-3 p-md-4">
+            <h3 class="h6 fw-semibold mb-2">客户档案</h3>
+            <p class="text-muted small flex-grow-1 mb-3">
+              勾选客户 → <span class="text-body">批量删除</span>、<span class="text-body">导出 Excel</span>。
+            </p>
+            <a class="btn btn-primary stretched-link text-decoration-none position-relative" href="{{ url_for('admin.customers') }}" data-spa-endpoint="admin.customers">
+              前往客户档案
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-xl-4">
+        <div class="card border-0 shadow-sm h-100 qy-batch-hub-card position-relative">
+          <div class="card-body d-flex flex-column p-3 p-md-4">
+            <h3 class="h6 fw-semibold mb-2">项目立项</h3>
+            <p class="text-muted small flex-grow-1 mb-3">
+              勾选项目 → <span class="text-body">批量删除</span>、<span class="text-body">导出 Excel</span>。
+            </p>
+            <a class="btn btn-primary stretched-link text-decoration-none position-relative" href="{{ url_for('admin.project_initiation') }}" data-spa-endpoint="admin.project_initiation">
+              前往项目立项
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-xl-4">
+        <div class="card border-0 shadow-sm h-100 qy-batch-hub-card position-relative">
+          <div class="card-body d-flex flex-column p-3 p-md-4">
+            <h3 class="h6 fw-semibold mb-2">案件列表</h3>
+            <p class="text-muted small flex-grow-1 mb-3">
+              按所属项目分条浏览全部案件；筛选关键词支持标题、序列号与申请号。
+            </p>
+            <a class="btn btn-outline-primary stretched-link text-decoration-none position-relative" href="{{ url_for('admin.cases') }}" data-spa-endpoint="admin.cases">
+              前往案件列表
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="qy-admin-section" aria-labelledby="qy-batch-roadmap-heading">
+    <h2 id="qy-batch-roadmap-heading" class="h6 text-secondary mb-2">后续规划（本页占位说明）</h2>
+    <div class="card border-0 shadow-sm border-secondary-subtle">
+      <div class="card-body p-3 p-md-4">
+        <ul class="small text-muted mb-0 ps-3">
+          <li class="mb-2">多案件<strong>批量改派</strong>业务负责人、<strong>批量调整</strong>应返稿 / 官方期限等（对接任务与日历）。</li>
+          <li class="mb-2">与客户维度<strong>批量立项</strong>、模板导入等打通。</li>
+          <li class="mb-0">操作审计与导出记录。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>

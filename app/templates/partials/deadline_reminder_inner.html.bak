@@ -1,0 +1,73 @@
+{% if reminder_page_title %}
+<div class="staff-page-inner p-3 p-md-4">
+  <h1 class="h4 mb-2 staff-page-title">{{ reminder_page_title }}</h1>
+  <p class="text-muted mb-4">已超期任务会显示在下方并自动标记为超期阶段；临期指截止日在未来 {{ due_soon_days }} 个自然日内、尚未超期的任务。</p>
+{% endif %}
+
+{% if overdue_tasks and overdue_tasks|length > 0 %}
+<div class="alert alert-danger border-0 mb-2 d-flex align-items-start gap-2" role="alert">
+  <span class="fw-semibold">已超期</span>
+  <span class="flex-grow-1">共 {{ overdue_tasks|length }} 件，请尽快处理。</span>
+</div>
+<div class="table-responsive mb-4">
+  <table class="table table-sm table-hover align-middle qy-reminder-table">
+    <thead class="table-light">
+      <tr>
+        <th scope="col">案件</th>
+        <th scope="col">序列号</th>
+        <th scope="col">阶段</th>
+        <th scope="col">截止时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in overdue_tasks %}
+      <tr>
+        <td>{{ task.case.title if task.case else "—" }}</td>
+        <td class="text-nowrap font-monospace small">{{ task.case.application_no if task.case else "—" }}</td>
+        <td>{{ task.phase_status|qy_task_phase_label }}</td>
+        <td class="text-nowrap">{{ task|effective_task_due|qy_format_dt }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if due_soon_tasks and due_soon_tasks|length > 0 %}
+<div class="alert alert-warning border-0 mb-2 d-flex align-items-start gap-2" role="alert">
+  <span class="fw-semibold">临期</span>
+  <span class="flex-grow-1">共 {{ due_soon_tasks|length }} 件将在 {{ due_soon_days }} 天内截止。</span>
+</div>
+<div class="table-responsive mb-4">
+  <table class="table table-sm table-hover align-middle qy-reminder-table">
+    <thead class="table-light">
+      <tr>
+        <th scope="col">案件</th>
+        <th scope="col">序列号</th>
+        <th scope="col">阶段</th>
+        <th scope="col">截止时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in due_soon_tasks %}
+      <tr>
+        <td>{{ task.case.title if task.case else "—" }}</td>
+        <td class="text-nowrap font-monospace small">{{ task.case.application_no if task.case else "—" }}</td>
+        <td>{{ task.phase_status|qy_task_phase_label }}</td>
+        <td class="text-nowrap">{{ task|effective_task_due|qy_format_dt }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if reminder_page_title and (not overdue_tasks or overdue_tasks|length == 0) and (not due_soon_tasks or due_soon_tasks|length == 0) %}
+<p class="text-muted mb-0">当前没有需要关注的超期或临期任务。</p>
+{% elif not reminder_page_title and (not overdue_tasks or overdue_tasks|length == 0) and (not due_soon_tasks or due_soon_tasks|length == 0) %}
+<p class="text-muted small mb-0">暂无超期或临期任务。</p>
+{% endif %}
+
+{% if reminder_page_title %}
+</div>
+{% endif %}

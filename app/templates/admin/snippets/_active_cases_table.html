@@ -1,0 +1,62 @@
+{% set table_rows = group.rows %}
+<div class="table-responsive qy-cases-table-wrap">
+  <table class="table table-sm table-hover table-striped align-middle mb-0 qy-data-table qy-cases-table">
+    <thead class="table-light">
+      <tr>
+        <th scope="col">案件标题</th>
+        <th scope="col">序列号</th>
+        {% if group.kind != "project" %}
+        <th scope="col">项目</th>
+        {% endif %}
+        {% if group.kind == "flat" %}
+        <th scope="col">客户</th>
+        {% endif %}
+        <th scope="col">案件类型</th>
+        <th scope="col">状态</th>
+        <th scope="col">负责员工</th>
+        <th scope="col">截止日期</th>
+        <th scope="col" class="text-end text-nowrap">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in table_rows %}
+      {% set case_item = row.case %}
+      {% set task = row.task %}
+      <tr class="{{ task|qy_task_urgency_row_class }}">
+        <td class="qy-case-title-cell">
+          <span class="qy-case-title-text">{{ case_item.title if case_item else "—" }}</span>
+        </td>
+        <td class="text-muted small text-nowrap">{{ case_item.application_no if case_item else "—" }}</td>
+        {% if group.kind != "project" %}
+        <td class="small">
+          {% if row.project %}
+          <a href="{{ url_for('admin.project_detail', project_id=row.project.id) }}" data-spa-endpoint="admin.project_detail">{{ row.project.name }}</a>
+          {% else %}—{% endif %}
+        </td>
+        {% endif %}
+        {% if group.kind == "flat" %}
+        <td class="small">{{ row.customer.name if row.customer else "—" }}</td>
+        {% endif %}
+        <td class="qy-case-type-cell">{% if case_item %}{{ case_type_badges(case_item) }}{% else %}—{% endif %}</td>
+        <td class="text-nowrap">{{ task_phase_badge(task|qy_effective_task_phase) }}</td>
+        <td class="text-nowrap small">
+          {% if row.staff %}
+          <span>{{ row.staff|qy_user_label }}</span>
+          {{ staff_kind_badge(row.staff) }}
+          {% else %}
+          <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td class="text-nowrap small {% if task and task|qy_task_urgency_row_class == 'qy-row-overdue' %}text-danger fw-semibold{% elif task and task|qy_task_urgency_row_class == 'qy-row-due-soon' %}text-warning-emphasis fw-semibold{% endif %}">
+          {{ row.effective_due_at|qy_format_dt }}
+        </td>
+        <td class="text-end">
+          {% if case_item %}
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.case_detail', case_id=case_item.id) }}" data-spa-endpoint="admin.case_detail">详情</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

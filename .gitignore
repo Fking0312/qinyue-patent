@@ -1,0 +1,12 @@
+.venv/
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+.pytest_cache/
+instance/*.db
+instance/pytest-instance/
+instance/uploads/
+.env
+*.tgz
+*.tar.gz

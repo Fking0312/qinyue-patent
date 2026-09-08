@@ -1,0 +1,15 @@
+{% if dashboard_stat_cards %}
+<section class="qy-dash-stats mb-4" aria-label="工作台概览">
+  {% for card in dashboard_stat_cards %}
+  <a
+    class="qy-dash-stat-card qy-dash-stat-card--{{ card.tone }}"
+    href="{{ url_for(card.endpoint, **card.endpoint_kwargs) }}"
+    data-spa-endpoint="{{ card.endpoint }}"
+  >
+    <div class="qy-dash-stat-label">{{ card.label }}</div>
+    <div class="qy-dash-stat-value">{{ card.value }}</div>
+    <div class="qy-dash-stat-hint">{{ card.hint }}</div>
+  </a>
+  {% endfor %}
+</section>
+{% endif %}

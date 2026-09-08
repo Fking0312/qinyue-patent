@@ -1,0 +1,156 @@
+{% set is_admin = current_user.is_authenticated and current_user.role == 'admin' %}
+{% set board_endpoint = request.endpoint %}
+{% from "admin/macros/staff_kind.html" import staff_kind_optgroups, staff_kind_badge %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+{% set staff_formal = staff_users_formal if staff_users_formal is defined else [] %}
+{% set staff_outsource = staff_users_outsource if staff_users_outsource is defined else [] %}
+<div class="staff-page-inner staff-page-inner--admin qy-admin-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  {% call page_header(page_title, page_desc, extra_class='qy-admin-page-header') %}
+    {% if is_admin %}
+    <a class="btn btn-outline-secondary flex-shrink-0" href="{{ url_for('admin.cases') }}" data-spa-endpoint="admin.cases">案件列表</a>
+    {% endif %}
+  {% endcall %}
+
+  {% set total_active = count_in_progress + count_pending_review + count_overdue %}
+  {% if is_admin %}
+    {% set total_active = total_active + count_pending_assignment %}
+  {% endif %}
+  <section class="qy-board-stats mb-3 mb-md-4" aria-label="任务概览">
+    <a class="qy-board-stat-card qy-board-stat-card--neutral {% if status_filter == 'all' %}is-active{% endif %}"
+       href="{{ url_for(board_endpoint, status='all', sort=sort_by) }}" data-spa-endpoint="{{ board_endpoint }}">
+      <div class="qy-board-stat-label">全部活跃</div>
+      <div class="qy-board-stat-value">{{ total_active }}</div>
+    </a>
+    {% if is_admin %}
+    <a class="qy-board-stat-card qy-board-stat-card--muted {% if status_filter == 'pending_assignment' %}is-active{% endif %}"
+       href="{{ url_for(board_endpoint, status='pending_assignment', sort=sort_by) }}" data-spa-endpoint="{{ board_endpoint }}">
+      <div class="qy-board-stat-label">待分配</div>
+      <div class="qy-board-stat-value">{{ count_pending_assignment }}</div>
+    </a>
+    {% endif %}
+    <a class="qy-board-stat-card qy-board-stat-card--primary {% if status_filter == 'in_progress' %}is-active{% endif %}"
+       href="{{ url_for(board_endpoint, status='in_progress', sort=sort_by) }}" data-spa-endpoint="{{ board_endpoint }}">
+      <div class="qy-board-stat-label">进行中</div>
+      <div class="qy-board-stat-value">{{ count_in_progress }}</div>
+    </a>
+    <a class="qy-board-stat-card qy-board-stat-card--warning {% if status_filter == 'pending_review' %}is-active{% endif %}"
+       href="{{ url_for(board_endpoint, status='pending_review', sort=sort_by) }}" data-spa-endpoint="{{ board_endpoint }}">
+      <div class="qy-board-stat-label">待审核</div>
+      <div class="qy-board-stat-value">{{ count_pending_review }}</div>
+    </a>
+    <a class="qy-board-stat-card qy-board-stat-card--danger {% if status_filter == 'overdue' %}is-active{% endif %}"
+       href="{{ url_for(board_endpoint, status='overdue', sort=sort_by) }}" data-spa-endpoint="{{ board_endpoint }}">
+      <div class="qy-board-stat-label">已超期</div>
+      <div class="qy-board-stat-value">{{ count_overdue }}</div>
+    </a>
+  </section>
+
+  <section class="qy-admin-section qy-admin-section--filter mb-3 mb-md-4" aria-labelledby="qy-task-board-filter-heading">
+    <h2 id="qy-task-board-filter-heading" class="h6 text-secondary mb-2">筛选与排序</h2>
+    <div class="card border-0 shadow-sm qy-admin-filter-card">
+      <div class="card-body p-3 p-md-4">
+        <form id="qy-task-board-filter-form" method="get" action="{{ url_for(board_endpoint) }}" class="row g-2 align-items-end">
+          <div class="col-sm-6 col-lg-4">
+            <label class="form-label mb-1" for="taskBoardStatus">任务状态</label>
+            <select id="taskBoardStatus" class="form-select" name="status">
+              <option value="all" {% if status_filter == 'all' %}selected{% endif %}>全部</option>
+              {% if is_admin %}
+              <option value="pending_assignment" {% if status_filter == 'pending_assignment' %}selected{% endif %}>待分配</option>
+              {% endif %}
+              <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>进行中</option>
+              <option value="pending_review" {% if status_filter == 'pending_review' %}selected{% endif %}>待审核</option>
+              <option value="overdue" {% if status_filter == 'overdue' %}selected{% endif %}>已超期</option>
+            </select>
+          </div>
+          <div class="col-sm-6 col-lg-4">
+            <label class="form-label mb-1" for="taskBoardSort">排序方式</label>
+            <select id="taskBoardSort" class="form-select" name="sort">
+              <option value="deadline" {% if sort_by == 'deadline' %}selected{% endif %}>按截止时间</option>
+              <option value="customer" {% if sort_by == 'customer' %}selected{% endif %}>按客户名称</option>
+            </select>
+          </div>
+          <div class="col-12 col-lg-4 d-flex flex-wrap justify-content-end gap-2 mt-1">
+            <a class="btn btn-outline-secondary" href="{{ url_for(board_endpoint) }}" data-spa-endpoint="{{ board_endpoint }}">重置</a>
+            <button id="qy-task-board-query-btn" class="btn btn-primary" type="submit"><span class="qy-task-board-query-label">查询</span></button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section class="qy-admin-section qy-admin-section--list" aria-labelledby="qy-task-board-list-heading">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <h2 id="qy-task-board-list-heading" class="h6 mb-0 fw-semibold text-body">任务列表</h2>
+      <span class="text-muted small" aria-live="polite">共 {{ task_rows|length }} 条</span>
+    </div>
+
+    {% if task_rows and task_rows|length > 0 %}
+    <div class="card border-0 shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle qy-data-table mb-0">
+          <thead>
+            <tr>
+              <th scope="col">案件 / 序列号</th>
+              <th scope="col">客户 / 项目</th>
+              <th scope="col">状态</th>
+              <th scope="col">承办人</th>
+              <th scope="col">截止时间</th>
+              <th scope="col" class="text-end">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in task_rows %}
+            {% set ph = row.display_phase %}
+            {% set past_due = row.is_past_due %}
+            <tr class="{{ row.task|qy_task_urgency_row_class }}">
+              <td>
+                <div class="fw-semibold text-body">{{ row.case.title if row.case else "—" }}</div>
+                <div class="text-muted small font-monospace">{{ row.case.application_no if row.case else "—" }}</div>
+              </td>
+              <td>
+                <div class="text-body">{{ row.customer.name if row.customer else "—" }}</div>
+                <div class="text-muted small">{{ row.project.name if row.project else "—" }}</div>
+              </td>
+              <td>{{ task_phase_badge(ph) }}</td>
+              <td>
+                {% if row.task and row.task.assignee %}
+                <span class="text-body">{{ row.task.assignee|qy_user_label }}</span>
+                {% if is_admin %}{{ staff_kind_badge(row.task.assignee) }}{% endif %}
+                {% else %}
+                <span class="qy-phase-badge qy-phase-badge--muted">未分配</span>
+                {% endif %}
+              </td>
+              <td class="text-nowrap {% if past_due or ph.startswith('overdue') %}text-danger fw-semibold{% endif %}">
+                {{ row.effective_due_at|qy_format_dt }}
+              </td>
+              <td class="text-end">
+                <div class="d-inline-flex flex-wrap gap-2 justify-content-end align-items-center">
+                  {% if row.case %}
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for(case_detail_endpoint, case_id=row.case.id) }}" data-spa-endpoint="{{ case_detail_endpoint }}">查看详情</a>
+                  {% endif %}
+                  {% if is_admin and row.case %}
+                  <form method="post" action="{{ url_for('admin.case_reassign', case_id=row.case.id) }}" class="d-inline-flex align-items-center" data-qy-ajax="1">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="status" value="{{ status_filter }}">
+                    <input type="hidden" name="sort" value="{{ sort_by }}">
+                    <select name="assignee_id" class="form-select form-select-sm" style="min-width: 140px;" title="转派给员工"
+                            onchange="if (this.form.requestSubmit) { this.form.requestSubmit(); } else { this.form.submit(); }">
+                      {{ staff_kind_optgroups(staff_formal, staff_outsource, selected_id=row.task.assignee_id if row.task else None, empty_label="转派 · 未分配") }}
+                    </select>
+                  </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    {% call empty_state("暂无符合条件的任务", "可调整上方筛选条件后重试。", icon="tasks") %}{% endcall %}
+    {% endif %}
+  </section>
+</div>

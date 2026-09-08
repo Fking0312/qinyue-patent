@@ -1,0 +1,6 @@
+{% extends "client/layout.html" %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block spa_document_title %}{{ page_title }} — 琴岳专利管理系统{% endblock %}
+{% block client_content %}
+{% include "client/snippets/case_detail_inner.html" %}
+{% endblock %}

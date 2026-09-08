@@ -1,0 +1,134 @@
+{% macro render_group_icon(icon_name) -%}
+  <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    {% if icon_name == "customer" %}
+      <circle cx="8" cy="9" r="3" stroke="currentColor" stroke-width="1.6"/>
+      <circle cx="16" cy="9" r="3" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M3.5 19a4.5 4.5 0 0 1 9 0M11.5 19a4.5 4.5 0 0 1 9 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    {% elif icon_name == "dispatch" %}
+      <path d="M4 6h16M4 12h10M4 18h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M17 10l3 2-3 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    {% elif icon_name == "qa" %}
+      <path d="M5 5h14v14H5z" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M8 12l2.5 2.5L16 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    {% elif icon_name == "fee" %}
+      <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M9 10h6M9 14h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    {% elif icon_name == "report" %}
+      <path d="M5 19V8M12 19V5M19 19v-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    {% elif icon_name == "config" %}
+      <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 1 0 0-7Z" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    {% elif icon_name == "archive" %}
+      <path d="M4 7h16v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M3 5h18v2H3V5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M10 12h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    {% endif %}
+  </svg>
+{%- endmacro %}
+
+{% macro endpoint_is_active(endpoint, value) -%}
+  {{ endpoint == value or endpoint.startswith(value ~ ".") }}
+{%- endmacro %}
+
+{% macro render_nav_group(endpoint, group) -%}
+  {% set open_state = namespace(value=false) %}
+  {% for item in group["items"] %}
+    {% if endpoint_is_active(endpoint, item.endpoint)|trim == "True" %}
+      {% set open_state.value = true %}
+    {% endif %}
+  {% endfor %}
+  <div class="staff-nav-group">
+    <button class="staff-nav-link staff-nav-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#{{ group['id'] }}" aria-expanded="{% if open_state.value %}true{% else %}false{% endif %}" aria-controls="{{ group['id'] }}" data-tooltip="{{ group['tooltip'] }}">
+      <span class="staff-nav-link-inner">
+        {{ render_group_icon(group["icon"]) }}
+        <span>{{ group["title"] }}</span>
+      </span>
+      {% if group["id"] == "adminNavQa" %}
+      <span class="staff-nav-link-trailing">
+        <span
+          class="qy-review-unread-badge {% if not review_nav_unread %}d-none{% endif %}"
+          data-review-unread-badge
+          data-status-url="{{ url_for('admin.review_quality_status') }}"
+          aria-label="待审核案件 {{ review_nav_unread or 0 }} 件"
+        >{{ review_nav_unread or 0 }}</span>
+        <svg class="staff-nav-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      {% else %}
+      <svg class="staff-nav-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {% endif %}
+    </button>
+    <div id="{{ group['id'] }}" class="collapse {% if open_state.value %}show{% endif %} staff-nav-submenu">
+      {% for item in group["items"] %}
+        {% set active = endpoint_is_active(endpoint, item.endpoint)|trim == "True" %}
+        <a class="staff-nav-sublink {% if active %}active{% endif %}" href="{{ url_for(item.endpoint) }}" data-spa-endpoint="{{ item.endpoint }}" {% if active %}aria-current="page"{% endif %}>
+          <span>{{ item.title }}</span>
+          {% if item.endpoint == "admin.review_quality" %}
+          <span
+            class="qy-review-unread-badge {% if not review_nav_unread %}d-none{% endif %}"
+            data-review-unread-badge
+            data-status-url="{{ url_for('admin.review_quality_status') }}"
+            aria-label="待审核案件 {{ review_nav_unread or 0 }} 件"
+          >{{ review_nav_unread or 0 }}</span>
+          {% endif %}
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+{%- endmacro %}
+
+<aside class="staff-sidebar">
+  {% set endpoint = request.endpoint or "" %}
+  {% set nav_groups = [
+    {"id": "adminNavCustomer", "title": "客户与项目管理", "tooltip": "客户与项目管理", "icon": "customer", "items": [
+      {"endpoint": "admin.customers", "title": "客户档案"},
+      {"endpoint": "admin.project_initiation", "title": "项目立项"},
+      {"endpoint": "admin.cases", "title": "案件列表"},
+      {"endpoint": "admin.batch_operations", "title": "批量操作"},
+    ]},
+    {"id": "adminNavDispatch", "title": "任务分派与监控", "tooltip": "任务分派与监控", "icon": "dispatch", "items": [
+      {"endpoint": "admin.task_board", "title": "任务看板"},
+      {"endpoint": "admin.smart_assignment", "title": "智能派单"},
+      {"endpoint": "admin.flow_map", "title": "案件统计"},
+      {"endpoint": "admin.overtime_warning", "title": "超时预警看板"},
+    ]},
+    {"id": "adminNavQa", "title": "审核与质检", "tooltip": "审核与质检", "icon": "qa", "items": [
+      {"endpoint": "admin.review_quality", "title": "多级审核"},
+      {"endpoint": "admin.statutory_deadline", "title": "官方期限管理"},
+    ]},
+    {"id": "adminNavFee", "title": "费用与官文", "tooltip": "费用与官文", "icon": "fee", "items": [
+      {"endpoint": "admin.fee_monitor", "title": "费用监控"},
+      {"endpoint": "admin.official_doc_dispatch", "title": "官文分发"},
+    ]},
+    {"id": "adminNavReport", "title": "报表与绩效", "tooltip": "报表与绩效", "icon": "report", "items": [
+      {"endpoint": "admin.staff_performance", "title": "员工绩效"},
+      {"endpoint": "admin.client_reports", "title": "客户报表"},
+      {"endpoint": "admin.profit_analysis", "title": "利润核算"},
+    ]},
+    {"id": "adminNavConfig", "title": "系统配置", "tooltip": "系统配置", "icon": "config", "items": [
+      {"endpoint": "admin.accounts", "title": "账号分发"},
+      {"endpoint": "admin.role_permissions", "title": "角色权限"},
+      {"endpoint": "admin.notification_templates", "title": "通知书模板"},
+    ]},
+    {"id": "adminNavCaseLibrary", "title": "办结案件库", "tooltip": "办结案件库", "icon": "archive", "items": [
+      {"endpoint": "admin.active_cases_library", "title": "在办案件"},
+      {"endpoint": "admin.completed_cases_library", "title": "办结案件"},
+      {"endpoint": "admin.historical_archive", "title": "历史归档"},
+    ]},
+  ] %}
+  <nav class="staff-sidebar-nav" aria-label="管理端主导航">
+    {% set dashboard_active = endpoint_is_active(endpoint, "admin.dashboard")|trim == "True" %}
+    <a class="staff-nav-link {% if dashboard_active %}active is-current{% endif %}" href="{{ url_for('admin.dashboard') }}" data-tooltip="首页" data-spa-endpoint="admin.dashboard" {% if dashboard_active %}aria-current="page"{% endif %}>
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/
+        svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
+        <span>首页</span>
+      </span>
+      
+    </a>
+    {% for group in nav_groups %}
+      {{ render_nav_group(endpoint, group) }}
+    {% endfor %}
+  </nav>
+</aside>
