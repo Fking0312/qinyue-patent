@@ -321,6 +321,50 @@
               <button class="btn btn-primary" type="submit">保存状态</button>
             </div>
           </form>
+          <hr>
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="text-muted small">案件归属</span>
+            <span class="badge {% if case.is_internal %}text-bg-warning{% else %}text-bg-secondary{% endif %}">{{ case.attribution_label }}</span>
+            {% if case.is_rejected %}
+            <span class="badge text-bg-danger">已退稿</span>
+            {% endif %}
+          </div>
+          {% if case.is_rejected %}
+          <div class="alert alert-warning py-2 mb-2">
+            <div class="small">
+              <strong>专利局退稿</strong>
+              <span class="ms-2">{{ case.rejected_at|qy_format_dt }}</span>
+            </div>
+            <div class="small mt-1">原因：{{ case.reject_note or '—' }}</div>
+            <div class="small text-muted mt-1">已转为内部案件，客户端不可见，也不计入客户案件统计。可把状态改回「撰写中」自行重做。</div>
+          </div>
+          <form method="post" class="mb-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="form_action" value="revert_rejected">
+            <button class="btn btn-sm btn-outline-secondary" type="submit" onclick="return confirm('确认撤销退稿标记？归属将恢复为客户案件。')">撤销退稿标记</button>
+          </form>
+          {% else %}
+          <form method="post" class="row g-2 align-items-end mb-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="form_action" value="mark_rejected">
+            <div class="col-md-9">
+              <label class="form-label mb-1" for="adminCaseRejectNoteInput">退稿原因 <span class="text-danger">*</span></label>
+              <input
+                id="adminCaseRejectNoteInput"
+                class="form-control"
+                type="text"
+                name="case_reject_note"
+                maxlength="500"
+                placeholder="例如：形式审查未通过，说明书附图不符合规定"
+                required
+              >
+              <div class="form-text">标记后归属自动转为内部案件，客户端不再可见。</div>
+            </div>
+            <div class="col-md-3 d-grid">
+              <button class="btn btn-outline-danger" type="submit">标记专利局退稿</button>
+            </div>
+          </form>
+          {% endif %}
           <script>
           (function () {
             var select = document.getElementById("adminCasePhaseInput");

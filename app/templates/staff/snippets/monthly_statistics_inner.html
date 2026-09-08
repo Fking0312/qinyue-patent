@@ -71,6 +71,9 @@
           <div class="text-muted small mb-1">本月案件</div>
           <div class="display-6 fw-semibold">{{ statistics.total }}<small> 件</small></div>
           <div class="small text-muted mt-1">按{{ statistics.basis_label }}统计</div>
+          {% if statistics.internal_total %}
+          <div class="small text-warning mt-1">另有内部案件 {{ statistics.internal_total }} 件（退稿转入，未计入上方总数）</div>
+          {% endif %}
         </div>
       </div>
     </div>

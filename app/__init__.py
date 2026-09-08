@@ -47,6 +47,10 @@ def create_app():
             "case_note": "TEXT",
             "material_upload_port": "VARCHAR(255)",
             "patent_application_no": "VARCHAR(100)",
+            "rejected_at": "DATETIME",
+            "reject_note": "TEXT",
+            # 归属必须有默认值，否则老库里的存量案件全成 NULL，读出来无法判断归属。
+            "attribution": "VARCHAR(20) NOT NULL DEFAULT 'customer'",
         }
         with db.engine.begin() as conn:
             rows = conn.execute(text("PRAGMA table_info(cases)")).fetchall()
@@ -58,6 +62,12 @@ def create_app():
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_cases_case_type_code "
                     "ON cases (case_type_code)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_cases_attribution "
+                    "ON cases (attribution)"
                 )
             )
 

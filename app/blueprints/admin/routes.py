@@ -1893,6 +1893,12 @@ def cases():
         q = q.filter(Case.business_owner_id.isnot(None))
     else:
         assignee_filter = ""
+    # 归属筛选：默认全部（管理端要看得到内部案件），可单独筛出退稿转入的内部案件。
+    attribution_filter = request.args.get("attribution", "").strip()
+    if attribution_filter in {Case.ATTRIBUTION_CUSTOMER, Case.ATTRIBUTION_INTERNAL}:
+        q = q.filter(Case.attribution_filter(attribution_filter))
+    else:
+        attribution_filter = ""
     valid_primary_codes = {value for value, _label in CASE_TYPE_PRIMARY_OPTIONS}
     if case_type_primary in valid_primary_codes:
         q = q.filter(
@@ -1982,6 +1988,8 @@ def cases():
         filter_url_kwargs["customer_id"] = customer_id_filter
     if assignee_filter:
         filter_url_kwargs["assignee"] = assignee_filter
+    if attribution_filter:
+        filter_url_kwargs["attribution"] = attribution_filter
     if case_type_primary:
         filter_url_kwargs["case_type_primary"] = case_type_primary
     if created_year and created_month:
@@ -2026,6 +2034,9 @@ def cases():
         customer_id_filter=customer_id_filter,
         project_id_filter=project_id_filter,
         assignee_filter=assignee_filter,
+        attribution_filter=attribution_filter,
+        case_attribution_customer=Case.ATTRIBUTION_CUSTOMER,
+        case_attribution_internal=Case.ATTRIBUTION_INTERNAL,
         case_type_primary=case_type_primary,
         case_type_primary_options=CASE_TYPE_PRIMARY_OPTIONS,
         created_year=created_year,
@@ -2319,6 +2330,51 @@ def case_detail(case_id: int):
             task.phase_status = new_phase
             db.session.commit()
             return redirect_with_qy_toast("admin.case_detail", "案件状态已更新。", "success", case_id=case.id)
+        if request.form.get("form_action", "") == "mark_rejected":
+            if case.is_rejected:
+                return redirect_with_qy_toast("admin.case_detail", "该案件已是退稿状态。", "secondary", case_id=case.id)
+            reject_note = request.form.get("case_reject_note", "").strip()
+            if not reject_note:
+                return redirect_with_qy_toast("admin.case_detail", "请填写退稿原因。", "warning", case_id=case.id)
+            case.rejected_at = datetime.now(timezone.utc)
+            case.reject_note = reject_note
+            case.attribution = Case.ATTRIBUTION_INTERNAL
+            db.session.add(
+                CaseReviewLog(
+                    case_id=case.id,
+                    operator_id=current_user.id,
+                    action="office_reject",
+                    note=reject_note,
+                )
+            )
+            db.session.commit()
+            return redirect_with_qy_toast(
+                "admin.case_detail",
+                "已标记专利局退稿，归属转为内部案件，客户端不再可见。",
+                "success",
+                case_id=case.id,
+            )
+        if request.form.get("form_action", "") == "revert_rejected":
+            if not case.is_rejected:
+                return redirect_with_qy_toast("admin.case_detail", "该案件未标记退稿。", "secondary", case_id=case.id)
+            case.rejected_at = None
+            case.reject_note = None
+            case.attribution = Case.ATTRIBUTION_CUSTOMER
+            db.session.add(
+                CaseReviewLog(
+                    case_id=case.id,
+                    operator_id=current_user.id,
+                    action="reject_undo",
+                    note=None,
+                )
+            )
+            db.session.commit()
+            return redirect_with_qy_toast(
+                "admin.case_detail",
+                "已撤销退稿标记，归属恢复为客户案件。",
+                "success",
+                case_id=case.id,
+            )
         action = request.form.get("review_action", "").strip()
         if not action:
             return redirect_with_qy_toast("admin.case_detail", "不支持的操作。", "warning", case_id=case.id)

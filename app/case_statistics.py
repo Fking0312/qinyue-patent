@@ -81,10 +81,13 @@ def _cases_in_statistics_month(
     *,
     assignee_id: int | None = None,
     with_details: bool = False,
+    attribution: str = Case.ATTRIBUTION_CUSTOMER,
 ) -> list[Case]:
     start_at, end_at = case_statistics_month_bounds(year, month)
     date_column = Case.actual_return_at if basis == "completed" else Case.created_at
     query = Case.query.filter(date_column >= start_at, date_column < end_at)
+    # 默认只统计客户案件；退稿转内部的单独计数，不混进总量与类型占比。
+    query = query.filter(Case.attribution_filter(attribution))
     if assignee_id is not None:
         query = query.join(Task, Task.case_id == Case.id).filter(Task.assignee_id == assignee_id)
     if with_details:
@@ -169,6 +172,15 @@ def case_statistics_data(
     """按指定时间口径汇总案件总数、一级类型及完整分类路径。"""
     basis = case_statistics_basis(basis)
     cases_in_month = _cases_in_statistics_month(year, month, basis, assignee_id=assignee_id)
+    internal_total = len(
+        _cases_in_statistics_month(
+            year,
+            month,
+            basis,
+            assignee_id=assignee_id,
+            attribution=Case.ATTRIBUTION_INTERNAL,
+        )
+    )
 
     primary_counts = {value: 0 for value, _label in CASE_TYPE_PRIMARY_OPTIONS}
     detail_counts: dict[tuple[str, str], int] = {}
@@ -221,6 +233,8 @@ def case_statistics_data(
         "total": total,
         "rows": rows,
         "unclassified": unclassified,
+        # 退稿转内部的案件数；不含在 total 里，单独展示。
+        "internal_total": internal_total,
     }
 
 
@@ -282,6 +296,7 @@ def case_statistics_available_years(
     basis = case_statistics_basis(basis)
     date_column = Case.actual_return_at if basis == "completed" else Case.created_at
     query = db.session.query(date_column).filter(date_column.isnot(None))
+    query = query.filter(Case.attribution_filter(Case.ATTRIBUTION_CUSTOMER))
     if assignee_id is not None:
         query = query.join(Task, Task.case_id == Case.id).filter(Task.assignee_id == assignee_id)
     available_year_values: set[int] = set()

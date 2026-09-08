@@ -91,6 +91,22 @@ class Case(db.Model):
     material_upload_port = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
+    # 归属：专利局退回的案件转为内部案件，客户端不再可见，也不计入客户案件统计。
+    # 退稿（rejected_at）是结果，归属（attribution）是口径，分开存以便将来出现
+    # 「本所自行申请」这类非退稿的内部案件。
+    ATTRIBUTION_CUSTOMER = "customer"
+    ATTRIBUTION_INTERNAL = "internal"
+
+    rejected_at = db.Column(db.DateTime, nullable=True, index=True)
+    reject_note = db.Column(db.Text, nullable=True)
+    attribution = db.Column(
+        db.String(20),
+        nullable=False,
+        default=ATTRIBUTION_CUSTOMER,
+        server_default=ATTRIBUTION_CUSTOMER,
+        index=True,
+    )
+
     project = db.relationship("Project", back_populates="cases")
     business_owner_user = db.relationship("User", foreign_keys=[business_owner_id])
     task = db.relationship(
@@ -107,6 +123,30 @@ class Case(db.Model):
         lazy="dynamic",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def is_internal(self) -> bool:
+        """是否为内部案件；历史数据归属为空时按客户案件处理。"""
+        return (self.attribution or self.ATTRIBUTION_CUSTOMER) == self.ATTRIBUTION_INTERNAL
+
+    @property
+    def is_rejected(self) -> bool:
+        """是否已标记专利局退稿。"""
+        return self.rejected_at is not None
+
+    @property
+    def attribution_label(self) -> str:
+        return "内部案件" if self.is_internal else "客户案件"
+
+    @staticmethod
+    def attribution_filter(attribution: str):
+        """归属筛选条件；历史行的 attribution 可能为空，一律按客户案件处理。"""
+        if attribution == Case.ATTRIBUTION_INTERNAL:
+            return Case.attribution == Case.ATTRIBUTION_INTERNAL
+        return db.or_(
+            Case.attribution.is_(None),
+            Case.attribution == Case.ATTRIBUTION_CUSTOMER,
+        )
 
     @property
     def case_type_labels(self) -> tuple[str, ...]:
