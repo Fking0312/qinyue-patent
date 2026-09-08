@@ -10,3 +10,5 @@ instance/uploads/
 .env
 *.tgz
 *.tar.gz
+instance-preview/
+preview-like-prod.ps1

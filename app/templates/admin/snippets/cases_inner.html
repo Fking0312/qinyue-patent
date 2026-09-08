@@ -96,7 +96,9 @@
                 <option value="assigned" {% if assignee_filter == "assigned" %}selected{% endif %}>已分配</option>
               </select>
             </div>
-            <div class="col-md-6 col-lg-2">
+          </div>
+          <div class="row g-2 g-lg-3 align-items-end qy-cases-filter-form__actions-row">
+            <div class="col-6 col-lg-2">
               <label class="form-label mb-1" for="caseAttributionFilter">案件归属</label>
               <select id="caseAttributionFilter" class="form-select" name="attribution">
                 <option value="">全部</option>
@@ -104,9 +106,7 @@
                 <option value="{{ case_attribution_internal }}" {% if attribution_filter == case_attribution_internal %}selected{% endif %}>内部案件（退稿转入）</option>
               </select>
             </div>
-          </div>
-          <div class="row g-2 g-lg-3 align-items-end qy-cases-filter-form__actions-row">
-            <div class="col-6 col-sm-4 col-lg-2">
+            <div class="col-6 col-lg-2">
               <label class="form-label mb-1" for="casePerPage">每页项目数</label>
               <select id="casePerPage" class="form-select" name="per_page">
                 <option value="5" {% if per_page == 5 %}selected{% endif %}>5</option>
@@ -114,7 +114,7 @@
                 <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
               </select>
             </div>
-            <div class="col-6 col-sm-8 col-lg-10 d-flex flex-wrap justify-content-end align-items-end gap-2">
+            <div class="col-12 col-lg-8 d-flex flex-wrap justify-content-end align-items-end gap-2">
               <a class="btn btn-outline-secondary" href="{{ url_for('admin.cases') }}" data-spa-endpoint="admin.cases">重置</a>
               <button id="qy-cases-query-btn" class="btn btn-primary" type="submit"><span class="qy-cases-query-label">查询</span></button>
             </div>
@@ -195,10 +195,8 @@
                     <input class="form-check-input qy-case-cb" type="checkbox" value="{{ case_item.id }}" aria-label="选择案件 {{ case_item.title }}">
                   </td>
                   <td class="qy-case-title-cell">
-                    <span class="qy-case-title-text">{{ case_item.title }}</span>
-                    {% if case_item.is_internal %}
-                    <span class="badge text-bg-warning ms-1" title="{{ case_item.reject_note or '已转为内部案件' }}">内部</span>
-                    {% endif %}
+                    <span class="qy-case-title-text d-inline">{{ case_item.title }}</span>{% if case_item.is_internal %}
+                    <span class="badge text-bg-warning ms-1 align-middle" title="{{ case_item.reject_note or '已转为内部案件' }}">内部</span>{% endif %}
                   </td>
                   <td class="text-muted small text-nowrap">{{ case_item.application_no }}</td>
                   <td class="qy-case-type-cell">{{ case_type_badges(case_item) }}</td>
