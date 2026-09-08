@@ -295,7 +295,7 @@
             </div>
           </div>
           <hr>
-          <form method="post" class="row g-2 align-items-end mb-2" id="adminCasePhaseForm">
+          <form method="post" class="row g-2 mb-2" id="adminCasePhaseForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="form_action" value="update_phase">
             <div class="col-md-5">
@@ -317,8 +317,9 @@
               >
               <div class="form-text">改为已完成时必填；若留空将尝试按审核/材料自动推算。</div>
             </div>
-            <div class="col-md-3 d-grid">
-              <button class="btn btn-primary" type="submit">保存状态</button>
+            <div class="col-md-3">
+              <label class="form-label mb-1" for="adminCasePhaseSubmit">&nbsp;</label>
+              <button id="adminCasePhaseSubmit" class="btn btn-primary w-100" type="submit">保存状态</button>
             </div>
           </form>
           <hr>
@@ -344,7 +345,7 @@
             <button class="btn btn-sm btn-outline-secondary" type="submit" onclick="return confirm('确认撤销退稿标记？归属将恢复为客户案件。')">撤销退稿标记</button>
           </form>
           {% else %}
-          <form method="post" class="row g-2 align-items-end mb-2">
+          <form method="post" class="row g-2 mb-2">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="form_action" value="mark_rejected">
             <div class="col-md-9">
@@ -360,8 +361,10 @@
               >
               <div class="form-text">标记后归属自动转为内部案件，客户端不再可见。</div>
             </div>
-            <div class="col-md-3 d-grid">
-              <button class="btn btn-outline-danger" type="submit">标记专利局退稿</button>
+            <div class="col-md-3">
+              {# 占位标签与左侧「退稿原因」同高，按钮才能和输入框一行，而不是沉到说明文字底下。 #}
+              <label class="form-label mb-1" for="adminCaseRejectSubmit">&nbsp;</label>
+              <button id="adminCaseRejectSubmit" class="btn btn-outline-danger w-100" type="submit">标记专利局退稿</button>
             </div>
           </form>
           {% endif %}

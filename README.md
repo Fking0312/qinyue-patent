@@ -12,7 +12,19 @@
 2. **生产必须** `FLASK_ENV=production`，且 `SECRET_KEY` 至少 32 位随机串。漏设时 Gunicorn 等 WSGI 进程会拒绝启动，避免继续用开发密钥 `dev-secret-key`。
 3. **不要在生产库跑** `scripts/seed_demo_data.py`。脚本会拒绝生产环境；**新建**演示账号口令是 `123456`，已存在账号不会被改密。
 4. 协作时把 `migrations/` 一并提交。朋友克隆后先跑 `flask db upgrade`，不要只靠 SQLite 启动时的 `create_all`。
-5. 本地比云服务器新。上线前看下面「云服务器尚未部署」；GitHub 有代码不等于已经部署到 `8.153.93.27`。
+5. 本地 `main` 比云服务器新。线上代码看 `production` 分支；上线前看下面「云服务器尚未部署」。GitHub 有代码不等于已经部署。
+
+---
+
+## 仓库分支
+
+| 分支 | 含义 |
+| --- | --- |
+| `main` | 正在开发：职能分流、staff 蓝图拆分、登录锁定等，**尚未全部上线** |
+| `production` | **当前线上代码**。2026-09-08 已含「专利局退稿 → 内部案件」 |
+| `feature/rejected-internal-cases` | 退稿功能的上线分支，已并入 `production` |
+
+改线上先在 `production`（或从它拉出的功能分支）上改，再部署。不要把 `main` 整包拷到服务器。`git diff production main` 能看出两版差什么。
 
 ---
 
@@ -184,12 +196,12 @@ User.role = admin | staff | client
 | --- | --- |
 | 主机 / 目录 | `qyapp@8.153.93.27`、`/opt/qy-patent` |
 | 服务单元 | `/etc/systemd/system/qy-patent.service`，已 enabled；重启 `sudo systemctl restart qy-patent` |
-| 启动命令 | `gunicorn -w 4 -b 127.0.0.1:8000 --timeout 300 wsgi:app`（前面是 Nginx 反代） |
+| 启动命令 | `gunicorn -w 4 -b 127.0.0.1:8000 --timeout 300 wsgi:app`（前面是 Nginx 反代，对外 **http://8.153.93.27** ，不要再用 `:8000`） |
 | 访问日志 | `/var/log/qy-patent/access.log` |
-| 迁移版本 | `o3d4e5f6a7b8`（`flask db current` 实测，比本地少两级） |
-| 代码对应分支 | `production`（2026-09-08 从服务器捞回入库，此前从未有版本记录） |
+| 迁移版本 | `r6a7b8c9d0e1`（退稿/归属三列；此前是 `o3d4e5f6a7b8`） |
+| 代码对应分支 | `production` |
 
-线上跑的代码等于 `production` 分支。**改完线上先合进 `production` 再部署**，别再出现"服务器上的东西找不到对应提交"的情况。`git diff production main` 随时能看出两版差什么。
+`production` 先入库了 2026-08-20 那版服务器代码，2026-09-08 晚又并入退稿转内部案件。**改完线上先合进 `production` 再部署**，别再出现"服务器上的东西找不到对应提交"。`git diff production main` 随时能看出两版差什么。
 
 服务器 `/opt/qy-patent` 下还堆着 `app-before-update/`（165 MB，含自带 venv）、`backups/`（80 MB，13 份库备份加 4 个上传件包）和 5 个 `app.bak.*` 目录。都是历史手工备份，不是运行代码，**没有入库**；要清理先确认磁盘占用再动手。
 
@@ -199,14 +211,17 @@ User.role = admin | staff | client
 
 ### 要跑数据库迁移
 
-上线后在服务器执行 `flask db upgrade`（先备份 `instance/patent.db`）。本地 head 比线上多两级：
+上线后在服务器执行 `flask db upgrade`（先备份 `instance/patent.db`）。线上现已升到 `r6a7b8c9d0e1`。`main` 在此之上还有：
 
 | 迁移 | 内容 |
 | --- | --- |
 | `p4e5f6a7b8c9` | 把现有空职能员工回填为撰写师 |
-| `q5f6a7b8c9d0` | 新建 `login_throttles` 表（登录失败锁定） |
+| `q5f6a7b8c9d0` | 新建 `login_throttles` 表（登录失败锁定；表已存在则跳过） |
+| `s7b8c9d0e1f2` | 空合并：接住退稿线 `r6a7b8c9d0e1` 与职能线 `q5f6a7b8c9d0` 两个 head |
 
-线上当时 `flask db current` 是 `o3d4e5f6a7b8`。若中间又升过级，以服务器上的 `flask db current` 为准。
+不要把 `r6a7b8c9d0e1` 改成接在 `q5f6a7b8c9d0` 后面：线上已经记录了 `r`，那样改会让 Alembic 以为 `p`、`q` 跑过了而静默跳过。
+
+若中间又升过级，以服务器上的 `flask db current` 为准。
 
 ### 业务与界面
 
