@@ -26,7 +26,7 @@
 | 导出 | openpyxl |
 | 测试 | pytest（**未写入** `requirements.txt`，需自行 `pip install pytest`） |
 
-入口是 `app.py`：`app = create_app()`。没有单独的 `wsgi.py`，Gunicorn 用 `app:app`。
+入口两个都在：本地开发用 `app.py`（`python app.py`），线上 systemd 跑 `wsgi:app`。**不要删 `wsgi.py`**，删了服务起不来。
 
 ---
 
@@ -177,6 +177,21 @@ User.role = admin | staff | client
 ---
 
 ## 云服务器尚未部署
+
+### 线上现状（2026-09-08 实测）
+
+| 项 | 值 |
+| --- | --- |
+| 主机 / 目录 | `qyapp@8.153.93.27`、`/opt/qy-patent` |
+| 服务单元 | `/etc/systemd/system/qy-patent.service`，已 enabled；重启 `sudo systemctl restart qy-patent` |
+| 启动命令 | `gunicorn -w 4 -b 127.0.0.1:8000 --timeout 300 wsgi:app`（前面是 Nginx 反代） |
+| 访问日志 | `/var/log/qy-patent/access.log` |
+| 迁移版本 | `o3d4e5f6a7b8`（`flask db current` 实测，比本地少两级） |
+| 代码对应分支 | `production`（2026-09-08 从服务器捞回入库，此前从未有版本记录） |
+
+线上跑的代码等于 `production` 分支。**改完线上先合进 `production` 再部署**，别再出现"服务器上的东西找不到对应提交"的情况。`git diff production main` 随时能看出两版差什么。
+
+服务器 `/opt/qy-patent` 下还堆着 `app-before-update/`（165 MB，含自带 venv）、`backups/`（80 MB，13 份库备份加 4 个上传件包）和 5 个 `app.bak.*` 目录。都是历史手工备份，不是运行代码，**没有入库**；要清理先确认磁盘占用再动手。
 
 对照线上 `qyapp@8.153.93.27`、`/opt/qy-patent`。**2026-08-20 11:57** 已确认当时那批已上线：重启不覆盖实际返稿时间、打开页面不偷偷改任务状态、办结库保存后保持滚动、自动补算不覆盖已有返稿时间、清库脚本生产保护。
 
