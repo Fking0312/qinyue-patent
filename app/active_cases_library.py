@@ -163,6 +163,8 @@ def active_cases_library_data(
                 "project": project,
                 "customer": customer,
                 "staff": task.assignee or (case.business_owner_user if case else None),
+                "staff_label": (task.assignee_label if task else None)
+                or (case.business_owner_label if case else None),
                 "effective_due_at": due_at,
                 "actual_return_at": case.actual_return_at if case else None,
                 "is_past_due": is_task_past_due(task),
@@ -244,6 +246,8 @@ def completed_cases_library_data(
                 "project": project,
                 "customer": customer,
                 "staff": task.assignee or (case.business_owner_user if case else None),
+                "staff_label": (task.assignee_label if task else None)
+                or (case.business_owner_label if case else None),
                 "effective_due_at": effective_task_due_at(task),
                 "actual_return_at": actual_return_at,
                 "is_past_due": False,

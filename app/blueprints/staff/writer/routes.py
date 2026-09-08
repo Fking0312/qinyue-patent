@@ -23,6 +23,7 @@ from app.case_types import (
     codes_for_primary,
     legacy_values_for_primary,
 )
+from app.case_trace import material_uploader_role, paginate_case_trace_logs
 from app.blueprints.staff import staff_bp
 from app.blueprints.staff.common.routes import (
     STAFF_NOTIFICATION_ACTIONABLE,
@@ -60,13 +61,11 @@ def _staff_material_changes_locked(task: Task) -> bool:
 
 
 def _case_has_staff_writing_material(case_id: int) -> bool:
-    """案件是否已有员工上传的撰写材料。"""
-    return (
-        CaseMaterial.query.join(User, CaseMaterial.uploaded_by_id == User.id)
-        .filter(CaseMaterial.case_id == case_id, User.role == "staff")
-        .first()
-        is not None
-    )
+    """案件是否已有员工上传的撰写材料；账号停用后仍按上传时冻结的角色判断。"""
+    materials = CaseMaterial.query.options(
+        joinedload(CaseMaterial.uploaded_by)
+    ).filter_by(case_id=case_id).all()
+    return any(material_uploader_role(material) == "staff" for material in materials)
 
 
 def _case_material_download_rows(case_id: int, role_filter: str, page: int):
@@ -318,8 +317,6 @@ def case_detail_by_id(case_id: int):
         .first()
     )
     review_action_filter = request.args.get("review_action", "all").strip()
-    if review_action_filter not in {"all", "approve", "reject"}:
-        review_action_filter = "all"
     review_operator_filter = request.args.get("review_operator", "all").strip()
     material_version_filter = request.args.get("material_version", "all").strip()
     if material_version_filter not in {"all", "draft", "final"}:
@@ -331,35 +328,13 @@ def case_detail_by_id(case_id: int):
     download_page = int(download_page_raw) if download_page_raw.isdigit() and int(download_page_raw) > 0 else 1
     review_page_raw = request.args.get("review_page", "1").strip()
     review_page = int(review_page_raw) if review_page_raw.isdigit() and int(review_page_raw) > 0 else 1
-    review_logs_query = CaseReviewLog.query.filter(
-        CaseReviewLog.case_id == case.id,
-        CaseReviewLog.action.in_(["approve", "reject"]),
-    )
-    if review_action_filter in {"approve", "reject"}:
-        review_logs_query = review_logs_query.filter(CaseReviewLog.action == review_action_filter)
-    operator_options = [
-        row[0]
-        for row in db.session.query(User.username)
-        .join(CaseReviewLog, CaseReviewLog.operator_id == User.id)
-        .filter(
-            CaseReviewLog.case_id == case.id,
-            CaseReviewLog.action.in_(["approve", "reject"]),
+    review_logs_pagination, operator_options, review_action_filter, review_operator_filter = (
+        paginate_case_trace_logs(
+            case.id,
+            action_filter=review_action_filter,
+            operator_filter=review_operator_filter,
+            page=review_page,
         )
-        .distinct()
-        .order_by(User.username.asc())
-        .all()
-    ]
-    if review_operator_filter != "all":
-        if review_operator_filter in operator_options:
-            operator_user = User.query.filter_by(username=review_operator_filter).first()
-            if operator_user is not None:
-                review_logs_query = review_logs_query.filter(CaseReviewLog.operator_id == operator_user.id)
-        else:
-            review_operator_filter = "all"
-    review_logs_pagination = (
-        review_logs_query
-        .order_by(CaseReviewLog.created_at.desc(), CaseReviewLog.id.desc())
-        .paginate(page=review_page, per_page=10, error_out=False)
     )
     download_logs_pagination = _case_material_download_rows(case.id, download_role_filter, download_page)
     disclosure_material_files, writing_material_files = fetch_case_materials_grouped(
@@ -415,6 +390,7 @@ def case_material_download(case_id: int, material_id: int):
             case_id=case.id,
             material_id=material.id,
             operator_id=current_user.id,
+            operator_label=current_user.display_label,
             operator_role=current_user.role,
         )
     )
@@ -448,7 +424,7 @@ def case_material_download_logs_export(case_id: int):
         writer.writerow(
             [
                 beijing_datetime_text(item.created_at),
-                item.operator.username if item.operator else "",
+                item.operator_display if item.operator_display != "—" else "",
                 item.operator_role,
                 item.material.original_name if item.material else "",
             ]

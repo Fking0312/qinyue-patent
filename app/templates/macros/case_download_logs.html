@@ -23,7 +23,7 @@
           {% for log_item in material_download_logs %}
           <tr>
             <td>{{ log_item.created_at|qy_format_dt }}</td>
-            <td>{{ log_item.operator|qy_user_label if log_item.operator else "—" }}</td>
+            <td>{{ log_item.operator_display }}</td>
             <td>{{ log_item.operator_role }}</td>
             <td>{{ log_item.material.original_name if log_item.material else "—" }}</td>
           </tr>

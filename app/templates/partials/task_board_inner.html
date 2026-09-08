@@ -115,8 +115,8 @@
               </td>
               <td>{{ task_phase_badge(ph) }}</td>
               <td>
-                {% if row.task and row.task.assignee %}
-                <span class="text-body">{{ row.task.assignee|qy_user_label }}</span>
+                {% if row.task and (row.task.assignee or row.task.assignee_label) %}
+                <span class="text-body">{{ row.task.assignee|qy_trace_label(row.task.assignee_label) }}</span>
                 {% if is_admin %}{{ staff_kind_badge(row.task.assignee) }}{% endif %}
                 {% else %}
                 <span class="qy-phase-badge qy-phase-badge--muted">未分配</span>

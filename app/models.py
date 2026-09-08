@@ -84,6 +84,8 @@ class Case(db.Model):
     project_type = db.Column(db.String(80), nullable=True)
     case_type_code = db.Column(db.String(80), nullable=True, index=True)
     business_owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    # 指派时冻结的负责人姓名；账号停用或将来删行后办结案件仍能显示是谁做的。
+    business_owner_label = db.Column(db.String(120), nullable=True)
     order_at = db.Column(db.DateTime, nullable=True)
     expected_return_at = db.Column(db.DateTime, nullable=True)
     actual_return_at = db.Column(db.DateTime, nullable=True)
@@ -109,6 +111,13 @@ class Case(db.Model):
 
     project = db.relationship("Project", back_populates="cases")
     business_owner_user = db.relationship("User", foreign_keys=[business_owner_id])
+
+    @property
+    def owner_display(self) -> str:
+        """业务负责人展示名：账号还在用实时姓名，否则用指派时的快照。"""
+        from app.case_trace import display_trace
+
+        return display_trace(self.business_owner_user, self.business_owner_label)
     task = db.relationship(
         "Task",
         back_populates="case",
@@ -190,6 +199,7 @@ class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     case_id = db.Column(db.Integer, db.ForeignKey("cases.id"), unique=True, nullable=False)
     assignee_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    assignee_label = db.Column(db.String(120), nullable=True)
     phase_status = db.Column(db.String(40), nullable=False, default="in_progress")
     due_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -202,6 +212,13 @@ class Task(db.Model):
     case = db.relationship("Case", back_populates="task")
     assignee = db.relationship("User", back_populates="assigned_tasks", foreign_keys=[assignee_id])
 
+    @property
+    def assignee_display(self) -> str:
+        """承办人展示名：账号还在用实时姓名，否则用指派时的快照。"""
+        from app.case_trace import display_trace
+
+        return display_trace(self.assignee, self.assignee_label)
+
 
 class CaseReviewLog(db.Model):
     """案件审核留痕：记录通过/打回动作与备注。"""
@@ -211,8 +228,10 @@ class CaseReviewLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     case_id = db.Column(db.Integer, db.ForeignKey("cases.id"), nullable=False, index=True)
     operator_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    operator_label = db.Column(db.String(120), nullable=True)
     # 打回通知接收人；通过记录及历史记录可为空。
     recipient_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    recipient_label = db.Column(db.String(120), nullable=True)
     action = db.Column(db.String(20), nullable=False)
     note = db.Column(db.Text, nullable=True)
     read_at = db.Column(db.DateTime, nullable=True)
@@ -221,6 +240,30 @@ class CaseReviewLog(db.Model):
     case = db.relationship("Case", back_populates="review_logs")
     operator = db.relationship("User", foreign_keys=[operator_id])
     recipient = db.relationship("User", foreign_keys=[recipient_id])
+
+    @property
+    def operator_display(self) -> str:
+        from app.case_trace import display_trace
+
+        return display_trace(self.operator, self.operator_label)
+
+    @property
+    def recipient_display(self) -> str:
+        from app.case_trace import display_trace
+
+        return display_trace(self.recipient, self.recipient_label)
+
+    @property
+    def action_label(self) -> str:
+        from app.case_trace import TRACE_ACTION_LABELS
+
+        return TRACE_ACTION_LABELS.get(self.action, self.action)
+
+    @property
+    def action_tone(self) -> str:
+        from app.case_trace import TRACE_ACTION_TONES
+
+        return TRACE_ACTION_TONES.get(self.action, "secondary")
 
 
 class CaseMaterial(db.Model):
@@ -231,6 +274,8 @@ class CaseMaterial(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     case_id = db.Column(db.Integer, db.ForeignKey("cases.id"), nullable=False, index=True)
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    uploaded_by_label = db.Column(db.String(120), nullable=True)
+    uploaded_by_role = db.Column(db.String(20), nullable=True)
     original_name = db.Column(db.String(255), nullable=False)
     stored_name = db.Column(db.String(255), nullable=False, unique=True, index=True)
     version_tag = db.Column(db.String(20), nullable=False, default="draft")
@@ -239,6 +284,12 @@ class CaseMaterial(db.Model):
 
     case = db.relationship("Case", back_populates="materials")
     uploaded_by = db.relationship("User", foreign_keys=[uploaded_by_id])
+
+    @property
+    def uploader_display(self) -> str:
+        from app.case_trace import display_trace
+
+        return display_trace(self.uploaded_by, self.uploaded_by_label)
     download_logs = db.relationship(
         "CaseMaterialDownloadLog",
         back_populates="material",
@@ -269,12 +320,19 @@ class CaseMaterialDownloadLog(db.Model):
     case_id = db.Column(db.Integer, db.ForeignKey("cases.id"), nullable=False, index=True)
     material_id = db.Column(db.Integer, db.ForeignKey("case_materials.id"), nullable=False, index=True)
     operator_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    operator_label = db.Column(db.String(120), nullable=True)
     operator_role = db.Column(db.String(20), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     case = db.relationship("Case", back_populates="material_download_logs")
     material = db.relationship("CaseMaterial", back_populates="download_logs")
     operator = db.relationship("User", foreign_keys=[operator_id])
+
+    @property
+    def operator_display(self) -> str:
+        from app.case_trace import display_trace
+
+        return display_trace(self.operator, self.operator_label)
 
 
 class User(UserMixin, db.Model):

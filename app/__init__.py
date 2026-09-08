@@ -133,6 +133,33 @@ def create_app():
                 )
             )
 
+    def _ensure_trace_label_columns_sqlite() -> None:
+        """SQLite 兜底：案件留痕姓名快照。生产请跑 Alembic t8c9d0e1f2a3。"""
+        if not app.config.get("SQLALCHEMY_DATABASE_URI", "").startswith("sqlite"):
+            return
+        extras = {
+            "cases": {"business_owner_label": "VARCHAR(120)"},
+            "tasks": {"assignee_label": "VARCHAR(120)"},
+            "case_review_logs": {
+                "operator_label": "VARCHAR(120)",
+                "recipient_label": "VARCHAR(120)",
+            },
+            "case_materials": {
+                "uploaded_by_label": "VARCHAR(120)",
+                "uploaded_by_role": "VARCHAR(20)",
+            },
+            "case_material_download_logs": {"operator_label": "VARCHAR(120)"},
+        }
+        with db.engine.begin() as conn:
+            for table, columns in extras.items():
+                rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+                existing = {row[1] for row in rows}
+                if not existing:
+                    continue
+                for col_name, col_type in columns.items():
+                    if col_name not in existing:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
+
     configured_instance_path = os.getenv("QY_INSTANCE_PATH", "").strip()
     if configured_instance_path:
         app = Flask(
@@ -234,6 +261,13 @@ def create_app():
             return "—"
         return user.display_label
 
+    @app.template_filter("qy_trace_label")
+    def _qy_trace_label_filter(user, snapshot=None):
+        """模板过滤器：账号还在用实时姓名，否则用写入时冻结的快照。"""
+        from app.case_trace import display_trace
+
+        return display_trace(user, snapshot)
+
     @app.context_processor
     def _inject_static_asset_version():
         """静态资源版本号：部署后使用新 URL，避开浏览器旧缓存。"""
@@ -301,6 +335,7 @@ def create_app():
         if app.config.get("SQLALCHEMY_DATABASE_URI", "").startswith("sqlite"):
             _ensure_user_columns_sqlite()
             _ensure_review_log_columns_sqlite()
+            _ensure_trace_label_columns_sqlite()
         if app.debug or app.config.get("DEBUG"):
             _ensure_case_columns_sqlite()
             _ensure_customer_columns_sqlite()

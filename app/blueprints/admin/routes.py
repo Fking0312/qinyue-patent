@@ -41,6 +41,21 @@ from app.case_types import (
     normalize_case_type_code,
     validate_case_type_code,
 )
+from app.case_trace import (
+    add_review_log,
+    paginate_case_trace_logs,
+    stamp_assignee,
+    stamp_business_owner,
+)
+from app.assignment_advisor import (
+    case_due_at,
+    case_workload_weight,
+    departed_assignee_cases,
+    original_writer,
+    pending_assignment_cases,
+    window_days,
+    writer_load_rows,
+)
 from app.blueprints.admin import admin_bp
 from app.extensions import db
 from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CaseReviewLog, Customer, CustomerKind, Project, Task, User
@@ -104,14 +119,11 @@ def _apply_admin_review(case: Case, task: Task | None, action: str, reject_note:
         return False, "当前状态不是待审核，无法执行审核动作。", "warning"
     if action == "approve":
         task.phase_status = TaskPhase.PENDING_SUBMIT
-        db.session.add(
-            CaseReviewLog(
-                case_id=case.id,
-                operator_id=current_user.id,
-                recipient_id=task.assignee_id,
-                action="approve",
-                note=None,
-            )
+        add_review_log(
+            case_id=case.id,
+            action="approve",
+            operator=current_user,
+            recipient=task.assignee,
         )
         db.session.commit()
         return True, "审核通过，案件已进入待递交。", "success"
@@ -119,14 +131,12 @@ def _apply_admin_review(case: Case, task: Task | None, action: str, reject_note:
         if not reject_note:
             return False, "打回时请填写原因。", "warning"
         task.phase_status = TaskPhase.IN_PROGRESS
-        db.session.add(
-            CaseReviewLog(
-                case_id=case.id,
-                operator_id=current_user.id,
-                recipient_id=task.assignee_id,
-                action="reject",
-                note=reject_note,
-            )
+        add_review_log(
+            case_id=case.id,
+            action="reject",
+            operator=current_user,
+            recipient=task.assignee,
+            note=reject_note,
         )
         db.session.commit()
         return True, "已打回，案件状态改为撰写中。", "info"
@@ -143,15 +153,32 @@ def _notify_case_assigned(case: Case, old_assignee_id, new_assignee_id) -> None:
     assignee = db.session.get(User, new_assignee_id)
     if assignee is None or assignee.role != "staff":
         return
-    db.session.add(
-        CaseReviewLog(
-            case_id=case.id,
-            operator_id=current_user.id,
-            recipient_id=new_assignee_id,
-            action="assigned",
-            note=None,
-        )
+    add_review_log(
+        case_id=case.id,
+        action="assigned",
+        operator=current_user,
+        recipient=assignee,
     )
+
+
+def _apply_case_assignment(case: Case, assignee_id: int | None) -> None:
+    """派单落库：同步案件业务负责人与任务承办人，并发出指派通知；不提交事务。"""
+    assignee = db.session.get(User, assignee_id) if assignee_id else None
+    stamp_business_owner(case, assignee)
+    task = case.task
+    old_assignee_id = task.assignee_id if task is not None else None
+    if task is None:
+        phase_status = TaskPhase.PENDING_ASSIGNMENT if assignee is None else TaskPhase.IN_PROGRESS
+        task = Task(case_id=case.id, phase_status=phase_status)
+        db.session.add(task)
+        stamp_assignee(task, assignee)
+    else:
+        stamp_assignee(task, assignee)
+        if assignee is None:
+            task.phase_status = TaskPhase.PENDING_ASSIGNMENT
+        elif task.phase_status == TaskPhase.PENDING_ASSIGNMENT:
+            task.phase_status = TaskPhase.IN_PROGRESS
+    _notify_case_assigned(case, old_assignee_id, assignee.id if assignee else None)
 
 
 def _staff_users_ordered() -> list[User]:
@@ -1186,7 +1213,7 @@ def _unassign_staff_workload(user: User) -> None:
     for task in Task.query.filter_by(assignee_id=user.id).all():
         if phase_for_workflow(task.phase_status) != TaskPhase.IN_PROGRESS:
             continue
-        task.assignee_id = None
+        stamp_assignee(task, None)
         task.phase_status = TaskPhase.PENDING_ASSIGNMENT
 
 
@@ -2141,7 +2168,6 @@ def case_create():
             application_no=application_no,
             formal_status=formal_status or None,
             case_type_code=case_type_leaf.code,
-            business_owner_id=business_owner_id,
             order_at=order_at,
             expected_return_at=expected_return_at,
             actual_return_at=actual_return_at,
@@ -2152,7 +2178,10 @@ def case_create():
         )
         db.session.add(case)
         db.session.flush()
-        task = Task(case_id=case.id, phase_status=phase_status, assignee_id=business_owner_id)
+        owner = db.session.get(User, business_owner_id) if business_owner_id else None
+        stamp_business_owner(case, owner)
+        task = Task(case_id=case.id, phase_status=phase_status)
+        stamp_assignee(task, owner)
         if phase_status == TaskPhase.COMPLETED:
             ok, err = _resolve_actual_return_for_completed(
                 case,
@@ -2231,8 +2260,6 @@ def case_detail(case_id: int):
         .first()
     )
     review_action_filter = request.args.get("review_action", "all").strip()
-    if review_action_filter not in {"all", "approve", "reject"}:
-        review_action_filter = "all"
     review_operator_filter = request.args.get("review_operator", "all").strip()
     material_version_filter = request.args.get("material_version", "all").strip()
     if material_version_filter not in {"all", "draft", "final"}:
@@ -2244,35 +2271,13 @@ def case_detail(case_id: int):
     download_page = int(download_page_raw) if download_page_raw.isdigit() and int(download_page_raw) > 0 else 1
     review_page_raw = request.args.get("review_page", "1").strip()
     review_page = int(review_page_raw) if review_page_raw.isdigit() and int(review_page_raw) > 0 else 1
-    review_logs_query = CaseReviewLog.query.filter(
-        CaseReviewLog.case_id == case.id,
-        CaseReviewLog.action.in_(["approve", "reject"]),
-    )
-    if review_action_filter in {"approve", "reject"}:
-        review_logs_query = review_logs_query.filter(CaseReviewLog.action == review_action_filter)
-    operator_options = [
-        row[0]
-        for row in db.session.query(User.username)
-        .join(CaseReviewLog, CaseReviewLog.operator_id == User.id)
-        .filter(
-            CaseReviewLog.case_id == case.id,
-            CaseReviewLog.action.in_(["approve", "reject"]),
+    review_logs_pagination, operator_options, review_action_filter, review_operator_filter = (
+        paginate_case_trace_logs(
+            case.id,
+            action_filter=review_action_filter,
+            operator_filter=review_operator_filter,
+            page=review_page,
         )
-        .distinct()
-        .order_by(User.username.asc())
-        .all()
-    ]
-    if review_operator_filter != "all":
-        if review_operator_filter in operator_options:
-            operator_user = User.query.filter_by(username=review_operator_filter).first()
-            if operator_user is not None:
-                review_logs_query = review_logs_query.filter(CaseReviewLog.operator_id == operator_user.id)
-        else:
-            review_operator_filter = "all"
-    review_logs_pagination = (
-        review_logs_query
-        .order_by(CaseReviewLog.created_at.desc(), CaseReviewLog.id.desc())
-        .paginate(page=review_page, per_page=10, error_out=False)
     )
     download_logs_pagination = _case_material_download_rows(case.id, download_role_filter, download_page)
     if request.method == "POST":
@@ -2339,13 +2344,12 @@ def case_detail(case_id: int):
             case.rejected_at = datetime.now(timezone.utc)
             case.reject_note = reject_note
             case.attribution = Case.ATTRIBUTION_INTERNAL
-            db.session.add(
-                CaseReviewLog(
-                    case_id=case.id,
-                    operator_id=current_user.id,
-                    action="office_reject",
-                    note=reject_note,
-                )
+            add_review_log(
+                case_id=case.id,
+                action="office_reject",
+                operator=current_user,
+                recipient=case.task.assignee if case.task is not None else None,
+                note=reject_note,
             )
             db.session.commit()
             return redirect_with_qy_toast(
@@ -2360,13 +2364,10 @@ def case_detail(case_id: int):
             case.rejected_at = None
             case.reject_note = None
             case.attribution = Case.ATTRIBUTION_CUSTOMER
-            db.session.add(
-                CaseReviewLog(
-                    case_id=case.id,
-                    operator_id=current_user.id,
-                    action="reject_undo",
-                    note=None,
-                )
+            add_review_log(
+                case_id=case.id,
+                action="reject_undo",
+                operator=current_user,
             )
             db.session.commit()
             return redirect_with_qy_toast(
@@ -2444,6 +2445,7 @@ def case_material_download(case_id: int, material_id: int):
             case_id=case.id,
             material_id=material.id,
             operator_id=current_user.id,
+            operator_label=current_user.display_label,
             operator_role=current_user.role,
         )
     )
@@ -2476,7 +2478,7 @@ def case_material_download_logs_export(case_id: int):
         writer.writerow(
             [
                 _project_datetime_export_utc(item.created_at) if item.created_at else "",
-                item.operator.username if item.operator else "",
+                item.operator_display if item.operator_display != "—" else "",
                 item.operator_role,
                 item.material.original_name if item.material else "",
             ]
@@ -2541,7 +2543,8 @@ def case_edit(case_id: int):
         case.title = title
         case.formal_status = formal_status or None
         case.case_type_code = case_type_leaf.code
-        case.business_owner_id = business_owner_id
+        owner = db.session.get(User, business_owner_id) if business_owner_id else None
+        stamp_business_owner(case, owner)
         case.order_at = order_at
         case.expected_return_at = expected_return_at
         # 留空表示保留已有值；清空业务时间必须通过专门、带确认的操作完成。
@@ -2552,11 +2555,11 @@ def case_edit(case_id: int):
         case.patent_application_no = patent_application_no or None
         old_assignee_id = task.assignee_id if task is not None else None
         if task is None:
-            task = Task(case_id=case.id, phase_status=phase_status, assignee_id=business_owner_id)
+            task = Task(case_id=case.id, phase_status=phase_status)
             db.session.add(task)
         else:
             task.phase_status = phase_status
-            task.assignee_id = business_owner_id
+        stamp_assignee(task, owner)
         if task.phase_status == TaskPhase.COMPLETED:
             ok, err = _resolve_actual_return_for_completed(
                 case,
@@ -2632,20 +2635,7 @@ def case_reassign(case_id: int):
     assignee_id, err = _business_owner_id_from_form(request.form.get("assignee_id"))
     if err:
         return redirect_with_qy_toast("admin.task_board", err, "warning", status=status, sort=sort)
-    case.business_owner_id = assignee_id
-    task = case.task
-    old_assignee_id = task.assignee_id if task is not None else None
-    if task is None:
-        phase_status = TaskPhase.PENDING_ASSIGNMENT if assignee_id is None else TaskPhase.IN_PROGRESS
-        task = Task(case_id=case.id, phase_status=phase_status, assignee_id=assignee_id)
-        db.session.add(task)
-    else:
-        task.assignee_id = assignee_id
-        if assignee_id is None:
-            task.phase_status = TaskPhase.PENDING_ASSIGNMENT
-        elif task.phase_status == TaskPhase.PENDING_ASSIGNMENT:
-            task.phase_status = TaskPhase.IN_PROGRESS
-    _notify_case_assigned(case, old_assignee_id, assignee_id)
+    _apply_case_assignment(case, assignee_id)
     db.session.commit()
     msg = "已转派给指定员工。" if assignee_id else "已取消指派，案件进入待分配。"
     return redirect_with_qy_toast("admin.task_board", msg, "success", status=status, sort=sort)
@@ -2669,15 +2659,125 @@ def batch_operations():
 @admin_bp.route("/smart-assignment")
 @login_required
 def smart_assignment():
-    """智能分案占位页：后续接入员工负载与历史接手数据。"""
+    """智能派单：选中一件待分配案件，按撰写师在该案件截止窗口内的负载排出建议顺序。"""
     _ensure_admin()
+    pending_cases = pending_assignment_cases()
+    raw_case_id = request.args.get("case_id", "").strip()
+    selected_case = None
+    if raw_case_id.isdigit():
+        selected_case = next(
+            (case for case in pending_cases if case.id == int(raw_case_id)), None
+        )
+    if selected_case is None and pending_cases:
+        # 默认选中最紧急的一件（截止最近），避免进页面是空的。
+        selected_case = pending_cases[0]
+
+    window_end = case_due_at(selected_case) if selected_case is not None else None
+    # 退稿案件一般派回原来写的那个人；他离职或转了职能就只能重新分配。
+    writer, writer_source = (
+        original_writer(selected_case) if selected_case is not None else (None, "")
+    )
+    writer_assignable = writer is not None and writer.is_assignable_writer
+    # 未填应返稿时间无法算窗口，此时只提示补时间，不给可能误导的推荐顺序。
+    rows = (
+        writer_load_rows(
+            _staff_users_ordered(),
+            window_end=window_end,
+            exclude_case_id=selected_case.id,
+            pin_user_id=writer.id if writer_assignable else None,
+        )
+        if selected_case is not None and window_end is not None
+        else []
+    )
+
     return render_spa_or_full(
-        full_template="admin/page.html",
-        inner_template="partials/role_placeholder_inner.html",
+        full_template="admin/smart_assignment.html",
+        inner_template="admin/snippets/smart_assignment_inner.html",
         spa_endpoint="admin.smart_assignment",
         spa_document_title="智能派单 — 琴岳专利管理系统",
         page_title="智能派单",
-        page_desc="按员工负载、技术领域与案件难度推荐分派人选。",
+        page_desc="以案件应返稿时间为窗口，比较撰写师在这段时间内已承接的工作量，空闲多的排在前面；派单仍由人工确认。",
+        pending_cases=pending_cases,
+        pending_total=len(pending_cases),
+        selected_case=selected_case,
+        selected_due_at=window_end,
+        selected_window_days=window_days(window_end),
+        selected_weight=(
+            case_workload_weight(selected_case) if selected_case is not None else None
+        ),
+        original_writer_user=writer,
+        original_writer_source=writer_source,
+        original_writer_assignable=writer_assignable,
+        departed_cases=departed_assignee_cases(),
+        rows=rows,
+    )
+
+
+@admin_bp.route("/smart-assignment/assign", methods=["POST"])
+@login_required
+def smart_assignment_assign():
+    """智能派单页上的手动派单：只接受待分配案件与在职撰写师。"""
+    _ensure_admin()
+    raw_case_id = request.form.get("case_id", "").strip()
+    case = db.session.get(Case, int(raw_case_id)) if raw_case_id.isdigit() else None
+    if case is None:
+        return redirect_with_qy_toast(
+            "admin.smart_assignment", "案件不存在或已被删除。", "warning"
+        )
+    if case.task is not None and case.task.phase_status != TaskPhase.PENDING_ASSIGNMENT:
+        return redirect_with_qy_toast(
+            "admin.smart_assignment",
+            "该案件已不在待分配状态，请到案件详情转派。",
+            "warning",
+            case_id=case.id,
+        )
+
+    assignee_id, err = _business_owner_id_from_form(request.form.get("assignee_id"))
+    if err:
+        return redirect_with_qy_toast(
+            "admin.smart_assignment", err, "warning", case_id=case.id
+        )
+    if assignee_id is None:
+        return redirect_with_qy_toast(
+            "admin.smart_assignment", "请选择要派单的撰写师。", "warning", case_id=case.id
+        )
+
+    _apply_case_assignment(case, assignee_id)
+    db.session.commit()
+    assignee = db.session.get(User, assignee_id)
+    return redirect_with_qy_toast(
+        "admin.smart_assignment",
+        f"已把《{case.title}》派给 {assignee.display_label if assignee else '该员工'}。",
+        "success",
+    )
+
+
+@admin_bp.route("/smart-assignment/release", methods=["POST"])
+@login_required
+def smart_assignment_release():
+    """把承办人已离职的案件转回待分配，使其进入派单池；不自动指派给别人。"""
+    _ensure_admin()
+    raw_case_id = request.form.get("case_id", "").strip()
+    case = db.session.get(Case, int(raw_case_id)) if raw_case_id.isdigit() else None
+    if case is None:
+        return redirect_with_qy_toast(
+            "admin.smart_assignment", "案件不存在或已被删除。", "warning"
+        )
+    assignee = case.task.assignee if case.task is not None else None
+    if assignee is not None and assignee.is_assignable_writer:
+        return redirect_with_qy_toast(
+            "admin.smart_assignment",
+            "该案件的承办人仍在职，请到案件详情转派。",
+            "warning",
+        )
+
+    _apply_case_assignment(case, None)
+    db.session.commit()
+    return redirect_with_qy_toast(
+        "admin.smart_assignment",
+        f"《{case.title}》已转入待分配，可在左侧选中后派单。",
+        "success",
+        case_id=case.id,
     )
 
 

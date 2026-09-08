@@ -40,9 +40,9 @@
         <td class="qy-case-type-cell">{% if case_item %}{{ case_type_badges(case_item) }}{% else %}—{% endif %}</td>
         <td class="text-nowrap">{{ task_phase_badge(task|qy_effective_task_phase) }}</td>
         <td class="text-nowrap small">
-          {% if row.staff %}
-          <span>{{ row.staff|qy_user_label }}</span>
-          {{ staff_kind_badge(row.staff) }}
+          {% if row.staff or row.staff_label %}
+          <span>{{ row.staff|qy_trace_label(row.staff_label) }}</span>
+          {% if row.staff %}{{ staff_kind_badge(row.staff) }}{% endif %}
           {% else %}
           <span class="text-muted">—</span>
           {% endif %}

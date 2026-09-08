@@ -216,9 +216,12 @@
                     {% endif %}
                   </td>
                   <td class="text-nowrap small">
-                    {% if case_item.business_owner_user %}
-                    <span>{{ case_item.business_owner_user|qy_user_label }}</span>
+                    {% if case_item.business_owner_user or case_item.business_owner_label %}
+                    <span>{{ case_item.business_owner_user|qy_trace_label(case_item.business_owner_label) }}</span>
                     {{ staff_kind_badge(case_item.business_owner_user) }}
+                    {% if case_item.business_owner_user and case_item.business_owner_user.role == 'staff' and not case_item.business_owner_user.is_active %}
+                    <span class="badge text-bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">已离职</span>
+                    {% endif %}
                     {% else %}
                     <span class="badge text-bg-warning-subtle text-warning-emphasis border border-warning-subtle">未分配</span>
                     {% endif %}

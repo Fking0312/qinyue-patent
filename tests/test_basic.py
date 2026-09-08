@@ -1669,7 +1669,7 @@ def test_admin_and_staff_case_detail_show_review_history_list():
     client.post("/auth/login", data={"username": admin_name, "password": "secret"}, follow_redirects=True)
     r_admin = client.get(f"/admin/case-detail/{case_id}")
     assert r_admin.status_code == 200
-    assert "审核历史".encode("utf-8") in r_admin.data
+    assert "案件留痕".encode("utf-8") in r_admin.data
     assert "通过".encode("utf-8") in r_admin.data
     assert "打回".encode("utf-8") in r_admin.data
     assert "历史打回备注".encode("utf-8") in r_admin.data
@@ -1678,7 +1678,7 @@ def test_admin_and_staff_case_detail_show_review_history_list():
     client.post("/auth/login", data={"username": staff_name, "password": "secret"}, follow_redirects=True)
     r_staff = client.get(f"/staff/case-detail/{case_id}")
     assert r_staff.status_code == 200
-    assert "审核历史".encode("utf-8") in r_staff.data
+    assert "案件留痕".encode("utf-8") in r_staff.data
     assert "通过".encode("utf-8") in r_staff.data
     assert "打回".encode("utf-8") in r_staff.data
     assert "历史打回备注".encode("utf-8") in r_staff.data
@@ -1769,13 +1769,13 @@ def test_admin_and_staff_case_detail_review_history_filter_by_action():
     client.post("/auth/login", data={"username": admin_name, "password": "secret"}, follow_redirects=True)
     r_admin_approve = client.get(f"/admin/case-detail/{case_id}?review_action=approve")
     assert r_admin_approve.status_code == 200
-    approve_history = r_admin_approve.data.split("审核历史".encode("utf-8"), 1)[1]
+    approve_history = r_admin_approve.data.split("案件留痕".encode("utf-8"), 1)[1]
     assert "仅通过备注".encode("utf-8") in approve_history
     assert "仅打回备注".encode("utf-8") not in approve_history
 
     r_admin_reject = client.get(f"/admin/case-detail/{case_id}?review_action=reject")
     assert r_admin_reject.status_code == 200
-    reject_history = r_admin_reject.data.split("审核历史".encode("utf-8"), 1)[1]
+    reject_history = r_admin_reject.data.split("案件留痕".encode("utf-8"), 1)[1]
     assert "仅打回备注".encode("utf-8") in reject_history
     assert "仅通过备注".encode("utf-8") not in reject_history
 
@@ -1783,13 +1783,13 @@ def test_admin_and_staff_case_detail_review_history_filter_by_action():
     client.post("/auth/login", data={"username": staff_name, "password": "secret"}, follow_redirects=True)
     r_staff_approve = client.get(f"/staff/case-detail/{case_id}?review_action=approve")
     assert r_staff_approve.status_code == 200
-    staff_approve_history = r_staff_approve.data.split("审核历史".encode("utf-8"), 1)[1]
+    staff_approve_history = r_staff_approve.data.split("案件留痕".encode("utf-8"), 1)[1]
     assert "仅通过备注".encode("utf-8") in staff_approve_history
     assert "仅打回备注".encode("utf-8") not in staff_approve_history
 
     r_staff_reject = client.get(f"/staff/case-detail/{case_id}?review_action=reject")
     assert r_staff_reject.status_code == 200
-    staff_reject_history = r_staff_reject.data.split("审核历史".encode("utf-8"), 1)[1]
+    staff_reject_history = r_staff_reject.data.split("案件留痕".encode("utf-8"), 1)[1]
     assert "仅打回备注".encode("utf-8") in staff_reject_history
     assert "仅通过备注".encode("utf-8") not in staff_reject_history
 
@@ -1838,7 +1838,7 @@ def test_admin_and_staff_case_detail_review_history_filter_by_operator():
     client.post("/auth/login", data={"username": admin_name, "password": "secret"}, follow_redirects=True)
     r_admin = client.get(f"/admin/case-detail/{case_id}?review_operator={admin_name}")
     assert r_admin.status_code == 200
-    admin_history = r_admin.data.split("审核历史".encode("utf-8"), 1)[1]
+    admin_history = r_admin.data.split("案件留痕".encode("utf-8"), 1)[1]
     assert "管理员A备注".encode("utf-8") in admin_history
     assert "管理员B备注".encode("utf-8") not in admin_history
 
@@ -1846,7 +1846,7 @@ def test_admin_and_staff_case_detail_review_history_filter_by_operator():
     client.post("/auth/login", data={"username": staff_name, "password": "secret"}, follow_redirects=True)
     r_staff = client.get(f"/staff/case-detail/{case_id}?review_operator={reviewer_name}")
     assert r_staff.status_code == 200
-    staff_history = r_staff.data.split("审核历史".encode("utf-8"), 1)[1]
+    staff_history = r_staff.data.split("案件留痕".encode("utf-8"), 1)[1]
     assert "管理员B备注".encode("utf-8") in staff_history
     assert "管理员A备注".encode("utf-8") not in staff_history
 

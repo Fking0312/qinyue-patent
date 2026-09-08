@@ -192,20 +192,26 @@ def staff_submit_case_for_review(task: "Task", *, operator_id: int | None = None
     员工确认提交审核：若当前为撰写中（含已超期），改为待审核并留痕。
     返回是否发生状态变更。
     """
-    from app.models import CaseReviewLog, db
+    from app.case_trace import add_review_log, writing_material_submit_note
+    from app.extensions import db
+    from app.models import User
 
     if is_terminal_phase(task.phase_status):
         return False
     if phase_for_workflow(task.phase_status) != TaskPhase.IN_PROGRESS:
         return False
+    operator = db.session.get(User, operator_id) if operator_id else None
+    if operator is None and task.assignee_id:
+        operator = db.session.get(User, task.assignee_id)
+    if operator is None:
+        return False
     task.phase_status = TaskPhase.PENDING_REVIEW
-    db.session.add(
-        CaseReviewLog(
-            case_id=task.case_id,
-            operator_id=operator_id or task.assignee_id,
-            action="submit_for_review",
-            note=None,
-        )
+    add_review_log(
+        case_id=task.case_id,
+        action="submit_for_review",
+        operator=operator,
+        recipient=operator,
+        note=writing_material_submit_note(task.case_id),
     )
     return True
 
@@ -275,14 +281,19 @@ def normalize_legacy_draft_phases() -> int:
 
 
 def _latest_staff_material_upload_at(case: "Case", *, before: datetime | None = None) -> datetime | None:
-    """取员工撰写材料上传时间；可选仅统计某时刻之前。"""
+    """取员工撰写材料上传时间；可选仅统计某时刻之前。
+
+    账号停用或行不在时，用上传时冻结的 uploaded_by_role，避免办结时间算丢。
+    """
+    from sqlalchemy import or_
+
     from app.models import CaseMaterial, User
 
     query = (
-        CaseMaterial.query.join(User, CaseMaterial.uploaded_by_id == User.id)
+        CaseMaterial.query.outerjoin(User, CaseMaterial.uploaded_by_id == User.id)
         .filter(
             CaseMaterial.case_id == case.id,
-            User.role == "staff",
+            or_(User.role == "staff", CaseMaterial.uploaded_by_role == "staff"),
         )
     )
     if before is not None:

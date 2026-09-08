@@ -43,9 +43,12 @@
         <td class="qy-case-type-cell">{% if case_item %}{{ case_type_badges(case_item) }}{% else %}—{% endif %}</td>
         <td class="text-nowrap">{{ task_phase_badge(task.phase_status if task else '') }}</td>
         <td class="text-nowrap small">
-          {% if row.staff %}
-          <span>{{ row.staff|qy_user_label }}</span>
-          {{ staff_kind_badge(row.staff) }}
+          {% if row.staff or row.staff_label %}
+          <span>{{ row.staff|qy_trace_label(row.staff_label) }}</span>
+          {% if row.staff %}{{ staff_kind_badge(row.staff) }}{% endif %}
+          {% if row.staff and row.staff.role == 'staff' and not row.staff.is_active %}
+          <span class="badge text-bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">已离职</span>
+          {% endif %}
           {% else %}
           <span class="text-muted">—</span>
           {% endif %}

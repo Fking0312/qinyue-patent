@@ -75,7 +75,7 @@
             <tr>
               <td>{{ file_item.original_name }}</td>
               <td>{{ "定稿" if file_item.version_tag == "final" else "初稿" }}</td>
-              <td>{{ file_item.uploaded_by|qy_user_label if file_item.uploaded_by else "—" }}</td>
+              <td>{{ file_item.uploader_display }}</td>
               <td>{{ file_item.created_at|qy_format_dt }}</td>
               <td>{{ file_item.note or "—" }}</td>
               <td>

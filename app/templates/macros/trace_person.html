@@ -1,0 +1,27 @@
+{% macro departed_badge(user) -%}
+  {% if user and user.role == 'staff' and not user.is_active %}
+  <span class="badge text-bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">已离职</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro trace_person(user, snapshot=None) -%}
+  <span>{{ user|qy_trace_label(snapshot) }}</span>
+  {{ departed_badge(user) }}
+{%- endmacro %}
+
+{% macro trace_action_badge(log) -%}
+  {% set tone = log.action_tone %}
+  {% if tone == 'success' %}
+  <span class="badge text-bg-success">{{ log.action_label }}</span>
+  {% elif tone == 'warning' %}
+  <span class="badge text-bg-warning">{{ log.action_label }}</span>
+  {% elif tone == 'danger' %}
+  <span class="badge text-bg-danger">{{ log.action_label }}</span>
+  {% elif tone == 'primary' %}
+  <span class="badge text-bg-primary">{{ log.action_label }}</span>
+  {% elif tone == 'info' %}
+  <span class="badge text-bg-info">{{ log.action_label }}</span>
+  {% else %}
+  <span class="badge text-bg-secondary">{{ log.action_label }}</span>
+  {% endif %}
+{%- endmacro %}

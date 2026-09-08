@@ -2,6 +2,7 @@
 {% from "macros/task_phase.html" import task_phase_badge %}
 {% from "macros/page_header.html" import page_header %}
 {% from "macros/case_download_logs.html" import case_download_logs %}
+{% from "macros/trace_person.html" import trace_person, trace_action_badge %}
 <div class="staff-page-inner p-3 p-md-4 qy-case-detail-page">
   {% call page_header(page_title) %}
     <a class="btn btn-outline-secondary" href="{{ url_for('staff.task_board') }}" data-spa-endpoint="staff.task_board">返回任务看板</a>
@@ -60,7 +61,7 @@
             </div>
             <div class="col-md-3">
               <div class="text-muted small mb-1">指派员工</div>
-              <div>{% if case.business_owner_user %}{{ case.business_owner_user|qy_user_label }}{% else %}—{% endif %}</div>
+              <div>{% if case.business_owner_user or case.business_owner_label %}{{ trace_person(case.business_owner_user, case.business_owner_label) }}{% else %}—{% endif %}</div>
             </div>
             <div class="col-md-3">
               <div class="text-muted small mb-1">下单时间</div>
@@ -192,7 +193,7 @@
                 <tr>
                   <td>{{ file_item.original_name }}</td>
                   <td>{{ "定稿" if file_item.version_tag == "final" else "初稿" }}</td>
-                  <td>{{ file_item.uploaded_by|qy_user_label if file_item.uploaded_by else "—" }}</td>
+                  <td>{{ trace_person(file_item.uploaded_by, file_item.uploaded_by_label) }}</td>
                   <td>{{ file_item.created_at|qy_format_dt }}</td>
                   <td>{{ file_item.note or "—" }}</td>
                   <td>
@@ -243,7 +244,7 @@
                     <span class="text-muted">—</span>
                     {% endif %}
                   </td>
-                  <td>{{ file_item.uploaded_by|qy_user_label if file_item.uploaded_by else "—" }}</td>
+                  <td>{{ trace_person(file_item.uploaded_by, file_item.uploaded_by_label) }}</td>
                   <td>{{ file_item.created_at|qy_format_dt }}</td>
                   <td>{{ file_item.note or "—" }}</td>
                   <td>
@@ -283,9 +284,11 @@
       <div class="card border-0 shadow-sm">
         <div class="card-body">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-            <h2 class="h6 mb-0">审核历史</h2>
-            <div class="btn-group btn-group-sm" role="group" aria-label="审核动作筛选">
+            <h2 class="h6 mb-0">案件留痕</h2>
+            <div class="btn-group btn-group-sm" role="group" aria-label="留痕动作筛选">
               <a class="btn {% if review_action_filter == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('staff.case_detail_by_id', case_id=case.id, review_action='all', review_operator=review_operator_filter, review_page=1) }}" data-spa-endpoint="staff.case_detail_by_id">全部</a>
+              <a class="btn {% if review_action_filter == 'assigned' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('staff.case_detail_by_id', case_id=case.id, review_action='assigned', review_operator=review_operator_filter, review_page=1) }}" data-spa-endpoint="staff.case_detail_by_id">仅指派</a>
+              <a class="btn {% if review_action_filter == 'submit_for_review' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('staff.case_detail_by_id', case_id=case.id, review_action='submit_for_review', review_operator=review_operator_filter, review_page=1) }}" data-spa-endpoint="staff.case_detail_by_id">仅提交</a>
               <a class="btn {% if review_action_filter == 'approve' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('staff.case_detail_by_id', case_id=case.id, review_action='approve', review_operator=review_operator_filter, review_page=1) }}" data-spa-endpoint="staff.case_detail_by_id">仅通过</a>
               <a class="btn {% if review_action_filter == 'reject' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('staff.case_detail_by_id', case_id=case.id, review_action='reject', review_operator=review_operator_filter, review_page=1) }}" data-spa-endpoint="staff.case_detail_by_id">仅打回</a>
             </div>
@@ -317,19 +320,13 @@
                 {% for log in review_logs %}
                 <tr>
                   <td>{{ log.created_at|qy_format_dt }}</td>
-                  <td>
-                    {% if log.action == "approve" %}
-                    <span class="badge text-bg-success">通过</span>
-                    {% else %}
-                    <span class="badge text-bg-warning">打回</span>
-                    {% endif %}
-                  </td>
-                  <td>{{ log.operator|qy_user_label if log.operator else "—" }}</td>
+                  <td>{{ trace_action_badge(log) }}</td>
+                  <td>{{ trace_person(log.operator, log.operator_label) }}</td>
                   <td>{{ log.note or "—" }}</td>
                 </tr>
                 {% else %}
                 <tr>
-                  <td colspan="4" class="text-center text-muted py-4">暂无审核历史</td>
+                  <td colspan="4" class="text-center text-muted py-4">暂无案件留痕</td>
                 </tr>
                 {% endfor %}
               </tbody>

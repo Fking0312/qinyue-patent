@@ -128,6 +128,7 @@ def case_material_download(case_id: int, material_id: int):
             case_id=case.id,
             material_id=material.id,
             operator_id=current_user.id,
+            operator_label=current_user.display_label,
             operator_role=current_user.role,
         )
     )
