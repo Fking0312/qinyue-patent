@@ -70,6 +70,7 @@ class Project(db.Model):
 class Case(db.Model):
     """
     案件（专利案）：一件专利在业务上只属于一个项目（防重复申请）。
+    同一项目下案件标题不能重复（去首尾空白、合并连续空格后比较）。
     application_no 兼容旧字段名，业务上作为案件序列号：6 位自动编号（YYMM+当月序号），全局唯一。
     """
 
@@ -86,6 +87,9 @@ class Case(db.Model):
     business_owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
     # 指派时冻结的负责人姓名；账号停用或将来删行后办结案件仍能显示是谁做的。
     business_owner_label = db.Column(db.String(120), nullable=True)
+    # 下单人（业务人员），与承办撰写师分开；确认前不进派单池。
+    intake_owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    intake_owner_label = db.Column(db.String(120), nullable=True)
     order_at = db.Column(db.DateTime, nullable=True)
     expected_return_at = db.Column(db.DateTime, nullable=True)
     actual_return_at = db.Column(db.DateTime, nullable=True)
@@ -111,6 +115,7 @@ class Case(db.Model):
 
     project = db.relationship("Project", back_populates="cases")
     business_owner_user = db.relationship("User", foreign_keys=[business_owner_id])
+    intake_owner_user = db.relationship("User", foreign_keys=[intake_owner_id])
 
     @property
     def owner_display(self) -> str:
@@ -118,6 +123,14 @@ class Case(db.Model):
         from app.case_trace import display_trace
 
         return display_trace(self.business_owner_user, self.business_owner_label)
+
+    @property
+    def intake_owner_display(self) -> str:
+        """下单人展示名：账号还在用实时姓名，否则用提交时的快照。"""
+        from app.case_trace import display_trace
+
+        return display_trace(self.intake_owner_user, self.intake_owner_label)
+
     task = db.relationship(
         "Task",
         back_populates="case",
@@ -132,6 +145,34 @@ class Case(db.Model):
         lazy="dynamic",
         cascade="all, delete-orphan",
     )
+
+    DUPLICATE_TITLE_IN_PROJECT_MSG = "同一项目下已有相同案件标题，请更换名称。"
+
+    @staticmethod
+    def normalize_title(title: str | None) -> str:
+        """案件标题：去掉首尾空白，把连续空格（含全角空格）收成一个空格。"""
+        text = (title or "").replace("\u3000", " ")
+        return " ".join(text.split())
+
+    @classmethod
+    def title_taken_in_project(
+        cls,
+        project_id: int,
+        title: str,
+        *,
+        exclude_id: int | None = None,
+    ) -> bool:
+        """同一项目里是否已有这条标题；编辑时排除当前案件。"""
+        normalized = cls.normalize_title(title)
+        if not normalized or project_id <= 0:
+            return False
+        query = cls.query.filter(cls.project_id == project_id)
+        if exclude_id is not None:
+            query = query.filter(cls.id != exclude_id)
+        for existing_title in query.with_entities(cls.title):
+            if cls.normalize_title(existing_title[0]) == normalized:
+                return True
+        return False
 
     @property
     def is_internal(self) -> bool:

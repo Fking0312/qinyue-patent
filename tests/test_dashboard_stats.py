@@ -49,11 +49,13 @@ def test_admin_dashboard_renders_stat_cards():
     page = client.get("/admin/dashboard")
     assert page.status_code == 200
     assert "待审核".encode() in page.data
+    assert "下单待确认".encode() in page.data
     assert "本月新建".encode() in page.data
     assert "已超期".encode() in page.data
     assert "待分配".encode() in page.data
     assert b"qy-dash-stat-card" in page.data
     assert b'data-spa-endpoint="admin.review_quality"' in page.data
+    assert b'data-spa-endpoint="admin.order_intake"' in page.data
     assert "期限提醒".encode("utf-8") in page.data
 
 

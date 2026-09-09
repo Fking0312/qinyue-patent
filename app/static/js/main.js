@@ -1056,6 +1056,9 @@ if (popupNavGroups.length > 0) {
       if (typeof window.qyRefreshReviewBadge === "function") {
         window.qyRefreshReviewBadge();
       }
+      if (typeof window.qyRefreshOrderIntakeBadge === "function") {
+        window.qyRefreshOrderIntakeBadge();
+      }
       if (typeof window.qyRefreshStaffNotificationBadge === "function") {
         window.qyRefreshStaffNotificationBadge();
       }
@@ -1079,6 +1082,9 @@ if (popupNavGroups.length > 0) {
       }
       if (typeof window.qyInitCasesCustomerProjectFilter === "function" && spaMainEl) {
         window.qyInitCasesCustomerProjectFilter(spaMainEl);
+      }
+      if (typeof window.qyInitBusinessOrderPage === "function" && spaMainEl) {
+        window.qyInitBusinessOrderPage(spaMainEl);
       }
 
       if (savedScroll) {
@@ -1362,6 +1368,13 @@ if (popupNavGroups.length > 0) {
       }
     }
 
+    if (typeof window.qyRefreshReviewBadge === "function") {
+      window.qyRefreshReviewBadge();
+    }
+    if (typeof window.qyRefreshOrderIntakeBadge === "function") {
+      window.qyRefreshOrderIntakeBadge();
+    }
+
     await spaNavigate(window.location.href, {
       skipHistory: true,
       force: true,
@@ -1626,6 +1639,39 @@ if (popupNavGroups.length > 0) {
   };
 
   window.qyRefreshReviewBadge = refreshBadge;
+  refreshBadge();
+  window.setInterval(refreshBadge, 30000);
+})();
+
+/* ---------- 管理端下单待确认红点：确认后立即更新，并定时检查新提交 ---------- */
+(() => {
+  const refreshBadge = async () => {
+    const badges = Array.from(document.querySelectorAll("[data-order-intake-badge]"));
+    const statusUrl = badges.find((badge) => badge.dataset.statusUrl)?.dataset.statusUrl;
+    if (!badges.length || !statusUrl) {
+      return;
+    }
+    try {
+      const response = await fetch(statusUrl, {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        return;
+      }
+      const payload = await response.json();
+      const unread = Number(payload.unread || 0);
+      badges.forEach((badge) => {
+        badge.textContent = String(unread);
+        badge.classList.toggle("d-none", unread <= 0);
+        badge.setAttribute("aria-label", `待确认下单 ${unread} 件`);
+      });
+    } catch {
+      // 网络短暂异常时保留上一次红点状态。
+    }
+  };
+
+  window.qyRefreshOrderIntakeBadge = refreshBadge;
   refreshBadge();
   window.setInterval(refreshBadge, 30000);
 })();
@@ -2485,6 +2531,127 @@ qyInstallAdminListUi({
   };
 })();
 
+/* ---------- 业务下单：客户/项目级联与目录筛选 ---------- */
+(() => {
+  const syncProjectOptions = (customerSelect, projectSelect) => {
+    const customerId = customerSelect.value;
+    const preferred = projectSelect.getAttribute("data-selected") || "";
+    let visible = 0;
+    let keepValue = "";
+    projectSelect.querySelectorAll("option[data-customer-id]").forEach((opt) => {
+      const match = Boolean(customerId) && opt.getAttribute("data-customer-id") === String(customerId);
+      opt.hidden = !match;
+      opt.disabled = !match;
+      if (!match) {
+        return;
+      }
+      visible += 1;
+      if (opt.value === preferred || opt.value === projectSelect.value) {
+        keepValue = opt.value;
+      }
+    });
+    const placeholder = projectSelect.querySelector('option[value=""]');
+    if (placeholder) {
+      placeholder.hidden = false;
+      placeholder.disabled = false;
+      if (!customerId) {
+        placeholder.textContent = "请先选择客户";
+      } else if (visible) {
+        placeholder.textContent = "请选择项目";
+      } else {
+        placeholder.textContent = "该客户下暂无项目，请先新建";
+      }
+    }
+    projectSelect.value = keepValue;
+  };
+
+  window.qyInitBusinessOrderPage = (root) => {
+    const scope = root instanceof HTMLElement ? root : document;
+    const page = scope.querySelector(".qy-order-page") || (scope.classList?.contains("qy-order-page") ? scope : null);
+    if (!(page instanceof HTMLElement) || page.dataset.qyOrderPageBound === "1") {
+      return;
+    }
+    const customerSelect = page.querySelector("#qyOrderCustomer");
+    const projectSelect = page.querySelector("#qyOrderProject");
+    if (!(customerSelect instanceof HTMLSelectElement) || !(projectSelect instanceof HTMLSelectElement)) {
+      return;
+    }
+
+    const bindProjectCustomer = () => {
+      const bindSelect = page.querySelector("#qyNewProjectCustomer");
+      if (bindSelect instanceof HTMLSelectElement && customerSelect.value) {
+        bindSelect.value = customerSelect.value;
+      }
+    };
+
+    const markCatalogActive = () => {
+      const catalogList = page.querySelector("#qyOrderCatalogList");
+      if (!(catalogList instanceof HTMLElement)) {
+        return;
+      }
+      const customerId = customerSelect.value;
+      const projectId = projectSelect.value;
+      catalogList.querySelectorAll("[data-order-pick]").forEach((node) => {
+        if (!(node instanceof HTMLElement)) {
+          return;
+        }
+        const isCustomerBtn = !node.getAttribute("data-project-id");
+        const sameCustomer = node.getAttribute("data-customer-id") === customerId;
+        const sameProject = node.getAttribute("data-project-id") === projectId;
+        node.classList.toggle("is-active", sameCustomer && (isCustomerBtn ? !projectId : sameProject));
+      });
+    };
+
+    const onCustomerChange = () => {
+      projectSelect.setAttribute("data-selected", "");
+      syncProjectOptions(customerSelect, projectSelect);
+      bindProjectCustomer();
+      markCatalogActive();
+    };
+
+    customerSelect.addEventListener("change", onCustomerChange);
+    projectSelect.addEventListener("change", markCatalogActive);
+    syncProjectOptions(customerSelect, projectSelect);
+    bindProjectCustomer();
+    markCatalogActive();
+
+    const catalogList = page.querySelector("#qyOrderCatalogList");
+    const searchInput = page.querySelector("#qyOrderCatalogSearch");
+    if (catalogList instanceof HTMLElement) {
+      catalogList.addEventListener("click", (event) => {
+        const pick = event.target instanceof Element ? event.target.closest("[data-order-pick]") : null;
+        if (!(pick instanceof HTMLElement)) {
+          return;
+        }
+        const customerId = pick.getAttribute("data-customer-id") || "";
+        const projectId = pick.getAttribute("data-project-id") || "";
+        if (!customerId) {
+          return;
+        }
+        customerSelect.value = customerId;
+        projectSelect.setAttribute("data-selected", projectId);
+        syncProjectOptions(customerSelect, projectSelect);
+        bindProjectCustomer();
+        markCatalogActive();
+      });
+    }
+    if (searchInput instanceof HTMLInputElement && catalogList instanceof HTMLElement) {
+      searchInput.addEventListener("input", () => {
+        const q = (searchInput.value || "").trim().toLowerCase();
+        catalogList.querySelectorAll(".qy-order-catalog-group").forEach((node) => {
+          if (!(node instanceof HTMLElement)) {
+            return;
+          }
+          const hay = node.getAttribute("data-search") || "";
+          node.hidden = Boolean(q) && hay.indexOf(q) === -1;
+        });
+      });
+    }
+
+    page.dataset.qyOrderPageBound = "1";
+  };
+})();
+
 qyInstallAdminListUi({
   listRootId: "qy-accounts-list-root",
   filterJsonId: "qy-accounts-filter-json",
@@ -2782,6 +2949,9 @@ qyInstallAdminListUi({
     }
     if (mainEl && typeof window.qyInitCasesCustomerProjectFilter === "function") {
       window.qyInitCasesCustomerProjectFilter(mainEl);
+    }
+    if (mainEl && typeof window.qyInitBusinessOrderPage === "function") {
+      window.qyInitBusinessOrderPage(mainEl);
     }
   };
   if (document.readyState === "loading") {

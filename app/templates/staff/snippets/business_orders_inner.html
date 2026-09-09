@@ -1,0 +1,301 @@
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/case_type.html" import case_type_selector %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+<div class="staff-page-inner p-3 p-md-4 qy-order-page">
+  {% call page_header(page_title, page_desc, extra_class='qy-order-header') %}
+    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#qyOrderNewCustomerModal">新建客户</button>
+    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#qyOrderNewProjectModal">新建项目</button>
+  {% endcall %}
+
+  <div class="qy-order-workspace">
+    <aside class="qy-order-catalog" aria-labelledby="qy-order-catalog-title">
+      <div class="qy-order-catalog-head">
+        <div class="d-flex align-items-center justify-content-between gap-2">
+          <h2 id="qy-order-catalog-title" class="h6 mb-0">客户与项目</h2>
+          <span class="qy-order-catalog-count">{{ customers|length }}</span>
+        </div>
+        <input id="qyOrderCatalogSearch" class="form-control form-control-sm mt-2" type="search" maxlength="200" placeholder="筛选客户或项目" autocomplete="off" aria-label="筛选客户或项目">
+      </div>
+      {% if catalog_rows %}
+      <div class="qy-order-catalog-list" id="qyOrderCatalogList">
+        {% for row in catalog_rows %}
+        <article class="qy-order-catalog-group" data-search="{{ (row.customer.name ~ ' ' ~ row.projects|map(attribute='name')|join(' '))|lower|e }}">
+          <button type="button" class="qy-order-catalog-customer" data-order-pick data-customer-id="{{ row.customer.id }}">{{ row.customer.name }}</button>
+          {% if row.projects %}
+          <ul class="qy-order-catalog-projects">
+            {% for project in row.projects %}
+            <li>
+              <button type="button" class="qy-order-catalog-project" data-order-pick data-customer-id="{{ row.customer.id }}" data-project-id="{{ project.id }}">
+                <span>{{ project.name }}</span>
+                {% if project.code %}<span class="qy-order-catalog-code">{{ project.code }}</span>{% endif %}
+              </button>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <div class="qy-order-catalog-empty">暂无项目</div>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="qy-order-catalog-empty-page">还没有客户</div>
+      {% endif %}
+    </aside>
+
+    <section class="qy-order-main card border-0 shadow-sm" aria-labelledby="qy-order-submit-title">
+      <div class="card-body p-3 p-md-4">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+          <div>
+            <h2 id="qy-order-submit-title" class="qy-order-main-title mb-0">{% if editing_case %}修改后重新提交{% else %}提交案件{% endif %}</h2>
+            {% if editing_case %}
+            <div class="small text-muted mt-1">沿用序列号 {{ editing_case.application_no }}，不会新建案件</div>
+            {% endif %}
+          </div>
+          {% if editing_case %}
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('staff.business_orders') }}" data-spa-endpoint="staff.business_orders">取消修改</a>
+          {% endif %}
+        </div>
+        {% if editing_case and reject_note %}
+        <div class="alert alert-warning py-2 px-3 mb-3 qy-order-revise-note" role="status">
+          <div class="fw-semibold small">管理员打回原因</div>
+          <div class="small mb-0">{{ reject_note }}</div>
+        </div>
+        {% endif %}
+        <form method="post" action="{{ url_for('staff.business_create_case') }}" class="row g-3" id="qyOrderCaseForm" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if editing_case %}
+          <input type="hidden" name="case_id" value="{{ editing_case.id }}">
+          {% endif %}
+          <div class="col-md-6">
+            <label class="form-label mb-1" for="qyOrderCustomer">客户</label>
+            <select id="qyOrderCustomer" class="form-select" name="customer_id" required>
+              <option value="">请选择</option>
+              {% for customer in customers %}
+              <option value="{{ customer.id }}" {% if selected_customer_id == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label mb-1" for="qyOrderProject">所属项目</label>
+            <select id="qyOrderProject" class="form-select" name="project_id" required data-selected="{{ selected_project_id }}">
+              <option value="">请先选择客户</option>
+              {% for item in project_options %}
+              <option value="{{ item.id }}" data-customer-id="{{ item.customer_id }}" {% if selected_project_id == item.id|string and selected_customer_id == item.customer_id|string %}selected{% endif %}>{{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label mb-1" for="qyOrderTitle">案件标题</label>
+            <input id="qyOrderTitle" class="form-control" type="text" name="title" required maxlength="200" value="{{ editing_case.title if editing_case else '' }}">
+            <div class="form-text">同一项目下不能重复</div>
+          </div>
+          <div class="col-12">
+            <label class="form-label mb-2">案件类型</label>
+            {{ case_type_selector(case_type_config, case_type_selected) }}
+          </div>
+          <div class="col-md-4">
+            <label class="form-label mb-1" for="qyOrderPatentNo">申请号</label>
+            <input id="qyOrderPatentNo" class="form-control" type="text" name="patent_application_no" maxlength="100" value="{{ editing_case.patent_application_no or '' if editing_case else '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label mb-1" for="qyOrderAt">下单时间</label>
+            <input id="qyOrderAt" class="form-control" type="datetime-local" name="order_at" value="{{ order_at_input }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label mb-1" for="qyOrderExpected">应返稿时间</label>
+            <input id="qyOrderExpected" class="form-control" type="datetime-local" name="expected_return_at" value="{{ expected_return_at_input }}">
+          </div>
+          <div class="col-12">
+            <label class="form-label mb-1" for="qyOrderNote">备注</label>
+            <textarea id="qyOrderNote" class="form-control" name="case_note" rows="3">{{ editing_case.case_note or '' if editing_case else '' }}</textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label mb-1" for="qyOrderMaterialPort">案件交底材料上传端口</label>
+            <input id="qyOrderMaterialPort" class="form-control" type="url" name="material_upload_port" maxlength="255" placeholder="选填，外部网盘/收集表链接" value="{{ editing_case.material_upload_port or '' if editing_case else '' }}">
+            <div class="form-text">没有现成文件时，可填外部网盘/收集表链接给管理员打开。</div>
+          </div>
+          <div class="col-12">
+            {% if editing_files %}
+            <div class="fw-semibold small mb-2">已上传交底材料</div>
+            <ul class="list-unstyled qy-order-existing-files mb-3">
+              {% for file_item in editing_files %}
+              <li class="d-flex flex-wrap align-items-center gap-2 py-1">
+                <span class="small text-break">{{ file_item.original_name }}</span>
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('staff.business_order_material_download', case_id=editing_case.id, material_id=file_item.id) }}" download>下载</a>
+                <form method="post" action="{{ url_for('staff.business_order_material_delete', case_id=editing_case.id, material_id=file_item.id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('确认删除该交底材料？')">删除</button>
+                </form>
+              </li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+            <div class="qy-material-upload-panel qy-dropzone">
+              <div class="d-flex align-items-start gap-2 mb-2">
+                <span class="qy-material-upload-icon" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                    <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+                  </svg>
+                </span>
+                <div>
+                  <label class="form-label fw-semibold mb-0 qy-material-upload-title" for="qyOrderAttachments">上传交底材料</label>
+                  <div class="form-text mb-0">{% if editing_case %}可再补传文件，连同上面已有材料一起重新提交。{% else %}可直接把交底材料传到本系统，管理员确认时就能下载。{% endif %} 支持 pdf、Office、图片、压缩包等。</div>
+                </div>
+              </div>
+              <input id="qyOrderAttachments" class="form-control" type="file" name="attachments" multiple>
+              <div class="qy-dropzone-hint small mt-2 mb-0">支持一次选择或多个拖拽到此区域。</div>
+            </div>
+          </div>
+          <div class="col-12 d-flex justify-content-end">
+            <button class="btn btn-primary px-4" type="submit">{% if editing_case %}重新提交{% else %}提交下单{% endif %}</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <section class="qy-order-mine card border-0 shadow-sm" aria-labelledby="qy-order-mine-title">
+    <div class="card-body p-3 p-md-4">
+      <h2 id="qy-order-mine-title" class="qy-order-main-title">我提交的下单</h2>
+      {% if my_orders %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 qy-data-table">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">案件</th>
+              <th scope="col">客户</th>
+              <th scope="col">所属项目</th>
+              <th scope="col">状态</th>
+              <th scope="col">交底材料</th>
+              <th scope="col">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in my_orders %}
+            <tr{% if editing_case and editing_case.id == task.case.id %} class="qy-order-mine-row-editing"{% endif %}>
+              <td>
+                <div class="fw-semibold">{{ task.case.title }}</div>
+                <div class="small text-muted">{{ task.case.application_no }}</div>
+              </td>
+              <td>{{ task.case.project.customer.name if task.case.project and task.case.project.customer else "—" }}</td>
+              <td>{{ task.case.project.name if task.case.project else "—" }}</td>
+              <td>{{ task_phase_badge(task.phase_status) }}</td>
+              <td>
+                {% set file_count = order_file_counts.get(task.case.id, 0) %}
+                {% if file_count %}
+                <div class="small">{{ file_count }} 个文件</div>
+                {% endif %}
+                {% if task.case.material_upload_port %}
+                <a class="small" href="{{ task.case.material_upload_port }}" target="_blank" rel="noopener noreferrer">打开端口</a>
+                {% elif not file_count %}
+                <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if task.phase_status == 'order_revision' %}
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.business_orders', edit=task.case.id) }}" data-spa-endpoint="staff.business_orders">修改再提交</a>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="qy-order-mine-empty mb-0">还没有提交记录</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="modal fade" id="qyOrderNewCustomerModal" tabindex="-1" aria-labelledby="qyOrderNewCustomerTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" action="{{ url_for('staff.business_create_customer') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="modal-header">
+            <h2 class="modal-title h5" id="qyOrderNewCustomerTitle">新建客户</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label mb-1" for="qyNewCustomerName">客户名称</label>
+                <input id="qyNewCustomerName" class="form-control" type="text" name="name" required maxlength="200">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label mb-1" for="qyNewCustomerKind">客户类型</label>
+                <select id="qyNewCustomerKind" class="form-select" name="kind">
+                  <option value="{{ customer_kind_company }}">公司</option>
+                  <option value="{{ customer_kind_individual }}">个人</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label mb-1" for="qyNewContactName">联系人</label>
+                <input id="qyNewContactName" class="form-control" type="text" name="contact_name" maxlength="120">
+              </div>
+              <div class="col-12">
+                <label class="form-label mb-1" for="qyNewContactPhone">电话</label>
+                <input id="qyNewContactPhone" class="form-control" type="text" name="contact_phone" maxlength="40">
+              </div>
+              <div class="col-12">
+                <label class="form-label mb-1" for="qyNewCustomerNote">备注</label>
+                <textarea id="qyNewCustomerNote" class="form-control" name="note" rows="2" maxlength="5000"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+            <button class="btn btn-primary" type="submit">创建客户</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="qyOrderNewProjectModal" tabindex="-1" aria-labelledby="qyOrderNewProjectTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" action="{{ url_for('staff.business_create_project') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="modal-header">
+            <h2 class="modal-title h5" id="qyOrderNewProjectTitle">新建项目</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label mb-1" for="qyNewProjectCustomer">绑定客户</label>
+                <select id="qyNewProjectCustomer" class="form-select" name="customer_id" required>
+                  <option value="">请选择</option>
+                  {% for customer in customers %}
+                  <option value="{{ customer.id }}" {% if selected_customer_id == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-12">
+                <label class="form-label mb-1" for="qyNewProjectName">项目名称</label>
+                <input id="qyNewProjectName" class="form-control" type="text" name="name" required maxlength="200">
+              </div>
+              <div class="col-12">
+                <label class="form-label mb-1" for="qyNewProjectDue">项目截止时间</label>
+                <input id="qyNewProjectDue" class="form-control" type="datetime-local" name="due_at">
+              </div>
+              <div class="col-12">
+                <label class="form-label mb-1" for="qyNewProjectDesc">项目说明</label>
+                <textarea id="qyNewProjectDesc" class="form-control" name="description" rows="2" maxlength="1000"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+            <button class="btn btn-primary" type="submit">创建项目</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

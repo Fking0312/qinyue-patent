@@ -47,6 +47,12 @@ from app.case_trace import (
     stamp_assignee,
     stamp_business_owner,
 )
+from app.order_intake import (
+    apply_order_intake_review,
+    case_materials_for_cases,
+    pending_order_review_count,
+    pending_order_review_query,
+)
 from app.assignment_advisor import (
     case_due_at,
     case_workload_weight,
@@ -61,12 +67,19 @@ from app.extensions import db
 from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CaseReviewLog, Customer, CustomerKind, Project, Task, User
 from app.dashboard_stats import dashboard_page_kwargs
 from app.overdue_reminder import reminder_template_kwargs
+from app.serials import (
+    PROJECT_CODE_RE,
+    next_case_serial,
+    next_project_code,
+    project_code_ym_prefix,
+)
 from app.spa_helpers import redirect_with_qy_toast, render_spa_or_full
 from app.task_board import task_board_data_for_user
 from app.workflow import (
     TaskPhase,
     ADMIN_CASE_PHASE_OPTIONS,
     apply_task_overdue_status,
+    is_pending_order_review_phase,
     is_pending_review_phase,
     is_terminal_phase,
     phase_for_workflow,
@@ -79,6 +92,11 @@ def _ensure_admin():
     """权限闸：仅角色为 admin 的用户可继续访问视图，否则 403。"""
     if current_user.role != "admin":
         abort(403)
+
+
+def _exclude_order_revision(query):
+    """下单待修改不进管理端项目/案件列表，等业务改完再提交。"""
+    return query.filter(~Case.task.has(Task.phase_status == TaskPhase.ORDER_REVISION))
 
 
 def _review_inbox_query():
@@ -108,6 +126,7 @@ def _admin_review_nav_context():
     return {
         "review_nav_total": total,
         "review_nav_unread": unread,
+        "order_intake_nav_total": pending_order_review_count(),
     }
 
 
@@ -202,63 +221,7 @@ def _staff_users_partitioned() -> tuple[list[User], list[User]]:
     return formal, outsource
 
 
-_CASE_SERIAL_RE = re.compile(r"^(\d{4})(\d{2})$")
-_PROJECT_CODE_RE = re.compile(r"^(\d{4})(\d{2})$")
 _CN_TZ = timezone(timedelta(hours=8))
-
-
-def _ym_prefix_cn(created_at: datetime | None = None) -> str:
-    """年月前缀（东八区）：如 2026-07 → 2607。"""
-    dt = created_at or datetime.now(timezone.utc)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(_CN_TZ).strftime("%y%m")
-
-
-def _next_case_serial(created_at: datetime | None = None) -> str:
-    """
-    自动生成 6 位案件序列号：YYMM + 当月序号（两位）。
-    例：2026 年 7 月第一个案件 → 260701；8 月重新从 01 起。
-    """
-    prefix = _ym_prefix_cn(created_at)
-    max_seq = 0
-    for (serial,) in db.session.query(Case.application_no).all():
-        match = _CASE_SERIAL_RE.fullmatch((serial or "").strip())
-        if not match:
-            continue
-        if match.group(1) != prefix:
-            continue
-        max_seq = max(max_seq, int(match.group(2)))
-    next_seq = max_seq + 1
-    if next_seq > 99:
-        raise ValueError("当月案件序列号已用尽（最多 99 个）。")
-    return f"{prefix}{next_seq:02d}"
-
-
-def _project_code_ym_prefix(created_at: datetime | None = None) -> str:
-    """项目编码前四位：创建时间（东八区）的年月，如 2026-04 → 2604。"""
-    return _ym_prefix_cn(created_at)
-
-
-def _next_project_code(created_at: datetime | None = None) -> str:
-    """
-    自动生成 6 位项目编码：YYMM + 当月序号（两位）。
-    例：2026 年 4 月第一个项目 → 260401。
-    序号按当月已有自动编号的最大值递增。
-    """
-    prefix = _project_code_ym_prefix(created_at)
-    max_seq = 0
-    for (code,) in db.session.query(Project.code).filter(Project.code.isnot(None)).all():
-        match = _PROJECT_CODE_RE.fullmatch((code or "").strip())
-        if not match:
-            continue
-        if match.group(1) != prefix:
-            continue
-        max_seq = max(max_seq, int(match.group(2)))
-    next_seq = max_seq + 1
-    if next_seq > 99:
-        raise ValueError("当月项目编码序号已用尽（最多 99 个）。")
-    return f"{prefix}{next_seq:02d}"
 
 
 def backfill_empty_project_codes() -> list[tuple[int, str, str]]:
@@ -272,7 +235,7 @@ def backfill_empty_project_codes() -> list[tuple[int, str, str]]:
 
     for project in projects:
         code = (project.code or "").strip()
-        match = _PROJECT_CODE_RE.fullmatch(code)
+        match = PROJECT_CODE_RE.fullmatch(code)
         if match:
             prefix = match.group(1)
             next_sequences[prefix] = max(next_sequences.get(prefix, 1), int(match.group(2)) + 1)
@@ -280,7 +243,7 @@ def backfill_empty_project_codes() -> list[tuple[int, str, str]]:
     for project in projects:
         if (project.code or "").strip():
             continue
-        prefix = _project_code_ym_prefix(project.created_at)
+        prefix = project_code_ym_prefix(project.created_at)
         sequence = next_sequences.get(prefix, 1)
         if sequence > 99:
             raise ValueError(f"{prefix} 当月项目编码序号已用尽（最多 99 个）。")
@@ -1494,7 +1457,7 @@ def projects_create():
         )
         db.session.add(project)
         db.session.flush()
-        project.code = _next_project_code(project.created_at)
+        project.code = next_project_code(project.created_at)
         project.initiated_at = project.created_at
         db.session.commit()
     except ValueError as exc:
@@ -1602,9 +1565,11 @@ def project_initiation():
     page_project_ids = [p.id for p in pagination.items]
     project_case_counts: dict[int, int] = dict.fromkeys(page_project_ids, 0)
     if page_project_ids:
+        count_q = _exclude_order_revision(
+            Case.query.filter(Case.project_id.in_(page_project_ids))
+        )
         for pid, cnt in (
-            db.session.query(Case.project_id, func.count(Case.id))
-            .filter(Case.project_id.in_(page_project_ids))
+            count_q.with_entities(Case.project_id, func.count(Case.id))
             .group_by(Case.project_id)
             .all()
         ):
@@ -1805,11 +1770,17 @@ def project_detail(project_id: int):
     if project is None:
         abort(404)
 
-    case_count = project.cases.count()
-    cases = project.cases.order_by(Case.created_at.desc(), Case.id.desc()).all()
+    visible_cases = _exclude_order_revision(
+        Case.query.filter(Case.project_id == project.id)
+    )
+    case_count = visible_cases.count()
+    cases = visible_cases.order_by(Case.created_at.desc(), Case.id.desc()).all()
     recent_tasks = (
         Task.query.join(Task.case)
-        .filter(Case.project_id == project.id)
+        .filter(
+            Case.project_id == project.id,
+            Task.phase_status != TaskPhase.ORDER_REVISION,
+        )
         .order_by(Task.updated_at.desc(), Task.id.desc())
         .limit(5)
         .all()
@@ -1900,6 +1871,7 @@ def cases():
         .join(Case.project)
         .join(Project.customer)
     )
+    q = _exclude_order_revision(q)
     if keyword:
         q = q.filter(
             Case.title.contains(keyword)
@@ -2138,6 +2110,14 @@ def case_create():
             return redirect_with_qy_toast("admin.case_create", "项目不存在，请刷新后重试。", "danger")
         if not title:
             return redirect_with_qy_toast("admin.case_create", "案件标题不能为空。", "warning", project_id=project.id)
+        title = Case.normalize_title(title)
+        if Case.title_taken_in_project(project.id, title):
+            return redirect_with_qy_toast(
+                "admin.case_create",
+                Case.DUPLICATE_TITLE_IN_PROJECT_MSG,
+                "warning",
+                project_id=project.id,
+            )
         case_type_leaf, case_type_err = validate_case_type_code(case_type_code)
         if case_type_err:
             return redirect_with_qy_toast(
@@ -2159,7 +2139,7 @@ def case_create():
 
         created_at = datetime.now(timezone.utc)
         try:
-            application_no = _next_case_serial(created_at)
+            application_no = next_case_serial(created_at)
         except ValueError as exc:
             return redirect_with_qy_toast("admin.case_create", str(exc), "warning", project_id=project.id)
         case = Case(
@@ -2255,7 +2235,10 @@ def case_detail(case_id: int):
         abort(404)
     task = case.task
     latest_reject_log = (
-        CaseReviewLog.query.filter_by(case_id=case.id, action="reject")
+        CaseReviewLog.query.filter(
+            CaseReviewLog.case_id == case.id,
+            CaseReviewLog.action.in_(("reject", "intake_reject")),
+        )
         .order_by(CaseReviewLog.created_at.desc(), CaseReviewLog.id.desc())
         .first()
     )
@@ -2379,12 +2362,23 @@ def case_detail(case_id: int):
         action = request.form.get("review_action", "").strip()
         if not action:
             return redirect_with_qy_toast("admin.case_detail", "不支持的操作。", "warning", case_id=case.id)
-        _ok, message, variant = _apply_admin_review(
-            case,
-            task,
-            action,
-            request.form.get("reject_note", "").strip(),
-        )
+        if task is not None and is_pending_order_review_phase(task.phase_status):
+            _ok, message, variant = apply_order_intake_review(
+                case,
+                task,
+                action,
+                request.form.get("reject_note", "").strip(),
+                current_user,
+            )
+            if _ok:
+                db.session.commit()
+        else:
+            _ok, message, variant = _apply_admin_review(
+                case,
+                task,
+                action,
+                request.form.get("reject_note", "").strip(),
+            )
         return redirect_with_qy_toast(
             "admin.case_detail",
             message,
@@ -2522,6 +2516,14 @@ def case_edit(case_id: int):
             return redirect_with_qy_toast("admin.case_edit", "所属项目不存在，请刷新后重试。", "danger", case_id=case.id)
         if not title:
             return redirect_with_qy_toast("admin.case_edit", "案件标题不能为空。", "warning", case_id=case.id)
+        title = Case.normalize_title(title)
+        if Case.title_taken_in_project(project.id, title, exclude_id=case.id):
+            return redirect_with_qy_toast(
+                "admin.case_edit",
+                Case.DUPLICATE_TITLE_IN_PROJECT_MSG,
+                "warning",
+                case_id=case.id,
+            )
         case_type_leaf, case_type_err = validate_case_type_code(case_type_code)
         if case_type_err:
             return redirect_with_qy_toast(
@@ -3047,6 +3049,156 @@ def review_quality_action(case_id: int):
         **{
             key: request.form.get(key, "").strip()
             for key in ("q", "case_type_primary", "assignee_id", "waiting", "urgency")
+            if request.form.get(key, "").strip()
+        },
+    )
+
+
+@admin_bp.route("/order-intake")
+@login_required
+def order_intake():
+    """下单待确认：业务人员提交的案件，通过后才进入待分配。"""
+    _ensure_admin()
+    keyword = request.args.get("q", "").strip()
+    case_type_primary = request.args.get("case_type_primary", "").strip()
+    owner_raw = request.args.get("intake_owner_id", "").strip()
+
+    valid_primary_codes = {value for value, _label in CASE_TYPE_PRIMARY_OPTIONS}
+    if case_type_primary not in valid_primary_codes:
+        case_type_primary = ""
+
+    query = pending_order_review_query().join(Case.project)
+    if keyword:
+        query = query.filter(
+            db.or_(
+                Case.title.contains(keyword),
+                Case.application_no.contains(keyword),
+                Case.patent_application_no.contains(keyword),
+            )
+        )
+    if case_type_primary:
+        query = query.filter(
+            db.or_(
+                Case.case_type_code.in_(codes_for_primary(case_type_primary)),
+                Case.project_type.in_(legacy_values_for_primary(case_type_primary)),
+            )
+        )
+    intake_owner_id = ""
+    if owner_raw.isdigit():
+        intake_owner_id = owner_raw
+        query = query.filter(Case.intake_owner_id == int(owner_raw))
+
+    page_raw = request.args.get("page", "1").strip()
+    page = int(page_raw) if page_raw.isdigit() and int(page_raw) > 0 else 1
+    pagination = query.order_by(
+        func.coalesce(Task.updated_at, Task.created_at).desc(),
+        Task.id.desc(),
+    ).paginate(page=page, per_page=20, error_out=False)
+
+    now_utc = datetime.now(timezone.utc)
+    rows = []
+    for task in pagination.items:
+        entered_at = task.updated_at or task.created_at
+        if entered_at is not None:
+            entered_utc = (
+                entered_at.replace(tzinfo=timezone.utc)
+                if entered_at.tzinfo is None
+                else entered_at.astimezone(timezone.utc)
+            )
+            waiting_seconds = max(0, int((now_utc - entered_utc).total_seconds()))
+        else:
+            waiting_seconds = 0
+        waiting_days, remainder = divmod(waiting_seconds, 86400)
+        waiting_hours = remainder // 3600
+        waiting_label = (
+            f"{waiting_days} 天 {waiting_hours} 小时"
+            if waiting_days
+            else f"{waiting_hours} 小时"
+        )
+        due_at = task.due_at or task.case.expected_return_at or (
+            task.case.project.due_at if task.case.project else None
+        )
+        rows.append(
+            {
+                "task": task,
+                "case": task.case,
+                "entered_at": entered_at,
+                "waiting_label": waiting_label,
+                "due_at": due_at,
+            }
+        )
+
+    intake_files = case_materials_for_cases([row["case"].id for row in rows])
+    for row in rows:
+        row["materials"] = intake_files.get(row["case"].id, [])
+
+    filter_url_kwargs = {}
+    if keyword:
+        filter_url_kwargs["q"] = keyword
+    if case_type_primary:
+        filter_url_kwargs["case_type_primary"] = case_type_primary
+    if intake_owner_id:
+        filter_url_kwargs["intake_owner_id"] = intake_owner_id
+
+    owner_options = (
+        User.query.filter(
+            User.role == "staff",
+            User.staff_function == User.STAFF_FUNCTION_BUSINESS,
+        )
+        .order_by(User.username.asc())
+        .all()
+    )
+    return render_spa_or_full(
+        full_template="admin/order_intake.html",
+        inner_template="admin/snippets/order_intake_inner.html",
+        spa_endpoint="admin.order_intake",
+        spa_document_title="下单待确认 — 琴岳专利管理系统",
+        page_title="下单待确认",
+        intake_rows=rows,
+        pagination=pagination,
+        total_pending=pending_order_review_count(),
+        q=keyword,
+        case_type_primary=case_type_primary,
+        case_type_primary_options=CASE_TYPE_PRIMARY_OPTIONS,
+        intake_owner_id=intake_owner_id,
+        owner_options=owner_options,
+        filter_url_kwargs=filter_url_kwargs,
+    )
+
+
+@admin_bp.route("/order-intake/status")
+@login_required
+def order_intake_status():
+    """侧边栏轮询：返回待确认下单件数，确认或打回后红点随之更新。"""
+    _ensure_admin()
+    unread = pending_order_review_count()
+    return jsonify(ok=True, unread=unread, total=unread)
+
+
+@admin_bp.route("/order-intake/<int:case_id>/action", methods=["POST"])
+@login_required
+def order_intake_action(case_id: int):
+    """确认或打回业务人员提交的下单。"""
+    _ensure_admin()
+    case = db.session.get(Case, case_id)
+    if case is None:
+        abort(404)
+    _ok, message, variant = apply_order_intake_review(
+        case,
+        case.task,
+        request.form.get("review_action", "").strip(),
+        request.form.get("reject_note", "").strip(),
+        current_user,
+    )
+    if _ok:
+        db.session.commit()
+    return redirect_with_qy_toast(
+        "admin.order_intake",
+        message,
+        variant,
+        **{
+            key: request.form.get(key, "").strip()
+            for key in ("q", "case_type_primary", "intake_owner_id")
             if request.form.get(key, "").strip()
         },
     )

@@ -87,6 +87,10 @@
               </div>
             </div>
             <div class="col-md-3">
+              <div class="text-muted small mb-1">下单人</div>
+              <div>{% if case.intake_owner_user or case.intake_owner_label %}{{ trace_person(case.intake_owner_user, case.intake_owner_label) }}{% else %}—{% endif %}</div>
+            </div>
+            <div class="col-md-3">
               <div class="text-muted small mb-1">下单时间</div>
               <div>{{ case.order_at|qy_format_dt }}</div>
             </div>
@@ -384,6 +388,27 @@
             sync();
           })();
           </script>
+          {% if task.phase_status == 'pending_order_review' %}
+          <hr>
+          <div class="row g-2 align-items-end">
+            <div class="col-md-8">
+              <label class="form-label mb-1" for="adminIntakeRejectNoteInput">打回原因（必填）</label>
+              <form method="post" class="d-flex gap-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input id="adminIntakeRejectNoteInput" class="form-control" type="text" name="reject_note" maxlength="500" placeholder="请输入打回原因">
+                <input type="hidden" name="review_action" value="reject">
+                <button class="btn btn-outline-danger" type="submit">打回</button>
+              </form>
+            </div>
+            <div class="col-md-4 d-flex justify-content-md-end">
+              <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="review_action" value="approve">
+                <button class="btn btn-primary" type="submit">确认下单</button>
+              </form>
+            </div>
+          </div>
+          {% endif %}
           {% if task.phase_status == 'pending_review' or task.phase_status == 'overdue_pending_review' %}
           <hr>
           <div class="row g-2 align-items-end">

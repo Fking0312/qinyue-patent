@@ -28,11 +28,12 @@ from app.blueprints.staff import staff_bp
 from app.blueprints.staff.common.routes import (
     STAFF_NOTIFICATION_ACTIONABLE,
     STAFF_NOTIFICATION_ACTIONS,
+    STAFF_NOTIFICATION_TYPE_GROUPS,
     mark_staff_notification_read,
     notification_group_label,
     staff_review_notifications_query,
 )
-from app.blueprints.staff.guards import ensure_writer
+from app.blueprints.staff.guards import ensure_notifications_access, ensure_writer
 from app.blueprints.staff.utils import CN_TZ, beijing_datetime_text
 from app.extensions import db
 from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CaseReviewLog, Task, User
@@ -576,13 +577,13 @@ def worklog_export():
 @staff_bp.route("/notifications")
 @login_required
 def notifications():
-    """员工消息通知：展示案件分配、审核通过/打回结果；点击「查看」后标记已读。"""
-    ensure_writer()
+    """消息中心：撰写师看分配与审核结果，业务人员看下单确认/打回。"""
+    ensure_notifications_access()
     status_filter = request.args.get("status", "all").strip()
     if status_filter not in {"all", "unread", "actionable"}:
         status_filter = "all"
     type_filter = request.args.get("type", "all").strip()
-    if type_filter not in {"all", "assigned", "approve", "reject"}:
+    if type_filter not in {"all", *STAFF_NOTIFICATION_TYPE_GROUPS}:
         type_filter = "all"
     query = staff_review_notifications_query(current_user.id).options(
         joinedload(CaseReviewLog.case).joinedload(Case.project),
@@ -597,7 +598,7 @@ def notifications():
             CaseReviewLog.action.in_(STAFF_NOTIFICATION_ACTIONABLE),
         )
     if type_filter != "all":
-        query = query.filter(CaseReviewLog.action == type_filter)
+        query = query.filter(CaseReviewLog.action.in_(STAFF_NOTIFICATION_TYPE_GROUPS[type_filter]))
     page_raw = request.args.get("page", "1").strip()
     page = int(page_raw) if page_raw.isdigit() and int(page_raw) > 0 else 1
     pagination = query.order_by(
@@ -629,12 +630,14 @@ def notifications():
     notification_groups = [(label, grouped[label]) for label in ("今天", "昨天", "更早") if grouped[label]]
     hour = now_beijing.hour
     greeting = "上午好" if 5 <= hour < 12 else "下午好" if hour < 18 else "晚上好"
+    is_business = current_user.staff_function_normalized == User.STAFF_FUNCTION_BUSINESS
+    page_title = "消息中心" if is_business else "消息通知"
     return render_spa_or_full(
         full_template="staff/notifications.html",
         inner_template="staff/snippets/notifications_inner.html",
         spa_endpoint="staff.notifications",
-        spa_document_title="消息通知 — 琴岳专利管理系统",
-        page_title="消息通知",
+        spa_document_title=f"{page_title} — 琴岳专利管理系统",
+        page_title=page_title,
         notifications=pagination.items,
         pagination=pagination,
         status_filter=status_filter,
@@ -652,7 +655,7 @@ def notifications():
 @login_required
 def notifications_read_all():
     """将当前员工的全部未读通知标记为已读。"""
-    ensure_writer()
+    ensure_notifications_access()
     updated = (
         staff_review_notifications_query(current_user.id)
         .filter(CaseReviewLog.read_at.is_(None))
@@ -671,14 +674,18 @@ def notifications_read_all():
 @staff_bp.route("/notifications/<int:log_id>/read")
 @login_required
 def notification_read(log_id: int):
-    """点击「查看」：标记单条通知已读并跳转案件详情。"""
-    ensure_writer()
+    """点击「查看」：标记已读。撰写师进案件详情，业务人员进下单页。"""
+    ensure_notifications_access()
     log = mark_staff_notification_read(log_id)
     if log is None:
         abort(404)
     case = log.case
     if case is None:
         abort(404)
+    if current_user.staff_function_normalized == User.STAFF_FUNCTION_BUSINESS:
+        if log.action == "intake_reject":
+            return redirect(url_for("staff.business_orders", edit=case.id))
+        return redirect(url_for("staff.business_orders"))
     task = case.task
     if task is None or task.assignee_id != current_user.id:
         return redirect_with_qy_toast(
@@ -692,8 +699,8 @@ def notification_read(log_id: int):
 @staff_bp.route("/notifications/status")
 @login_required
 def notifications_status():
-    """员工侧边栏轮询：返回未读案件审核结果数量。"""
-    ensure_writer()
+    """侧边栏轮询：返回未读消息数量。"""
+    ensure_notifications_access()
     unread = staff_review_notifications_query(current_user.id).filter(
         CaseReviewLog.read_at.is_(None)
     ).count()

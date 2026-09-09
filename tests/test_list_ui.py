@@ -13,6 +13,8 @@ def test_task_phase_tone_mapping():
     assert task_phase_tone(TaskPhase.OVERDUE_IN_PROGRESS) == "danger"
     assert task_phase_tone(TaskPhase.IN_PROGRESS) == "primary"
     assert task_phase_tone(TaskPhase.PENDING_ASSIGNMENT) == "muted"
+    assert task_phase_tone(TaskPhase.PENDING_ORDER_REVIEW) == "warning"
+    assert task_phase_tone(TaskPhase.ORDER_REVISION) == "muted"
 
 
 def test_task_urgency_overdue_and_due_soon():

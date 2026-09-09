@@ -35,6 +35,8 @@ def _base_query_for_user(user: User):
         q = q.filter(
             Task.assignee_id == user.id,
             Task.phase_status != TaskPhase.PENDING_ASSIGNMENT,
+            Task.phase_status != TaskPhase.PENDING_ORDER_REVIEW,
+            Task.phase_status != TaskPhase.ORDER_REVISION,
         )
     return q
 

@@ -11,7 +11,7 @@ from app.task_board import task_board_data_for_user
 from app.workflow import TaskPhase
 
 _CN_TZ = timezone(timedelta(hours=8))
-_STAFF_NOTIFICATION_ACTIONS = ("approve", "reject", "assigned")
+_STAFF_NOTIFICATION_ACTIONS = ("approve", "reject", "assigned", "intake_approve", "intake_reject")
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,10 @@ def _pending_review_count() -> int:
     ).count()
 
 
+def _pending_order_review_count() -> int:
+    return Task.query.filter(Task.phase_status == TaskPhase.PENDING_ORDER_REVIEW).count()
+
+
 def _cases_created_this_month_count() -> int:
     year, month = _current_beijing_year_month()
     start_at, end_at = _month_bounds_utc(year, month)
@@ -69,6 +73,13 @@ def admin_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             hint="员工已提交，等待处理",
             endpoint="admin.review_quality",
             tone="danger",
+        ),
+        DashboardStatCard(
+            label="下单待确认",
+            value=_pending_order_review_count(),
+            hint="业务提交，通过后才能派单",
+            endpoint="admin.order_intake",
+            tone="warning",
         ),
         DashboardStatCard(
             label="本月新建",

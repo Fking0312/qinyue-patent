@@ -51,6 +51,21 @@
         <span>收账</span>
       </span>
     </a>
+    <a class="staff-nav-link {% if request.endpoint == 'staff.notifications' %}active{% endif %}" href="{{ url_for('staff.notifications') }}" data-tooltip="消息中心" data-spa-endpoint="staff.notifications">
+      <span class="staff-nav-link-inner">
+        <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M19 16.5V11a7 7 0 1 0-14 0v5.5l-1 1.5h16l-1-1.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M10 20h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>消息中心</span>
+      </span>
+      <span
+        id="qyStaffNotificationBadge"
+        class="qy-review-unread-badge {% if not staff_notification_unread %}d-none{% endif %}"
+        data-status-url="{{ url_for('staff.notifications_status') }}"
+        aria-label="未读消息 {{ staff_notification_unread or 0 }} 条"
+      >{{ staff_notification_unread or 0 }}</span>
+    </a>
 
     {% else %}
     <a class="staff-nav-link {% if request.endpoint == 'staff.dashboard' %}active is-current{% endif %}" href="{{ url_for('staff.dashboard') }}" data-tooltip="首页" data-spa-endpoint="staff.dashboard" {% if request.endpoint == 'staff.dashboard' %}aria-current="page"{% endif %}>

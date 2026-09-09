@@ -4,7 +4,7 @@
       <div>
         <div class="qy-notification-hero__eyebrow">个人消息中心</div>
         <h1 class="h4 mb-1">{{ greeting }}，{{ current_user.username }}</h1>
-        <p class="mb-0">案件进展、审核结果与待办事项，都为您整理在这里。</p>
+        <p class="mb-0">{% if current_user.staff_function_normalized == 'business' %}下单确认结果会显示在这里。{% else %}案件进展、审核结果与待办事项，都为您整理在这里。{% endif %}</p>
       </div>
       {% if unread_count %}
       <form method="post" action="{{ url_for('staff.notifications_read_all') }}">
@@ -20,10 +20,10 @@
         <span>未读消息</span><strong>{{ unread_count }}</strong><small>需要您关注的新动态</small>
       </a>
       <a href="{{ url_for('staff.notifications', status='actionable', type='all') }}" data-spa-endpoint="staff.notifications" class="qy-notification-summary-card">
-        <span>待处理</span><strong>{{ actionable_count }}</strong><small>新分配与审核打回</small>
+        <span>待处理</span><strong>{{ actionable_count }}</strong><small>{% if current_user.staff_function_normalized == 'business' %}下单被打回，需要修改后再提交{% else %}新分配与审核打回{% endif %}</small>
       </a>
       <a href="{{ url_for('staff.notifications', status='all', type='all') }}" data-spa-endpoint="staff.notifications" class="qy-notification-summary-card">
-        <span>今日动态</span><strong>{{ today_count }}</strong><small>今天收到的案件消息</small>
+        <span>今日动态</span><strong>{{ today_count }}</strong><small>{% if current_user.staff_function_normalized == 'business' %}今天收到的下单消息{% else %}今天收到的案件消息{% endif %}</small>
       </a>
     </div>
   </section>
@@ -34,7 +34,7 @@
       <div class="small text-muted">按时间和处理状态快速定位消息</div>
     </div>
     {% from "macros/staff_notification.html" import staff_notification_filters %}
-    {{ staff_notification_filters(status_filter, type_filter, unread_count, actionable_count, action_counts) }}
+    {{ staff_notification_filters(status_filter, type_filter, unread_count, actionable_count, action_counts, current_user) }}
   </header>
 
   {% if notifications %}
@@ -74,11 +74,19 @@
       </div>
       <div class="h6 mb-1">暂无消息通知</div>
       <div class="small text-muted mb-3">
-        {% if status_filter == 'actionable' %}目前没有需要处理的消息，工作节奏很好。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}案件分配、审核通过或打回后，提醒会显示在这里。{% endif %}
+        {% if current_user.staff_function_normalized == 'business' %}
+          {% if status_filter == 'actionable' %}目前没有需要处理的下单打回。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}管理员确认或打回下单后，消息会显示在这里。{% endif %}
+        {% else %}
+          {% if status_filter == 'actionable' %}目前没有需要处理的消息，工作节奏很好。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}案件分配、审核通过或打回后，提醒会显示在这里。{% endif %}
+        {% endif %}
       </div>
       <div class="d-flex flex-wrap justify-content-center gap-2">
+        {% if current_user.staff_function_normalized == 'business' %}
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.business_orders') }}" data-spa-endpoint="staff.business_orders">去下单</a>
+        {% else %}
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.case_detail') }}" data-spa-endpoint="staff.case_detail">去案件列表</a>
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('staff.task_board') }}" data-spa-endpoint="staff.task_board">去任务看板</a>
+        {% endif %}
       </div>
     </div>
   </div>

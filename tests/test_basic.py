@@ -795,6 +795,105 @@ def test_admin_case_create_list_and_detail():
     assert title.encode("utf-8") in r2.data
 
 
+def test_same_project_rejects_duplicate_case_title():
+    from urllib.parse import unquote
+
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        admin = User(username=f"_dup_title_admin_{suffix}", role="admin")
+        admin.set_password("secret")
+        customer = Customer(kind=CustomerKind.COMPANY, name=f"_dup_title_customer_{suffix}")
+        db.session.add_all([admin, customer])
+        db.session.flush()
+        project_a = Project(customer_id=customer.id, name=f"_dup_title_pa_{suffix}")
+        project_b = Project(customer_id=customer.id, name=f"_dup_title_pb_{suffix}")
+        db.session.add_all([project_a, project_b])
+        db.session.flush()
+        first = Case(
+            project_id=project_a.id,
+            title=f"同一发明名称 {suffix}",
+            application_no=f"DT1{suffix}",
+            case_type_code="other",
+        )
+        other_project = Case(
+            project_id=project_b.id,
+            title=f"同一发明名称 {suffix}",
+            application_no=f"DT2{suffix}",
+            case_type_code="other",
+        )
+        sibling = Case(
+            project_id=project_a.id,
+            title=f"可改名案件 {suffix}",
+            application_no=f"DT3{suffix}",
+            case_type_code="other",
+        )
+        db.session.add_all([first, other_project, sibling])
+        db.session.commit()
+        admin_name = admin.username
+        project_a_id = project_a.id
+        project_b_id = project_b.id
+        first_id = first.id
+        sibling_id = sibling.id
+
+    client = app.test_client()
+    client.post("/auth/login", data={"username": admin_name, "password": "secret"})
+
+    duplicate = client.post(
+        "/admin/case-create",
+        data={
+            "project_id": str(project_a_id),
+            "title": f"  同一发明名称   {suffix}  ",
+            "case_type_code": "other",
+        },
+        follow_redirects=False,
+    )
+    assert duplicate.status_code in (302, 303)
+    assert Case.DUPLICATE_TITLE_IN_PROJECT_MSG in unquote(duplicate.headers.get("Location", ""))
+
+    other_ok = client.post(
+        "/admin/case-create",
+        data={
+            "project_id": str(project_b_id),
+            "title": f"另一项目可同名 {suffix}",
+            "case_type_code": "other",
+        },
+        follow_redirects=False,
+    )
+    assert other_ok.status_code in (302, 303)
+    assert Case.DUPLICATE_TITLE_IN_PROJECT_MSG not in unquote(other_ok.headers.get("Location", ""))
+
+    keep_own = client.post(
+        f"/admin/case-edit/{first_id}",
+        data={
+            "project_id": str(project_a_id),
+            "title": f"同一发明名称 {suffix}",
+            "case_type_code": "other",
+            "phase_status": TaskPhase.PENDING_ASSIGNMENT,
+        },
+        follow_redirects=False,
+    )
+    assert keep_own.status_code in (302, 303)
+    assert Case.DUPLICATE_TITLE_IN_PROJECT_MSG not in unquote(keep_own.headers.get("Location", ""))
+
+    clash_edit = client.post(
+        f"/admin/case-edit/{sibling_id}",
+        data={
+            "project_id": str(project_a_id),
+            "title": f"同一发明名称 {suffix}",
+            "case_type_code": "other",
+            "phase_status": TaskPhase.PENDING_ASSIGNMENT,
+        },
+        follow_redirects=False,
+    )
+    assert clash_edit.status_code in (302, 303)
+    assert Case.DUPLICATE_TITLE_IN_PROJECT_MSG in unquote(clash_edit.headers.get("Location", ""))
+
+    with app.app_context():
+        assert Case.query.filter_by(project_id=project_a_id, title=f"同一发明名称 {suffix}").count() == 1
+        assert db.session.get(Case, sibling_id).title == f"可改名案件 {suffix}"
+
+
 def test_unassigned_case_uses_pending_assignment_and_assignee_clears_it():
     app = create_app()
     suffix = uuid4().hex[:8]
@@ -921,7 +1020,7 @@ def test_admin_case_edit_can_update_case_and_task_phase():
         f"/admin/case-edit/{case_id}",
         data={
             "project_id": str(project_id),
-            "title": "_case_edited",
+            "title": f"_case_edited_{suffix}",
             "application_no": f"CN7777{uuid4().hex[:8]}",
             "formal_status": "审查中",
             "case_type_code": "utility_design",
@@ -932,7 +1031,7 @@ def test_admin_case_edit_can_update_case_and_task_phase():
         follow_redirects=True,
     )
     assert r2.status_code == 200
-    assert "_case_edited".encode("utf-8") in r2.data
+    assert f"_case_edited_{suffix}".encode("utf-8") in r2.data
     assert "待审核".encode("utf-8") in r2.data
     with app.app_context():
         edited_case = db.session.get(Case, case_id)

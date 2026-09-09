@@ -117,6 +117,27 @@ def test_pending_assignment_does_not_flip_overdue():
         assert task.phase_status == TaskPhase.PENDING_ASSIGNMENT
 
 
+def test_order_intake_phases_do_not_flip_overdue():
+    app = create_app()
+    sfx = uuid4().hex[:8]
+    with app.app_context():
+        cust = Customer(kind=CustomerKind.COMPANY, name=f"C-oi-{sfx}")
+        db.session.add(cust)
+        db.session.flush()
+        proj = Project(customer_id=cust.id, name=f"P-oi-{sfx}", due_at=datetime(2010, 1, 1, tzinfo=timezone.utc))
+        db.session.add(proj)
+        db.session.flush()
+        for phase in (TaskPhase.PENDING_ORDER_REVIEW, TaskPhase.ORDER_REVISION):
+            case = Case(project_id=proj.id, title=f"Case-{phase}", application_no=f"CN2099{phase[-6:]}{sfx[:4]}")
+            db.session.add(case)
+            db.session.flush()
+            task = Task(case_id=case.id, phase_status=phase)
+            db.session.add(task)
+            db.session.commit()
+            assert apply_task_overdue_status(task, now=datetime(2020, 1, 1, tzinfo=timezone.utc)) is False
+            assert task.phase_status == phase
+
+
 def test_terminal_task_not_overdue():
     app = create_app()
     sfx = uuid4().hex[:8]

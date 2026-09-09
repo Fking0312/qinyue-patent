@@ -21,6 +21,9 @@ CASE_TRACE_ACTIONS: tuple[str, ...] = (
     "reject",
     "office_reject",
     "reject_undo",
+    "intake_submit",
+    "intake_approve",
+    "intake_reject",
 )
 
 TRACE_ACTION_FILTERS: tuple[str, ...] = (
@@ -38,6 +41,9 @@ TRACE_ACTION_LABELS: dict[str, str] = {
     "reject": "打回",
     "office_reject": "专利局退稿",
     "reject_undo": "撤销退稿",
+    "intake_submit": "提交下单",
+    "intake_approve": "下单通过",
+    "intake_reject": "下单打回",
 }
 
 TRACE_ACTION_TONES: dict[str, str] = {
@@ -47,6 +53,9 @@ TRACE_ACTION_TONES: dict[str, str] = {
     "reject": "warning",
     "office_reject": "danger",
     "reject_undo": "secondary",
+    "intake_submit": "primary",
+    "intake_approve": "success",
+    "intake_reject": "warning",
 }
 
 
@@ -77,6 +86,16 @@ def stamp_assignee(task: "Task", user: "User | None") -> None:
     task.assignee_label = user_trace_label(user)
 
 
+def stamp_intake_owner(case: "Case", user: "User | None") -> None:
+    """同步下单人及姓名快照；业务人员提交的单用这列，不占用承办撰写师。"""
+    if user is None:
+        case.intake_owner_id = None
+        case.intake_owner_label = None
+        return
+    case.intake_owner_id = user.id
+    case.intake_owner_label = user_trace_label(user)
+
+
 def stamp_business_owner(case: "Case", user: "User | None") -> None:
     """同步案件业务负责人及姓名快照。"""
     if user is None:
@@ -91,9 +110,14 @@ def stamp_uploader(material: "CaseMaterial", user: "User | None") -> None:
     """上传时钉上上传人姓名与角色，分组不再依赖账号行是否还在。"""
     if user is None:
         return
+    from app.models import User
+
     material.uploaded_by_id = user.id
     material.uploaded_by_label = user_trace_label(user)
-    material.uploaded_by_role = user.role
+    if user.role == "staff" and user.staff_function_normalized == User.STAFF_FUNCTION_BUSINESS:
+        material.uploaded_by_role = User.STAFF_FUNCTION_BUSINESS
+    else:
+        material.uploaded_by_role = user.role
 
 
 def add_review_log(
@@ -133,7 +157,7 @@ def writing_material_submit_note(case_id: int) -> str:
         .order_by(CaseMaterial.created_at.asc(), CaseMaterial.id.asc())
         .all()
     ):
-        if material_uploader_role(material) != "staff":
+        if is_disclosure_material(material):
             continue
         name = (material.original_name or "").strip()
         if name:
@@ -153,6 +177,21 @@ def material_uploader_role(material: "CaseMaterial") -> str:
     if material.uploaded_by is not None:
         return material.uploaded_by.role or ""
     return (material.uploaded_by_role or "").strip()
+
+
+def is_disclosure_material(material: "CaseMaterial") -> bool:
+    """交底材料：管理员或业务人员上传；撰写师上传的才进撰写材料。"""
+    from app.models import User
+
+    uploader = material.uploaded_by
+    if uploader is not None:
+        if uploader.role == "admin":
+            return True
+        return (
+            uploader.role == "staff"
+            and uploader.staff_function_normalized == User.STAFF_FUNCTION_BUSINESS
+        )
+    return (material.uploaded_by_role or "").strip() in {"admin", User.STAFF_FUNCTION_BUSINESS}
 
 
 def paginate_case_trace_logs(
@@ -176,7 +215,12 @@ def paginate_case_trace_logs(
         CaseReviewLog.action.in_(CASE_TRACE_ACTIONS),
     )
     if action_filter != "all":
-        query = query.filter(CaseReviewLog.action == action_filter)
+        if action_filter == "approve":
+            query = query.filter(CaseReviewLog.action.in_(("approve", "intake_approve")))
+        elif action_filter == "reject":
+            query = query.filter(CaseReviewLog.action.in_(("reject", "intake_reject")))
+        else:
+            query = query.filter(CaseReviewLog.action == action_filter)
 
     operator_options: list[str] = []
     seen: set[str] = set()

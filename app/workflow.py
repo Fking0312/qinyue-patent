@@ -12,6 +12,8 @@ class TaskPhase:
     """工作流阶段（非终结）；超期时映射为对应的 overdue_* 状态。"""
 
     PENDING_ASSIGNMENT = "pending_assignment"
+    PENDING_ORDER_REVIEW = "pending_order_review"
+    ORDER_REVISION = "order_revision"
     IN_PROGRESS = "in_progress"
     PENDING_REVIEW = "pending_review"
     PENDING_SUBMIT = "pending_submit"
@@ -30,6 +32,8 @@ class TaskPhase:
     BASE_PHASES = frozenset(
         {
             PENDING_ASSIGNMENT,
+            PENDING_ORDER_REVIEW,
+            ORDER_REVISION,
             IN_PROGRESS,
             PENDING_REVIEW,
             PENDING_SUBMIT,
@@ -109,7 +113,14 @@ STAFF_ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
 }
 
 
+INTAKE_PHASES: frozenset[str] = frozenset(
+    {TaskPhase.PENDING_ORDER_REVIEW, TaskPhase.ORDER_REVISION},
+)
+
+
 ADMIN_CASE_PHASE_OPTIONS: tuple[str, ...] = (
+    TaskPhase.PENDING_ORDER_REVIEW,
+    TaskPhase.ORDER_REVISION,
     TaskPhase.PENDING_ASSIGNMENT,
     TaskPhase.IN_PROGRESS,
     TaskPhase.PENDING_REVIEW,
@@ -134,9 +145,23 @@ def normalize_task_phase(phase_status: str) -> str:
         return TaskPhase.IN_PROGRESS if phase_status == "draft" else TaskPhase.OVERDUE_IN_PROGRESS
     return phase_status
 
+def is_order_intake_phase(phase_status: str) -> bool:
+    """是否处于下单确认链路（待确认或打回待改），与撰写审核分开。"""
+    return normalize_task_phase(phase_status) in INTAKE_PHASES
+
+
+def is_pending_order_review_phase(phase_status: str) -> bool:
+    """是否正在等管理员确认下单。"""
+    return normalize_task_phase(phase_status) == TaskPhase.PENDING_ORDER_REVIEW
+
+
 def resolve_case_task_phase(business_owner_id: int | None, requested_phase: str) -> str:
-    """未指派员工时强制待分配；已指派时不允许停留在待分配。"""
+    """未指派员工时强制待分配；已指派时不允许停留在待分配。下单确认允许无承办人。"""
     requested_phase = normalize_task_phase(requested_phase)
+    if requested_phase in INTAKE_PHASES:
+        if business_owner_id is None:
+            return requested_phase
+        return TaskPhase.IN_PROGRESS
     if business_owner_id is None:
         return TaskPhase.PENDING_ASSIGNMENT
     if requested_phase == TaskPhase.PENDING_ASSIGNMENT:
@@ -175,6 +200,8 @@ def staff_may_transition_phase(current_phase: str, new_phase: str) -> bool:
     if new_phase == TaskPhase.PENDING_SUBMIT:
         return False
     if new_phase == TaskPhase.PENDING_ASSIGNMENT:
+        return False
+    if new_phase in INTAKE_PHASES or is_order_intake_phase(current_phase):
         return False
     if new_phase not in TaskPhase.BASE_PHASES:
         return False
@@ -232,6 +259,8 @@ def staff_phase_options_for_ui(current_phase: str) -> list[str]:
 
 _PHASE_LABELS: dict[str, str] = {
     TaskPhase.PENDING_ASSIGNMENT: "待分配",
+    TaskPhase.PENDING_ORDER_REVIEW: "待下单确认",
+    TaskPhase.ORDER_REVISION: "下单待修改",
     TaskPhase.IN_PROGRESS: "撰写中",
     TaskPhase.PENDING_REVIEW: "待审核",
     TaskPhase.PENDING_SUBMIT: "待递交",
@@ -446,7 +475,7 @@ def is_task_past_due(task: Task, *, now: datetime | None = None) -> bool:
 def effective_task_phase(task: Task, *, now: datetime | None = None) -> str:
     """只读计算任务当前展示阶段，不修改 ORM 对象或数据库。"""
     status = normalize_task_phase(task.phase_status)
-    if is_terminal_phase(status) or status == TaskPhase.PENDING_ASSIGNMENT:
+    if is_terminal_phase(status) or status == TaskPhase.PENDING_ASSIGNMENT or is_order_intake_phase(status):
         return status
     if is_pending_review_phase(status):
         return TaskPhase.PENDING_REVIEW
@@ -464,7 +493,11 @@ def apply_task_overdue_status(task: Task, *, now: datetime | None = None) -> boo
     返回是否发生了变更（便于提交前判断）。
     """
     now = now or _utcnow()
-    if is_terminal_phase(task.phase_status) or task.phase_status == TaskPhase.PENDING_ASSIGNMENT:
+    if (
+        is_terminal_phase(task.phase_status)
+        or task.phase_status == TaskPhase.PENDING_ASSIGNMENT
+        or is_order_intake_phase(task.phase_status)
+    ):
         return False
 
     if is_pending_review_phase(task.phase_status):

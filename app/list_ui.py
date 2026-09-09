@@ -22,6 +22,10 @@ def task_phase_tone(phase_status: str | None) -> str:
         return "muted"
     if phase_status == TaskPhase.PENDING_ASSIGNMENT:
         return "muted"
+    if phase_status == TaskPhase.ORDER_REVISION:
+        return "muted"
+    if phase_status == TaskPhase.PENDING_ORDER_REVIEW:
+        return "warning"
     if is_overdue_phase(phase_status):
         return "danger"
     if is_pending_review_phase(phase_status):

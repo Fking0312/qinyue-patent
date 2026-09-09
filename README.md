@@ -82,7 +82,7 @@ python scripts/seed_demo_data.py
 | --- | --- | --- |
 | `writer` | 撰写师 | 完整员工端：看板、案件、材料 |
 | `process` | 流程人员 | 独立工作台，业务多为占位 |
-| `business` | 业务人员 | 独立工作台（下单/收账占位） |
+| `business` | 业务人员 | 独立工作台；下单可建客户/项目/案件，侧栏有消息中心，收账仍占位 |
 | `admin` | 管理员 | 管理端 |
 | `staff` | 撰写师 | 演示员工 |
 
@@ -119,12 +119,12 @@ app/
   spa_helpers.py            # 全页 / SPA 片段
   blueprints/               # admin / staff / client / auth
     staff/                  # 单一 staff_bp，内部按职能分子模块
-      guards.py             # ensure_staff / ensure_staff_function / ensure_writer
+      guards.py             # ensure_staff / ensure_staff_function / ensure_writer / ensure_business
       utils.py              # 北京时区与时间文本
       common/               # 通知口径、侧栏未读数、职能占位工作台渲染
       writer/               # 撰写师：看板、案件、材料、期限、月度统计
       process/              # 流程人员：审核案件跟进（占位）
-      business/             # 业务人员：下单与收账（占位）
+      business/             # 业务人员：下单（建客户/项目/案件）与收账占位
   templates/                # 全页 + snippets（SPA 内层）
   static/
 scripts/                    # 演示数据与清库
@@ -180,7 +180,7 @@ User.role = admin | staff | client
 
 管理端：官方期限、费用监控、官文分发、员工绩效、客户报表、利润核算、通知模板、历史归档。
 
-员工端：进度更新、成果上传；流程「审核跟进」、业务「下单/收账」。
+员工端：进度更新、成果上传；流程「审核跟进」、业务「收账」仍是占位。业务「下单」与管理端「下单待确认」已接真实流程。
 
 客户端：状态时间轴、在线留言。
 
@@ -219,6 +219,7 @@ User.role = admin | staff | client
 | `q5f6a7b8c9d0` | 新建 `login_throttles` 表（登录失败锁定；表已存在则跳过） |
 | `s7b8c9d0e1f2` | 空合并：接住退稿线 `r6a7b8c9d0e1` 与职能线 `q5f6a7b8c9d0` 两个 head |
 | `t8c9d0e1f2a3` | 案件留痕姓名快照：材料上传人、流转操作人、承办人；并回填存量 |
+| `u9d0e1f2a3b4` | 案件下单人 `intake_owner`：与承办撰写师分开，确认前不进派单池 |
 
 不要把 `r6a7b8c9d0e1` 改成接在 `q5f6a7b8c9d0` 后面：线上已经记录了 `r`，那样改会让 Alembic 以为 `p`、`q` 跑过了而静默跳过。
 
@@ -237,6 +238,8 @@ User.role = admin | staff | client
 | 退稿案件派回原撰写师 | 退稿时记下当时的承办人；派单页显示原撰写师并置顶，离职则提示重新分配 |
 | 承办人已离职清单 | 捞出挂在离职者名下、离职退单漏掉的案件，可一键转入待分配 |
 | 案件留痕姓名快照 | 上传、指派、提交审核、办结都把当时的人名钉在记录上；离职后材料与办结库仍显示名字 |
+| 下单待确认 | 管理端独立审核页（侧栏「任务分派与监控」）；确认后进入待分配，打回为「下单待修改」。与撰写「待审核」分开。下单待修改不出现在管理端项目详情与案件列表，业务改完再提交后才回来 |
+| 业务人员下单 | 业务端可看全部客户名和项目名，不能看项目下案件；可新建客户、新建并绑定客户的项目，创建案件后进入「下单待确认」。下单可直接上传交底材料，也可填外部上传端口。打回为「下单待修改」后点「修改再提交」改原单，序列号不变。案件归项目、项目绑客户。侧栏「消息中心」接收下单确认与打回 |
 
 **智能派单的排序口径**（`app/assignment_advisor.py`）：
 
@@ -290,7 +293,7 @@ User.role = admin | staff | client
 | `staff/common/routes.py` | 通知查询口径、侧栏未读数注入、职能占位工作台渲染 |
 | `staff/writer/routes.py` | 撰写师：看板、案件列表/详情、材料上传下载、期限提醒、月度统计、消息通知 |
 | `staff/process/routes.py` | 流程人员：流程工作台、审核案件跟进（占位） |
-| `staff/business/routes.py` | 业务人员：业务工作台、下单、收账（占位） |
+| `staff/business/routes.py` | 业务人员：业务工作台、下单（客户/项目/案件）、收账占位 |
 
 四个子模块共用同一个 `staff_bp`，所以 **20 个 endpoint 和 URL 全部保持原样**（`staff.dashboard`、`staff.case_detail_by_id` 等），模板、`url_for`、`data-spa-endpoint`、`models.py` 的 `home_endpoint` 都没动。跨模块共享的三个权限闸去掉了下划线前缀（`_ensure_writer` → `ensure_writer`），仅撰写师内部使用的辅助函数仍留在 `writer/routes.py`。
 
@@ -391,7 +394,7 @@ gunicorn app:app
 
 ## 建议的后续方向
 
-1. 把流程/业务工作台从占位接到真实审核与商务数据，并继续守住「只派撰写师」。
+1. 把流程工作台、业务收账从占位接到真实数据，并继续守住「只派撰写师」。
 2. 补管理端费用、官文、绩效，或先从导航拿掉未交付入口。
 3. 把 pytest 写入依赖文件（或单独的 `requirements-dev.txt`）。
 4. 生产若改 PostgreSQL：只改 `QY_DATABASE_URI` 并跑迁移，不要依赖 SQLite 兜底 ALTER。

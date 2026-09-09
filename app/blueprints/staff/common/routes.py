@@ -14,12 +14,19 @@ from app.extensions import db
 from app.models import CaseReviewLog
 from app.spa_helpers import render_spa_or_full
 
-STAFF_NOTIFICATION_ACTIONS = ("approve", "reject", "assigned")
-STAFF_NOTIFICATION_ACTIONABLE = ("reject", "assigned")
+STAFF_NOTIFICATION_ACTIONS = ("approve", "reject", "assigned", "intake_approve", "intake_reject")
+STAFF_NOTIFICATION_ACTIONABLE = ("reject", "assigned", "intake_reject")
+STAFF_NOTIFICATION_TYPE_GROUPS = {
+    "assigned": ("assigned",),
+    "approve": ("approve", "intake_approve"),
+    "reject": ("reject", "intake_reject"),
+    "intake_approve": ("intake_approve",),
+    "intake_reject": ("intake_reject",),
+}
 
 
 def staff_review_notifications_query(user_id: int):
-    """当前员工收到的案件通知（分配 / 审核通过 / 打回）。"""
+    """当前员工收到的通知：撰写师为分配/审核，业务人员为下单确认/打回。"""
     return CaseReviewLog.query.filter(
         CaseReviewLog.action.in_(STAFF_NOTIFICATION_ACTIONS),
         CaseReviewLog.recipient_id == user_id,

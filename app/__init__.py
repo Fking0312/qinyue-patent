@@ -41,6 +41,9 @@ def create_app():
             "project_type": "VARCHAR(80)",
             "case_type_code": "VARCHAR(80)",
             "business_owner_id": "INTEGER",
+            "business_owner_label": "VARCHAR(120)",
+            "intake_owner_id": "INTEGER",
+            "intake_owner_label": "VARCHAR(120)",
             "order_at": "DATETIME",
             "expected_return_at": "DATETIME",
             "actual_return_at": "DATETIME",
@@ -68,6 +71,12 @@ def create_app():
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_cases_attribution "
                     "ON cases (attribution)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_cases_intake_owner_id "
+                    "ON cases (intake_owner_id)"
                 )
             )
 
@@ -138,7 +147,11 @@ def create_app():
         if not app.config.get("SQLALCHEMY_DATABASE_URI", "").startswith("sqlite"):
             return
         extras = {
-            "cases": {"business_owner_label": "VARCHAR(120)"},
+            "cases": {
+                "business_owner_label": "VARCHAR(120)",
+                "intake_owner_id": "INTEGER",
+                "intake_owner_label": "VARCHAR(120)",
+            },
             "tasks": {"assignee_label": "VARCHAR(120)"},
             "case_review_logs": {
                 "operator_label": "VARCHAR(120)",
@@ -159,6 +172,12 @@ def create_app():
                 for col_name, col_type in columns.items():
                     if col_name not in existing:
                         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_cases_intake_owner_id "
+                    "ON cases (intake_owner_id)"
+                )
+            )
 
     configured_instance_path = os.getenv("QY_INSTANCE_PATH", "").strip()
     if configured_instance_path:

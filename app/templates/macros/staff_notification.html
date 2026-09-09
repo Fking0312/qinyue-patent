@@ -1,4 +1,5 @@
-{% macro staff_notification_filters(status_filter, type_filter, unread_count, actionable_count, action_counts) -%}
+{% macro staff_notification_filters(status_filter, type_filter, unread_count, actionable_count, action_counts, current_user) -%}
+{% set is_business = current_user.staff_function_normalized == 'business' %}
 <div class="d-flex flex-wrap align-items-center gap-2">
   <div class="qy-notification-filter-tabs" role="group" aria-label="通知状态筛选">
     <a class="{% if status_filter == 'all' %}is-active{% endif %}" href="{{ url_for('staff.notifications', status='all', type=type_filter) }}" data-spa-endpoint="staff.notifications">全部</a>
@@ -11,27 +12,45 @@
   </div>
   <div class="dropdown">
     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-      {% if type_filter == 'assigned' %}案件分配{% elif type_filter == 'approve' %}审核通过{% elif type_filter == 'reject' %}审核打回{% else %}全部类型{% endif %}
+      {% if is_business %}
+        {% if type_filter == 'intake_approve' %}下单通过{% elif type_filter == 'intake_reject' %}下单打回{% else %}全部类型{% endif %}
+      {% else %}
+        {% if type_filter == 'assigned' %}案件分配{% elif type_filter == 'approve' %}审核通过{% elif type_filter == 'reject' %}审核打回{% else %}全部类型{% endif %}
+      {% endif %}
     </button>
     <ul class="dropdown-menu dropdown-menu-end">
       <li><a class="dropdown-item {% if type_filter == 'all' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='all') }}" data-spa-endpoint="staff.notifications">全部类型</a></li>
+      {% if is_business %}
+      <li><a class="dropdown-item {% if type_filter == 'intake_approve' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='intake_approve') }}" data-spa-endpoint="staff.notifications">下单通过 <span class="text-muted ms-1">{{ action_counts.intake_approve }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'intake_reject' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='intake_reject') }}" data-spa-endpoint="staff.notifications">下单打回 <span class="text-muted ms-1">{{ action_counts.intake_reject }}</span></a></li>
+      {% else %}
       <li><a class="dropdown-item {% if type_filter == 'assigned' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='assigned') }}" data-spa-endpoint="staff.notifications">案件分配 <span class="text-muted ms-1">{{ action_counts.assigned }}</span></a></li>
       <li><a class="dropdown-item {% if type_filter == 'approve' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='approve') }}" data-spa-endpoint="staff.notifications">审核通过 <span class="text-muted ms-1">{{ action_counts.approve }}</span></a></li>
       <li><a class="dropdown-item {% if type_filter == 'reject' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='reject') }}" data-spa-endpoint="staff.notifications">审核打回 <span class="text-muted ms-1">{{ action_counts.reject }}</span></a></li>
+      {% endif %}
     </ul>
   </div>
 </div>
 {%- endmacro %}
 
 {% macro staff_notification_item(notification, current_user) -%}
+  {% set is_business = current_user.staff_function_normalized == 'business' %}
   {% if notification.action == "assigned" %}
     {% set tone = "primary" %}{% set icon = "folder" %}{% set label = "新案件已分配" %}
   {% elif notification.action == "approve" %}
     {% set tone = "success" %}{% set icon = "check" %}{% set label = "案件审核已通过" %}
+  {% elif notification.action == "intake_approve" %}
+    {% set tone = "success" %}{% set icon = "check" %}{% set label = "下单已确认" %}
+  {% elif notification.action == "intake_reject" %}
+    {% set tone = "danger" %}{% set icon = "alert" %}{% set label = "下单被打回" %}
   {% else %}
     {% set tone = "danger" %}{% set icon = "alert" %}{% set label = "案件审核被打回" %}
   {% endif %}
-  {% set can_open = notification.case.task and notification.case.task.assignee_id == current_user.id %}
+  {% if is_business %}
+    {% set can_open = notification.action in ("intake_approve", "intake_reject") %}
+  {% else %}
+    {% set can_open = notification.case.task and notification.case.task.assignee_id == current_user.id %}
+  {% endif %}
   {% set open_href = url_for('staff.notification_read', log_id=notification.id) %}
   {% if can_open %}
   <a
@@ -62,6 +81,10 @@
         <div class="small text-body-secondary mt-1">您好，新的案件已由管理员分配给您，请及时查看案件要求与返稿期限。</div>
         {% elif notification.action == "approve" %}
         <div class="small text-success-emphasis mt-1">您的撰写材料已通过审核，案件现已进入待递交阶段。</div>
+        {% elif notification.action == "intake_approve" %}
+        <div class="small text-success-emphasis mt-1">管理员已确认您提交的下单，案件进入待分配。</div>
+        {% elif notification.action == "intake_reject" %}
+        <div class="small text-danger-emphasis mt-1"><span class="fw-semibold">打回原因：</span>{{ notification.note or "管理员未填写打回原因" }}</div>
         {% else %}
         <div class="small text-danger-emphasis mt-1"><span class="fw-semibold">打回原因：</span>{{ notification.note or "管理员未填写打回原因" }}</div>
         {% endif %}
@@ -75,7 +98,7 @@
       </div>
       <div class="flex-shrink-0 qy-notification-item__action">
         {% if can_open %}
-        <span class="btn btn-sm btn-outline-{{ tone }}">{% if notification.action == "reject" %}立即修改{% else %}查看案件{% endif %}</span>
+        <span class="btn btn-sm btn-outline-{{ tone }}">{% if notification.action == "intake_reject" %}去修改{% elif is_business %}去下单{% elif notification.action == "reject" %}立即修改{% else %}查看案件{% endif %}</span>
         {% else %}
         <span class="badge rounded-pill text-bg-secondary">已转派</span>
         {% endif %}

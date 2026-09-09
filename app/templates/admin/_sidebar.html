@@ -53,6 +53,16 @@
         >{{ review_nav_unread or 0 }}</span>
         <svg class="staff-nav-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
+      {% elif group["id"] == "adminNavDispatch" %}
+      <span class="staff-nav-link-trailing">
+        <span
+          class="qy-review-unread-badge {% if not order_intake_nav_total %}d-none{% endif %}"
+          data-order-intake-badge
+          data-status-url="{{ url_for('admin.order_intake_status') }}"
+          aria-label="待确认下单 {{ order_intake_nav_total or 0 }} 件"
+        >{{ order_intake_nav_total or 0 }}</span>
+        <svg class="staff-nav-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
       {% else %}
       <svg class="staff-nav-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       {% endif %}
@@ -69,6 +79,13 @@
             data-status-url="{{ url_for('admin.review_quality_status') }}"
             aria-label="待审核案件 {{ review_nav_unread or 0 }} 件"
           >{{ review_nav_unread or 0 }}</span>
+          {% elif item.endpoint == "admin.order_intake" %}
+          <span
+            class="qy-review-unread-badge {% if not order_intake_nav_total %}d-none{% endif %}"
+            data-order-intake-badge
+            data-status-url="{{ url_for('admin.order_intake_status') }}"
+            aria-label="待确认下单 {{ order_intake_nav_total or 0 }} 件"
+          >{{ order_intake_nav_total or 0 }}</span>
           {% endif %}
         </a>
       {% endfor %}
@@ -88,6 +105,7 @@
     {"id": "adminNavDispatch", "title": "任务分派与监控", "tooltip": "任务分派与监控", "icon": "dispatch", "items": [
       {"endpoint": "admin.task_board", "title": "任务看板"},
       {"endpoint": "admin.smart_assignment", "title": "智能派单"},
+      {"endpoint": "admin.order_intake", "title": "下单待确认"},
       {"endpoint": "admin.flow_map", "title": "案件统计"},
       {"endpoint": "admin.overtime_warning", "title": "超时预警看板"},
     ]},

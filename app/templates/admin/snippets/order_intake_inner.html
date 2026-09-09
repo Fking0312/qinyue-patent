@@ -1,0 +1,143 @@
+{% from "macros/case_type.html" import case_type_badges %}
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+<div class="staff-page-inner staff-page-inner--admin qy-admin-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  {% call page_header(page_title, "业务人员提交的案件先在这里确认，通过后才进入待分配。", extra_class='qy-admin-page-header') %}
+    <span class="badge rounded-pill text-bg-warning fs-6 align-self-center">待确认 {{ total_pending }} 件</span>
+  {% endcall %}
+
+  <section class="card border-0 shadow-sm qy-admin-filter-card mb-4" aria-labelledby="intake-filter-title">
+    <div class="card-body p-3 p-md-4">
+      <h2 id="intake-filter-title" class="h6 mb-3">筛选待确认下单</h2>
+      <form method="get" action="{{ url_for('admin.order_intake') }}" class="row g-2 align-items-end">
+        <div class="col-12 col-md-6 col-xl-4">
+          <label class="form-label mb-1" for="intakeKeyword">关键词</label>
+          <input id="intakeKeyword" class="form-control" type="text" name="q" value="{{ q }}" maxlength="200" placeholder="标题、序列号或申请号">
+        </div>
+        <div class="col-6 col-md-3 col-xl-2">
+          <label class="form-label mb-1" for="intakeCaseType">案件类型</label>
+          <select id="intakeCaseType" class="form-select" name="case_type_primary">
+            <option value="">全部类型</option>
+            {% for value, label in case_type_primary_options %}
+            <option value="{{ value }}" {% if case_type_primary == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-3 col-xl-3">
+          <label class="form-label mb-1" for="intakeOwner">下单人</label>
+          <select id="intakeOwner" class="form-select" name="intake_owner_id">
+            <option value="">全部</option>
+            {% for user in owner_options %}
+            <option value="{{ user.id }}" {% if intake_owner_id == user.id|string %}selected{% endif %}>{{ user|qy_user_label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-xl-3 d-flex gap-2">
+          <a class="btn btn-outline-secondary flex-fill" href="{{ url_for('admin.order_intake') }}" data-spa-endpoint="admin.order_intake">重置</a>
+          <button class="btn btn-primary flex-fill" type="submit">查询</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  {% if intake_rows %}
+  <section class="card border-0 shadow-sm" aria-labelledby="intake-list-title">
+    <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center gap-2">
+      <h2 id="intake-list-title" class="h6 mb-0">待确认列表</h2>
+      <span class="small text-muted">当前筛选 {{ pagination.total }} 件</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 qy-data-table">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">案件</th>
+              <th scope="col">案件类型</th>
+              <th scope="col">下单人</th>
+              <th scope="col">提交时间</th>
+              <th scope="col">等待时长</th>
+              <th scope="col">应返稿时间</th>
+              <th scope="col">备注</th>
+              <th scope="col">确认操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in intake_rows %}
+            <tr>
+              <td class="qy-case-title-cell">
+                <a class="qy-case-title-text text-decoration-none" href="{{ url_for('admin.case_detail', case_id=row.case.id) }}" data-spa-endpoint="admin.case_detail">{{ row.case.title }}</a>
+                <div class="small text-muted mt-1">序列号：{{ row.case.application_no }}</div>
+                {% if row.case.project and row.case.project.customer %}
+                <div class="small text-muted">{{ row.case.project.customer.name }}</div>
+                {% endif %}
+                {% if row.materials %}
+                <div class="small mt-1">
+                  交底材料 {{ row.materials|length }} 个
+                  {% for file_item in row.materials[:2] %}
+                  <div>
+                    <a href="{{ url_for('admin.case_material_download', case_id=row.case.id, material_id=file_item.id) }}" download>{{ file_item.original_name }}</a>
+                  </div>
+                  {% endfor %}
+                  {% if row.materials|length > 2 %}
+                  <div class="text-muted">等 {{ row.materials|length }} 个，详见案件详情</div>
+                  {% endif %}
+                </div>
+                {% endif %}
+                {% if row.case.material_upload_port %}
+                <div class="small mt-1">
+                  <a href="{{ row.case.material_upload_port }}" target="_blank" rel="noopener noreferrer">打开材料上传端口</a>
+                </div>
+                {% endif %}
+              </td>
+              <td class="qy-case-type-cell">{{ case_type_badges(row.case) }}</td>
+              <td class="text-nowrap small">{{ row.case.intake_owner_display }}</td>
+              <td class="text-nowrap small">{{ row.entered_at|qy_format_dt }}</td>
+              <td class="text-nowrap fw-semibold">{{ row.waiting_label }}</td>
+              <td class="text-nowrap small">{{ row.due_at|qy_format_dt }}</td>
+              <td class="qy-case-note-cell">
+                {% if row.case.case_note %}
+                <span class="qy-case-note-preview" tabindex="0" data-bs-toggle="tooltip" data-bs-title="{{ row.case.case_note }}">{{ row.case.case_note }}</span>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td class="qy-review-actions-cell">
+                <div class="d-flex flex-column gap-2">
+                  <form method="post" action="{{ url_for('admin.order_intake_action', case_id=row.case.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="review_action" value="approve">
+                    {% for key, value in filter_url_kwargs.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+                    <button class="btn btn-sm btn-primary w-100" type="submit" onclick="return confirm('确认这件下单？确认后将进入待分配。')">确认下单</button>
+                  </form>
+                  <form method="post" action="{{ url_for('admin.order_intake_action', case_id=row.case.id) }}" class="d-flex gap-1">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="review_action" value="reject">
+                    {% for key, value in filter_url_kwargs.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+                    <input class="form-control form-control-sm" type="text" name="reject_note" maxlength="500" required placeholder="填写打回原因">
+                    <button class="btn btn-sm btn-outline-danger text-nowrap" type="submit">打回</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {% if pagination.pages > 1 %}
+  <nav class="mt-3" aria-label="下单待确认分页">
+    <ul class="pagination pagination-sm justify-content-center flex-wrap mb-0">
+      {% for page_no in range(1, pagination.pages + 1) %}
+      <li class="page-item {% if page_no == pagination.page %}active{% endif %}">
+        <a class="page-link" href="{{ url_for('admin.order_intake', page=page_no, **filter_url_kwargs) }}" data-spa-endpoint="admin.order_intake">{{ page_no }}</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </nav>
+  {% endif %}
+  {% else %}
+  {% call empty_state("暂无待确认下单", "业务人员提交案件后会出现在这里；确认后才会进入智能派单。", icon="review") %}{% endcall %}
+  {% endif %}
+</div>

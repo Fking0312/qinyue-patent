@@ -12,7 +12,7 @@ from werkzeug.utils import secure_filename
 
 from app.extensions import db
 from app.models import CaseMaterial, User
-from app.case_trace import material_uploader_role, stamp_uploader
+from app.case_trace import is_disclosure_material, stamp_uploader
 from sqlalchemy.orm import joinedload
 
 # 专利业务常见格式（均为小写键）：文档、表格、演示、图片、音视频、压缩包等。
@@ -74,13 +74,13 @@ def fetch_case_materials(case_id: int, version_filter: str) -> list[CaseMaterial
 
 
 def fetch_case_materials_grouped(case_id: int, version_filter: str) -> tuple[list[CaseMaterial], list[CaseMaterial]]:
-    """按上传者角色分组：管理员为交底材料，员工为撰写材料。
+    """按上传者分组：管理员和业务人员为交底材料，撰写师为撰写材料。
 
-    角色以账号实时值为准，账号行不在了就用上传时冻结的 uploaded_by_role，
-    避免离职或删号后撰写材料从列表里消失。
+    角色以账号实时值为准；业务人员冻结为 `business`。账号行不在了就用
+    上传时的 uploaded_by_role，避免离职或删号后材料从列表里消失。
     """
     materials = fetch_case_materials(case_id, version_filter)
-    disclosure = [m for m in materials if material_uploader_role(m) == "admin"]
+    disclosure = [m for m in materials if is_disclosure_material(m)]
     writing = [m for m in materials if m not in disclosure]
     return disclosure, writing
 

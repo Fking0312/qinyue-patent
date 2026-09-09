@@ -267,8 +267,10 @@ def test_staff_function_login_redirects_and_forbidden_writer_pages():
     assert "业务工作台".encode("utf-8") in biz_home.data
     assert "下单".encode("utf-8") in biz_home.data
     assert "收账".encode("utf-8") in biz_home.data
+    assert "消息中心".encode("utf-8") in biz_home.data
     assert business_client.get("/staff/business-orders").status_code == 200
     assert business_client.get("/staff/business-collections").status_code == 200
+    assert business_client.get("/staff/notifications").status_code == 200
     assert business_client.get("/staff/dashboard").status_code == 403
     assert business_client.get("/staff/process-dashboard").status_code == 403
     assert business_client.get("/staff/case-detail").status_code == 403
