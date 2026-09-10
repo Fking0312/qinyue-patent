@@ -1,4 +1,5 @@
 {% set is_admin = current_user.is_authenticated and current_user.role == 'admin' %}
+{% set review_status = 'pending_final_review' if is_admin else 'pending_review' %}
 {% set board_endpoint = request.endpoint %}
 {% from "admin/macros/staff_kind.html" import staff_kind_optgroups, staff_kind_badge %}
 {% from "macros/task_phase.html" import task_phase_badge %}
@@ -13,7 +14,7 @@
     {% endif %}
   {% endcall %}
 
-  {% set total_active = count_in_progress + count_pending_review + count_overdue %}
+  {% set total_active = count_in_progress + count_pending_review + count_overdue + (count_pending_final_review|default(0)) %}
   {% if is_admin %}
     {% set total_active = total_active + count_pending_assignment %}
   {% endif %}
@@ -35,9 +36,9 @@
       <div class="qy-board-stat-label">进行中</div>
       <div class="qy-board-stat-value">{{ count_in_progress }}</div>
     </a>
-    <a class="qy-board-stat-card qy-board-stat-card--warning {% if status_filter == 'pending_review' %}is-active{% endif %}"
-       href="{{ url_for(board_endpoint, status='pending_review', sort=sort_by) }}" data-spa-endpoint="{{ board_endpoint }}">
-      <div class="qy-board-stat-label">待审核</div>
+    <a class="qy-board-stat-card qy-board-stat-card--warning {% if status_filter == review_status %}is-active{% endif %}"
+       href="{{ url_for(board_endpoint, status=review_status, sort=sort_by) }}" data-spa-endpoint="{{ board_endpoint }}">
+      <div class="qy-board-stat-label">{% if is_admin %}待终审{% else %}待流程核对{% endif %}</div>
       <div class="qy-board-stat-value">{{ count_pending_review }}</div>
     </a>
     <a class="qy-board-stat-card qy-board-stat-card--danger {% if status_filter == 'overdue' %}is-active{% endif %}"
@@ -60,7 +61,11 @@
               <option value="pending_assignment" {% if status_filter == 'pending_assignment' %}selected{% endif %}>待分配</option>
               {% endif %}
               <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>进行中</option>
-              <option value="pending_review" {% if status_filter == 'pending_review' %}selected{% endif %}>待审核</option>
+              {% if is_admin %}
+              <option value="pending_final_review" {% if status_filter == 'pending_final_review' %}selected{% endif %}>待终审</option>
+              {% else %}
+              <option value="pending_review" {% if status_filter == 'pending_review' %}selected{% endif %}>待流程核对</option>
+              {% endif %}
               <option value="overdue" {% if status_filter == 'overdue' %}selected{% endif %}>已超期</option>
             </select>
           </div>

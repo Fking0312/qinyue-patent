@@ -3,18 +3,17 @@
 <div class="staff-page-inner p-3 p-md-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-      <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
-      <p class="text-muted mb-0">{{ page_desc }}</p>
+      <h1 class="h4 mb-0 staff-page-title">{{ page_title }}</h1>
     </div>
     <a class="btn btn-outline-secondary" href="{{ url_for('admin.cases') }}" data-spa-endpoint="admin.cases">返回案件列表</a>
   </div>
 
   <div class="card border-0 shadow-sm">
     <div class="card-body">
-      <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
+      <form method="post" enctype="multipart/form-data" class="row g-3 qy-form-grid">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="col-md-4">
-          <label class="form-label mb-1" for="caseProjectInput">所属项目</label>
+          <label class="form-label" for="caseProjectInput">所属项目</label>
           <select id="caseProjectInput" class="form-select" name="project_id" required>
             <option value="">请选择项目</option>
             {% for project in projects %}
@@ -23,59 +22,75 @@
           </select>
         </div>
         <div class="col-md-4">
-          <label class="form-label mb-1" for="caseTitleInput">案件标题</label>
+          <label class="form-label" for="caseTitleInput">案件标题</label>
           <input id="caseTitleInput" class="form-control" type="text" name="title" required maxlength="200" placeholder="请输入案件标题">
           <div class="form-text">同一项目下不能重复</div>
         </div>
         <div class="col-md-4">
-          <label class="form-label mb-1">序列号</label>
+          <label class="form-label">序列号</label>
           <div class="form-control bg-body-tertiary text-muted">创建后自动生成（年月+当月序号，如 260701）</div>
         </div>
         <div class="col-md-4">
-          <label class="form-label mb-1" for="casePatentApplicationNoInput">申请号</label>
+          <label class="form-label" for="casePatentApplicationNoInput">申请号</label>
           <input id="casePatentApplicationNoInput" class="form-control" type="text" name="patent_application_no" maxlength="100" placeholder="选填，如：CN202410123456.7">
         </div>
-        <div class="col-md-6">
-          <label class="form-label mb-1" for="caseFormalStatusInput">形式状态</label>
+        <div class="col-md-4">
+          <label class="form-label" for="caseFormalStatusInput">形式状态</label>
           <input id="caseFormalStatusInput" class="form-control" type="text" name="formal_status" maxlength="80" placeholder="选填，如：已受理">
         </div>
+        <div class="col-md-4">
+          <label class="form-label" for="casePhaseInput">初始任务状态</label>
+          <select id="casePhaseInput" class="form-select" name="phase_status">
+            {% for phase in phase_options %}
+            <option value="{{ phase }}" {% if phase == default_phase %}selected{% endif %}>{{ phase|qy_task_phase_label }}</option>
+            {% endfor %}
+          </select>
+        </div>
         <div class="col-12">
-          <label class="form-label mb-2">案件类型</label>
+          <label class="form-label">案件类型</label>
           {{ case_type_selector(case_type_config, case_type_selected) }}
         </div>
-        <div class="col-md-3">
-          <label class="form-label mb-1" for="caseBusinessOwnerInput">指派员工</label>
+        <div class="col-md-4">
+          <label class="form-label" for="caseBusinessOwnerInput">指派员工</label>
           <select id="caseBusinessOwnerInput" class="form-select" name="business_owner_id">
             {{ staff_kind_optgroups(staff_users_formal, staff_users_outsource, selected_id=None, empty_label="未分配（待派单）") }}
           </select>
         </div>
         <div class="col-md-4">
-          <label class="form-label mb-1" for="caseOrderAtInput">下单时间</label>
+          <label class="form-label" for="caseProcessOwnerInput">流程人员</label>
+          <select id="caseProcessOwnerInput" class="form-select" name="process_owner_id">
+            {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=None, empty_label="未指定") }}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="caseBillingOwnerInput">收账人员</label>
+          <select id="caseBillingOwnerInput" class="form-select" name="billing_owner_id">
+            {{ staff_kind_optgroups(billing_staff_formal, billing_staff_outsource, selected_id=None, empty_label="未指定") }}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="caseOrderAtInput">下单时间</label>
           <input id="caseOrderAtInput" class="form-control" type="datetime-local" name="order_at" value="{{ order_at_input }}">
         </div>
         <div class="col-md-4">
-          <label class="form-label mb-1" for="caseExpectedReturnAtInput">应返稿时间</label>
+          <label class="form-label" for="caseExpectedReturnAtInput">应返稿时间</label>
           <input id="caseExpectedReturnAtInput" class="form-control" type="datetime-local" name="expected_return_at" value="{{ expected_return_at_input }}">
         </div>
         <div class="col-md-4">
-          <label class="form-label mb-1" for="caseActualReturnAtInput">实际返稿时间</label>
+          <label class="form-label" for="caseActualReturnAtInput">实际返稿时间</label>
           <input id="caseActualReturnAtInput" class="form-control" type="datetime-local" name="actual_return_at" value="{{ actual_return_at_input }}">
           <div class="form-text">初始状态为「已完成」时必填（或可自动推算）。</div>
         </div>
+        <div class="col-md-6">
+          <label class="form-label" for="caseNoteInput">备注</label>
+          <textarea id="caseNoteInput" class="form-control" name="case_note" rows="2" placeholder="可自由填写补充说明、注意事项等"></textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="caseMaterialUploadPortInput">案件交底材料上传端口</label>
+          <input id="caseMaterialUploadPortInput" class="form-control" type="url" name="material_upload_port" maxlength="255" placeholder="选填，外部网盘/收集表链接">
+        </div>
         <div class="col-12">
-          <div class="row g-2 align-items-start">
-            <div class="col-md-6">
-              <label class="form-label mb-1" for="caseNoteInput">备注</label>
-              <textarea id="caseNoteInput" class="form-control" name="case_note" rows="2" placeholder="可自由填写补充说明、注意事项等"></textarea>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label mb-1" for="caseMaterialUploadPortInput">案件交底材料上传端口</label>
-              <input id="caseMaterialUploadPortInput" class="form-control" type="url" name="material_upload_port" maxlength="255" placeholder="选填，外部网盘/收集表链接">
-            </div>
-            <div class="col-12">
-              <div class="form-text mb-0">填写「案件交底材料上传端口」后，案件详情可一键打开外部材料收集入口（不会自动同步到本系统）。</div>
-            </div>
-          </div>
+          <div class="form-text mb-0">填写「案件交底材料上传端口」后，案件详情可一键打开外部材料收集入口（不会自动同步到本系统）。</div>
         </div>
         <div class="col-12">
           <div class="qy-material-upload-panel qy-dropzone">
@@ -95,15 +110,7 @@
             <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽多个文件到此区域，或点击上方选择文件。</div>
           </div>
         </div>
-        <div class="col-md-4">
-          <label class="form-label mb-1" for="casePhaseInput">初始任务状态</label>
-          <select id="casePhaseInput" class="form-select" name="phase_status">
-            {% for phase in phase_options %}
-            <option value="{{ phase }}" {% if phase == default_phase %}selected{% endif %}>{{ phase|qy_task_phase_label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-2 d-grid">
+        <div class="col-12 d-flex justify-content-end pt-1">
           <button class="btn btn-primary" type="submit">创建案件</button>
         </div>
       </form>

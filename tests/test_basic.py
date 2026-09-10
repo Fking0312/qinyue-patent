@@ -1032,7 +1032,7 @@ def test_admin_case_edit_can_update_case_and_task_phase():
     )
     assert r2.status_code == 200
     assert f"_case_edited_{suffix}".encode("utf-8") in r2.data
-    assert "待审核".encode("utf-8") in r2.data
+    assert "待流程核对".encode("utf-8") in r2.data
     with app.app_context():
         edited_case = db.session.get(Case, case_id)
         assert edited_case.patent_application_no == "CN202499887766.1"
@@ -1383,7 +1383,13 @@ def test_staff_upload_then_submit_for_review():
     with app.app_context():
         staff = User(username=f"_staff_case_{suffix}", role="staff")
         staff.set_password("secret")
-        db.session.add(staff)
+        process = User(
+            username=f"_staff_proc_{suffix}",
+            role="staff",
+            staff_function=User.STAFF_FUNCTION_PROCESS,
+        )
+        process.set_password("secret")
+        db.session.add_all([staff, process])
         db.session.flush()
 
         customer = Customer(kind=CustomerKind.COMPANY, name=f"_staff_customer_{suffix}")
@@ -1397,6 +1403,8 @@ def test_staff_upload_then_submit_for_review():
         case = Case(project_id=project.id, title=f"_staff_case_title_{suffix}", application_no=f"CN55{suffix}")
         db.session.add(case)
         db.session.flush()
+        case.process_owner_id = process.id
+        case.process_owner_label = process.display_label
 
         task = Task(case_id=case.id, phase_status=TaskPhase.IN_PROGRESS, assignee_id=staff.id)
         db.session.add(task)
@@ -1435,6 +1443,8 @@ def test_staff_upload_then_submit_for_review():
     unlocked_page = client.get(f"/staff/case-detail/{case_id}")
     assert b'data-upload-locked="true"' not in unlocked_page.data
     assert b'form_action" value="submit_for_review"' in unlocked_page.data
+    assert 'data-qy-confirm="提交流程核对"'.encode("utf-8") in unlocked_page.data
+    assert b"return confirm(" not in unlocked_page.data
 
     submitted = client.post(
         f"/staff/case-detail/{case_id}",
@@ -1638,7 +1648,7 @@ def test_admin_case_review_actions_approve_and_reject():
         db.session.add(case)
         db.session.flush()
 
-        task = Task(case_id=case.id, phase_status=TaskPhase.PENDING_REVIEW)
+        task = Task(case_id=case.id, phase_status=TaskPhase.PENDING_FINAL_REVIEW)
         db.session.add(task)
         db.session.commit()
         admin_name = admin.username
@@ -1653,12 +1663,13 @@ def test_admin_case_review_actions_approve_and_reject():
         follow_redirects=True,
     )
     assert r.status_code == 200
-    assert "待递交".encode("utf-8") in r.data
+    assert "已完成".encode("utf-8") in r.data
 
     with app.app_context():
         task = Task.query.filter_by(case_id=case_id).first()
         assert task is not None
-        task.phase_status = TaskPhase.PENDING_REVIEW
+        assert task.phase_status == TaskPhase.COMPLETED
+        task.phase_status = TaskPhase.PENDING_FINAL_REVIEW
         db.session.commit()
 
     r2 = client.post(
@@ -1691,7 +1702,7 @@ def test_admin_case_reject_requires_reason_and_staff_can_see_latest_reason():
         case = Case(project_id=project.id, title=f"_rej_case_{suffix}", application_no=f"CN33{suffix}")
         db.session.add(case)
         db.session.flush()
-        task = Task(case_id=case.id, phase_status=TaskPhase.PENDING_REVIEW, assignee_id=staff.id)
+        task = Task(case_id=case.id, phase_status=TaskPhase.PENDING_FINAL_REVIEW, assignee_id=staff.id)
         db.session.add(task)
         db.session.commit()
         admin_name = admin.username
@@ -1709,7 +1720,7 @@ def test_admin_case_reject_requires_reason_and_staff_can_see_latest_reason():
     assert r.status_code in (302, 303)
     assert "qy_toast=" in r.headers.get("Location", "")
     r_after = client.get(r.headers["Location"])
-    assert "待审核".encode("utf-8") in r_after.data
+    assert "待终审".encode("utf-8") in r_after.data
 
     note = "补充说明书实施例后再提交"
     r2 = client.post(
@@ -2492,7 +2503,7 @@ def test_staff_cannot_access_other_assignee_case_materials():
     assert r_detail.status_code == 403
 
     r_download = client.get(f"/staff/case-material/{case_id}/{material_id}")
-    assert r_download.status_code == 403
+    assert r_download.status_code == 404
 
 
 def test_download_logs_can_export_csv_with_role_filter():

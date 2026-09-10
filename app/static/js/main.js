@@ -1,5 +1,27 @@
 console.log("Patent system frontend initialized.");
 
+function qyClearSpaSessionCaches() {
+  // 退出后标签栏不能当「未关的窗口」留着：同账号再登录会还原页面名，
+  // 共用电脑也能从 sessionStorage 里读到上一个人打开过哪些功能。
+  try {
+    const prefixes = ["qySpaTabs:", "qyScrollRestore:"];
+    const toRemove = [];
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i);
+      if (key && prefixes.some((prefix) => key.startsWith(prefix))) {
+        toRemove.push(key);
+      }
+    }
+    toRemove.forEach((key) => sessionStorage.removeItem(key));
+  } catch {
+    // private mode / blocked storage
+  }
+}
+
+if (document.body.classList.contains("qy-login-page")) {
+  qyClearSpaSessionCaches();
+}
+
 /** 全局 Toast / URL 提示参数 / Bootstrap Tooltip（供 SPA 与各业务模块共用） */
 (() => {
   const escapeHtml = (s) =>
@@ -48,6 +70,213 @@ console.log("Patent system frontend initialized.");
       el.addEventListener("hidden.bs.toast", () => el.remove());
     }
   };
+
+  const DIALOG_ICONS = {
+    success:
+      '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 12.2 10.2 15.5 17 8.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/></svg>',
+    primary:
+      '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.8 19.2 7v5.1c0 4.2-2.9 7.2-7.2 8.4-4.3-1.2-7.2-4.2-7.2-8.4V7Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9.2 12.1 11.3 14.2 15.1 9.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    warning:
+      '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4.8 3.6 19.2h16.8L12 4.8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="16.7" r="0.9" fill="currentColor"/></svg>',
+    danger:
+      '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 8.2h14M10 8.2V6.4h4v1.8M8.2 8.2 9 18.2h6l.8-10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  };
+
+  const normalizeDialogVariant = (variant) => {
+    const v = String(variant || "primary").toLowerCase();
+    if (v === "danger" || v === "warning" || v === "success") {
+      return v;
+    }
+    return "primary";
+  };
+
+  let dialogRoot = null;
+  let dialogResolver = null;
+  let dialogLastFocus = null;
+
+  const ensureDialog = () => {
+    if (dialogRoot && document.body.contains(dialogRoot)) {
+      return dialogRoot;
+    }
+    dialogRoot = document.createElement("div");
+    dialogRoot.className = "qy-dialog";
+    dialogRoot.hidden = true;
+    dialogRoot.innerHTML = `
+      <div class="qy-dialog__backdrop" data-qy-dialog-dismiss></div>
+      <div class="qy-dialog__panel" role="alertdialog" aria-modal="true" aria-labelledby="qy-dialog-title" aria-describedby="qy-dialog-text">
+        <div class="qy-dialog__mark" aria-hidden="true">琴</div>
+        <div class="qy-dialog__icon"></div>
+        <h2 class="qy-dialog__title" id="qy-dialog-title"></h2>
+        <p class="qy-dialog__text" id="qy-dialog-text"></p>
+        <div class="qy-dialog__actions">
+          <button type="button" class="qy-dialog__btn qy-dialog__btn--ghost" data-qy-dialog-cancel>取消</button>
+          <button type="button" class="qy-dialog__btn qy-dialog__btn--ok" data-qy-dialog-ok>确定</button>
+        </div>
+      </div>`;
+    document.body.appendChild(dialogRoot);
+    return dialogRoot;
+  };
+
+  const closeDialog = (ok) => {
+    const root = dialogRoot;
+    const resolve = dialogResolver;
+    dialogResolver = null;
+    if (root) {
+      root.hidden = true;
+      root.classList.remove("is-open");
+      document.body.classList.remove("qy-dialog-open");
+    }
+    const prev = dialogLastFocus;
+    dialogLastFocus = null;
+    if (prev instanceof HTMLElement && document.body.contains(prev)) {
+      try {
+        prev.focus();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (typeof resolve === "function") {
+      resolve(Boolean(ok));
+    }
+  };
+
+  const dialogKeydown = (event) => {
+    if (!dialogRoot || dialogRoot.hidden) {
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDialog(false);
+      return;
+    }
+    if (event.key !== "Tab") {
+      return;
+    }
+    const focusable = [
+      dialogRoot.querySelector("[data-qy-dialog-cancel]"),
+      dialogRoot.querySelector("[data-qy-dialog-ok]"),
+    ].filter((el) => el instanceof HTMLElement && !el.disabled);
+    if (!focusable.length) {
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  window.qyConfirm = (options) => {
+    const opts = typeof options === "string" ? { message: options } : options || {};
+    const variant = normalizeDialogVariant(opts.variant);
+    if (dialogResolver) {
+      closeDialog(false);
+    }
+    const root = ensureDialog();
+    const panel = root.querySelector(".qy-dialog__panel");
+    const icon = root.querySelector(".qy-dialog__icon");
+    const titleEl = root.querySelector("#qy-dialog-title");
+    const textEl = root.querySelector("#qy-dialog-text");
+    const okBtn = root.querySelector("[data-qy-dialog-ok]");
+    const cancelBtn = root.querySelector("[data-qy-dialog-cancel]");
+    panel.dataset.variant = variant;
+    icon.innerHTML = DIALOG_ICONS[variant] || DIALOG_ICONS.primary;
+    titleEl.textContent = String(opts.title || "请确认").slice(0, 80);
+    textEl.textContent = String(opts.message || "确定要继续吗？").slice(0, 400);
+    okBtn.textContent = String(opts.okText || "确定").slice(0, 20);
+    cancelBtn.textContent = String(opts.cancelText || "取消").slice(0, 20);
+    dialogLastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    root.hidden = false;
+    root.classList.add("is-open");
+    document.body.classList.add("qy-dialog-open");
+    requestAnimationFrame(() => {
+      okBtn.focus();
+    });
+    return new Promise((resolve) => {
+      dialogResolver = resolve;
+    });
+  };
+
+  document.addEventListener("click", (event) => {
+    if (!dialogRoot || dialogRoot.hidden) {
+      return;
+    }
+    const t = event.target;
+    if (!(t instanceof Element)) {
+      return;
+    }
+    if (t.closest("[data-qy-dialog-ok]")) {
+      event.preventDefault();
+      closeDialog(true);
+      return;
+    }
+    if (t.closest("[data-qy-dialog-cancel]") || t.closest("[data-qy-dialog-dismiss]")) {
+      event.preventDefault();
+      closeDialog(false);
+    }
+  });
+
+  document.addEventListener("keydown", dialogKeydown, true);
+
+  const confirmSourceFromSubmit = (form, submitter) => {
+    if (submitter instanceof HTMLElement && form.contains(submitter)) {
+      const fromBtn = submitter.closest("[data-qy-confirm]");
+      if (fromBtn instanceof HTMLElement && form.contains(fromBtn)) {
+        return fromBtn;
+      }
+    }
+    return form.hasAttribute("data-qy-confirm") ? form : null;
+  };
+
+  document.addEventListener(
+    "submit",
+    (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) {
+        return;
+      }
+      const submitter = event.submitter instanceof HTMLElement ? event.submitter : null;
+      const source = confirmSourceFromSubmit(form, submitter);
+      if (!source) {
+        return;
+      }
+      if (source.getAttribute("data-qy-confirm-armed") === "1") {
+        source.removeAttribute("data-qy-confirm-armed");
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+      const titleHint = (source.getAttribute("data-qy-confirm") || "").trim();
+      const text = (source.getAttribute("data-qy-confirm-text") || "").trim();
+      window
+        .qyConfirm({
+          title: text ? titleHint || "请确认" : "请确认",
+          message: text || titleHint || "确定要继续吗？",
+          okText: (source.getAttribute("data-qy-confirm-ok") || "").trim() || "确定",
+          cancelText: (source.getAttribute("data-qy-confirm-cancel") || "").trim() || "取消",
+          variant: source.getAttribute("data-qy-confirm-variant") || "primary",
+        })
+        .then((ok) => {
+          if (!ok || !document.body.contains(form)) {
+            return;
+          }
+          source.setAttribute("data-qy-confirm-armed", "1");
+          if (typeof form.requestSubmit === "function") {
+            form.requestSubmit(submitter && form.contains(submitter) ? submitter : undefined);
+          } else {
+            HTMLFormElement.prototype.submit.call(form);
+          }
+        });
+    },
+    true
+  );
 
   window.qyConsumeUrlToast = () => {
     if (typeof window.qyShowToast !== "function") {
@@ -246,6 +475,7 @@ if (themeToggleBtn) {
 
 document.querySelectorAll('a[href*="/auth/logout"]').forEach((link) => {
   link.addEventListener("click", () => {
+    qyClearSpaSessionCaches();
     localStorage.removeItem(THEME_TOGGLE_FAB_DISMISSED_KEY);
   });
 });
@@ -974,6 +1204,52 @@ if (popupNavGroups.length > 0) {
     document.querySelector(".staff-spa-body")?.scrollTo(0, 0);
   };
 
+  const collectKeyedScroll = (root) => {
+    const map = {};
+    if (!root) {
+      return map;
+    }
+    root.querySelectorAll("[data-qy-scroll-key]").forEach((el) => {
+      const key = (el.getAttribute("data-qy-scroll-key") || "").trim();
+      if (!key || !/^[a-z0-9_-]+$/i.test(key)) {
+        return;
+      }
+      map[key] = { top: el.scrollTop, left: el.scrollLeft };
+    });
+    return map;
+  };
+
+  const restoreKeyedScroll = (root, map) => {
+    if (!root || !map) {
+      return;
+    }
+    Object.keys(map).forEach((key) => {
+      const el = root.querySelector(`[data-qy-scroll-key="${key}"]`);
+      if (!el) {
+        return;
+      }
+      el.scrollTop = map[key].top || 0;
+      el.scrollLeft = map[key].left || 0;
+    });
+  };
+
+  const revealSelectedInKeyedScrollers = (root) => {
+    if (!root) {
+      return;
+    }
+    root.querySelectorAll("[data-qy-scroll-key]").forEach((scroller) => {
+      const selected = scroller.querySelector(".is-selected, [aria-current='true']");
+      if (!(selected instanceof HTMLElement)) {
+        return;
+      }
+      const sRect = scroller.getBoundingClientRect();
+      const iRect = selected.getBoundingClientRect();
+      if (iRect.bottom > sRect.bottom + 1 || iRect.top < sRect.top - 1) {
+        selected.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    });
+  };
+
   const spaNavigate = async (
     href,
     { skipHistory = false, force = false, preserveScroll = false } = {}
@@ -997,12 +1273,12 @@ if (popupNavGroups.length > 0) {
     }
 
     const spaBody = document.querySelector(".staff-spa-body");
-    const savedScroll = preserveScroll
-      ? {
-          windowY: window.scrollY || window.pageYOffset || 0,
-          bodyY: spaBody?.scrollTop || 0,
-        }
-      : null;
+    const savedScroll = {
+      windowY: window.scrollY || window.pageYOffset || 0,
+      bodyY: spaBody?.scrollTop || 0,
+      keyed: collectKeyedScroll(mainEl),
+      endpoint: mainEl.dataset.spaEndpoint || "",
+    };
     // 快速 SPA 切换不显示加载提示，避免中间转圈一闪而过；
     // 仅请求超过短暂阈值时显示轻量进度条。
     const loadingTimer = window.setTimeout(() => {
@@ -1087,10 +1363,18 @@ if (popupNavGroups.length > 0) {
         window.qyInitBusinessOrderPage(spaMainEl);
       }
 
-      if (savedScroll) {
+      const samePage =
+        Boolean(savedScroll.endpoint) &&
+        savedScroll.endpoint === (spaMainEl?.dataset.spaEndpoint || "");
+      const shouldPreserve = preserveScroll || samePage;
+      if (shouldPreserve) {
         const restoreSavedScroll = () => {
           window.scrollTo(0, savedScroll.windowY);
           document.querySelector(".staff-spa-body")?.scrollTo(0, savedScroll.bodyY);
+          restoreKeyedScroll(spaMainEl, savedScroll.keyed);
+          if (samePage) {
+            revealSelectedInKeyedScrollers(spaMainEl);
+          }
         };
         restoreSavedScroll();
         requestAnimationFrame(restoreSavedScroll);
@@ -1571,12 +1855,90 @@ if (popupNavGroups.length > 0) {
   };
   restoreScrollAfterReload();
 
+  const isOfficialNoticeFileUrl = (url) =>
+    /\/(?:staff|admin)\/official-notices\/\d+\/?$/.test(url.pathname);
+
+  const filenameFromContentDisposition = (header, fallback) => {
+    const raw = header || "";
+    const star = /filename\*=(?:UTF-8''|utf-8'')([^;]+)/i.exec(raw);
+    if (star) {
+      try {
+        return decodeURIComponent(star[1].trim().replace(/^"(.*)"$/, "$1"));
+      } catch {
+        /* keep fallback */
+      }
+    }
+    const quoted = /filename="([^"]+)"/i.exec(raw);
+    if (quoted) {
+      return quoted[1];
+    }
+    const plain = /filename=([^;]+)/i.exec(raw);
+    if (plain) {
+      return plain[1].trim().replace(/^"(.*)"$/, "$1");
+    }
+    return fallback;
+  };
+
+  const triggerBlobDownload = (blob, filename) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename || "download";
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+  };
+
+  const handleOfficialNoticeDownload = async (anchor) => {
+    if (anchor.dataset.qyDownloading === "1") {
+      return;
+    }
+    anchor.dataset.qyDownloading = "1";
+    try {
+      const response = await fetch(anchor.href, { credentials: "same-origin" });
+      if (!response.ok) {
+        if (typeof window.qyShowToast === "function") {
+          window.qyShowToast("下载失败，请稍后重试。", "danger");
+        }
+        return;
+      }
+      const blob = await response.blob();
+      const fallbackName =
+        (anchor.getAttribute("data-filename") || "").trim() ||
+        (anchor.getAttribute("download") || "").trim() ||
+        "官方来文";
+      triggerBlobDownload(
+        blob,
+        filenameFromContentDisposition(response.headers.get("Content-Disposition"), fallbackName)
+      );
+      await spaNavigate(window.location.href, {
+        force: true,
+        preserveScroll: true,
+        skipHistory: true,
+      });
+    } catch {
+      if (typeof window.qyShowToast === "function") {
+        window.qyShowToast("下载失败，请稍后重试。", "danger");
+      }
+    } finally {
+      delete anchor.dataset.qyDownloading;
+    }
+  };
+
   spaLayout.addEventListener("click", (event) => {
     const a = event.target.closest("a[href]");
     if (!a || !spaLayout.contains(a) || event.defaultPrevented) {
       return;
     }
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    if (a.hasAttribute("data-qy-notice-download")) {
+      event.preventDefault();
+      protectNativeFullscreenWindow(1200);
+      handleOfficialNoticeDownload(a);
       return;
     }
     if (a.target === "_blank" || a.hasAttribute("download")) {
@@ -1590,6 +1952,9 @@ if (popupNavGroups.length > 0) {
     try {
       absUrl = new URL(a.href, window.location.origin);
     } catch {
+      return;
+    }
+    if (isOfficialNoticeFileUrl(absUrl)) {
       return;
     }
     if (!isSpaInternalUrl(absUrl)) {

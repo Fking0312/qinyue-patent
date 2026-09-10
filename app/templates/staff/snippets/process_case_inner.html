@@ -1,0 +1,386 @@
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+{% from "macros/case_type.html" import case_type_badges %}
+<div class="staff-page-inner p-3 p-md-4">
+  {% call page_header(page_title) %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('staff.process_followup') }}" data-spa-endpoint="staff.process_followup">返回案件跟进</a>
+  {% endcall %}
+
+  <section class="qy-case-hero card border-0 shadow-sm mb-4" aria-label="案件概览">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+        <div class="min-w-0 flex-grow-1">
+          <h2 class="h5 mb-2 text-break">{{ case.title }}</h2>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="font-monospace small text-muted">{{ case.application_no }}</span>
+            {{ task_phase_badge(task.phase_status if task else '') }}
+            {{ case_type_badges(case) }}
+          </div>
+        </div>
+        <div class="qy-case-hero-meta text-end">
+          <div class="text-muted small">撰写师</div>
+          <div class="fw-semibold">{{ writer.display_label if writer else "未指定" }}</div>
+          <div class="text-muted small mt-2">收账人员</div>
+          <div class="fw-semibold">{{ billing_owner.display_label if billing_owner else "未指定" }}</div>
+        </div>
+      </div>
+      <div class="row g-3 mt-1 small">
+        <div class="col-md-4">
+          <div class="text-muted">客户</div>
+          <div>{{ case.project.customer.name if case.project and case.project.customer else "—" }}</div>
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted">申请号</div>
+          <div>{{ case.patent_application_no or "—" }}</div>
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted">应返稿时间</div>
+          <div>{{ case.expected_return_at|qy_format_dt }}</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm mb-4" aria-labelledby="process-writing-title">
+    <div class="card-body">
+      <h2 id="process-writing-title" class="h6 mb-2">所内材料</h2>
+      <p class="text-muted small mb-3">撰写师提交后在这里核对。确认无误后进入待递交官方；格式或内容有问题可打回撰写师。</p>
+      {% if disclosure_material_files %}
+      <div class="fw-semibold small mb-2">交底材料</div>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>文件名</th>
+              <th>时间</th>
+              <th>备注</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for file_item in disclosure_material_files %}
+            <tr>
+              <td>{{ file_item.original_name }}</td>
+              <td class="small text-nowrap">{{ file_item.created_at|qy_format_dt }}</td>
+              <td class="small text-break">{{ file_item.note or "—" }}</td>
+              <td>
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('staff.case_material_download', case_id=case.id, material_id=file_item.id) }}" download="{{ file_item.original_name }}">下载</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      {% if writing_material_files %}
+      <div class="fw-semibold small mb-2">撰写材料</div>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>文件名</th>
+              <th>版本</th>
+              <th>备注</th>
+              <th>时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for file_item in writing_material_files %}
+            <tr>
+              <td>{{ file_item.original_name }}</td>
+              <td>{{ "定稿" if file_item.version_tag == "final" else "初稿" }}</td>
+              <td class="small text-break">{{ file_item.note or "—" }}</td>
+              <td class="small text-nowrap">{{ file_item.created_at|qy_format_dt }}</td>
+              <td>
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('staff.case_material_download', case_id=case.id, material_id=file_item.id) }}" download="{{ file_item.original_name }}">下载</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted small mb-3">撰写师尚未上传撰写材料。</p>
+      {% endif %}
+
+      {% if revised_writing_hints|default([]) %}
+      <div class="alert alert-info py-2 px-3 small mb-3" role="status">
+        <div class="fw-semibold mb-1">撰写师已上传改正材料，尚未提交核对</div>
+        <p class="mb-2">可先查看下方文件与备注；撰写师提交核对后，即可在此确认或打回。</p>
+        <ul class="mb-0 ps-3">
+          {% for hint in revised_writing_hints %}
+          <li class="text-break">{{ hint }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if can_process_accept %}
+      <div class="alert alert-info py-2 px-3 small mb-3" role="status">
+        {% set hint_files = review_hint_files|default([]) %}
+        {% if hint_files and writing_material_files and hint_files|length < writing_material_files|length %}
+        <div class="fw-semibold mb-1">撰写师已提交改正材料，请查看本次新上传文件的备注后核对</div>
+        {% else %}
+        <div class="fw-semibold mb-1">撰写师已提交材料，请查看文件备注后核对</div>
+        {% endif %}
+        {% if hint_files %}
+        <ul class="mb-0 ps-3">
+          {% for file_item in hint_files %}
+          <li class="text-break">{{ file_item.original_name }}{% if file_item.note %}：{{ file_item.note }}{% endif %}</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="mb-0">本次提交未填写备注，请以文件本身为准。</div>
+        {% endif %}
+      </div>
+      <p class="small text-muted mb-2">确认后案件进入待递交官方，便于向专利局报送；格式或内容有问题可打回撰写师。</p>
+      <div class="qy-process-review-actions d-flex flex-wrap gap-2 align-items-center">
+        <form method="post" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="form_action" value="process_accept">
+          <button class="btn btn-primary" type="submit" {% if not writing_material_files %}disabled{% endif %} data-qy-confirm="确认待递交" data-qy-confirm-text="确认材料无误后，本案将进入待递交官方。" data-qy-confirm-ok="确认无误" data-qy-confirm-variant="primary">确认待递交</button>
+        </form>
+        <form method="post" class="qy-process-reject-form m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="form_action" value="process_reject">
+          <input class="form-control qy-process-reject-note" type="text" name="reject_note" maxlength="500" required placeholder="打回原因（必填）" aria-label="打回原因">
+          <button class="btn btn-outline-danger" type="submit">打回撰写师</button>
+        </form>
+      </div>
+      {% elif can_mark_filed %}
+      <form method="post" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="form_action" value="process_filed">
+        <button class="btn btn-primary" type="submit" data-qy-confirm="标记已递交官方" data-qy-confirm-text="请确认已向专利局递交本案材料。" data-qy-confirm-ok="确认已递交" data-qy-confirm-variant="primary">标记已递交官方</button>
+      </form>
+      {% elif can_submit_final %}
+      {% if collection_block %}
+      <p class="small text-warning mb-2">{{ collection_block }}</p>
+      {% endif %}
+      <form method="post" class="m-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="form_action" value="submit_final_review">
+        <button class="btn btn-primary" type="submit" {% if collection_block %}disabled{% endif %} data-qy-confirm="提交管理终审" data-qy-confirm-text="确认本案官方往来与收账均已完成，将提交管理员终审办结。" data-qy-confirm-ok="确认提交" data-qy-confirm-variant="primary">提交管理终审</button>
+      </form>
+      {% elif task and task.phase_status == 'pending_final_review' %}
+      <p class="small text-muted mb-0">已提交管理终审，等待办结。</p>
+      {% elif task and (task.phase_status == 'in_progress' or task.phase_status == 'overdue_in_progress') %}
+      <p class="small text-muted mb-0">撰写师处理中。提交核对后，你可以在这里确认或打回。</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm mb-4" aria-labelledby="process-upload-title">
+    <div class="card-body">
+      <h2 id="process-upload-title" class="h6 mb-3">上传官方来文</h2>
+      <p class="text-muted small mb-3">从专利局系统下载后在这里上传。官方期限必填。需要撰写师答复的来文转交给本案撰写师；缴费通知转交给收账人员，未指定收账人时不能转交。</p>
+      <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="form_action" value="upload_notice">
+        <div class="col-md-3">
+          <label class="form-label mb-1" for="noticeTypeInput">来文种类</label>
+          <select id="noticeTypeInput" class="form-select" name="notice_type" required>
+            <option value="">请选择</option>
+            {% for value, label, _needs_reply in notice_types %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label mb-1" for="noticeDueInput">官方期限</label>
+          <input id="noticeDueInput" class="form-control" type="date" name="official_due_at" required aria-required="true">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label mb-1" for="noticeFileInput">文件</label>
+          <input id="noticeFileInput" class="form-control" type="file" name="notice_file" required>
+        </div>
+        <div class="col-md-2 d-grid">
+          <button class="btn btn-primary" type="submit">上传</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm" aria-labelledby="process-notice-list-title">
+    <div class="card-body">
+      <h2 id="process-notice-list-title" class="h6 mb-3">已上传来文</h2>
+      {% if notices %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>种类</th>
+              <th>文件</th>
+              <th>官方期限</th>
+              <th>转交 / 接收</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for notice in notices %}
+            {% set queue = notice_queue(notice, case) %}
+            <tr>
+              <td>
+                <div>{{ notice.type_label }}</div>
+                {% if queue == 'pending_forward' %}
+                <span class="badge text-bg-warning-subtle text-warning-emphasis border">待转交</span>
+                {% elif queue == 'unreceived' %}
+                <span class="badge text-bg-danger-subtle text-danger-emphasis border">未接收</span>
+                {% elif queue == 'pending_reply' %}
+                <span class="badge text-bg-primary-subtle text-primary-emphasis border">待答复</span>
+                {% elif notice.forwarded_at %}
+                <span class="badge text-bg-success-subtle text-success-emphasis border">已转交</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('staff.official_notice_download', notice_id=notice.id) }}" download="{{ notice.original_name }}">{{ notice.original_name }}</a>
+                <div class="small text-muted">{{ notice.created_at|qy_format_dt }}</div>
+              </td>
+              <td class="text-nowrap small">{{ notice.official_due_at|qy_format_dt if notice.official_due_at else "—" }}</td>
+              <td class="small">
+                {% if notice.forwarded_at %}
+                <div>转交 {{ notice.forwarded_to_display }}</div>
+                <div class="text-muted">{{ notice.forwarded_at|qy_format_dt }}</div>
+                {% if notice.received_at %}
+                <div class="text-success">已接收 {{ notice.received_at|qy_format_dt }}</div>
+                {% else %}
+                <div class="text-danger">尚未下载</div>
+                {% endif %}
+                {% else %}
+                <span class="text-muted">未转交</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="d-flex flex-column gap-1">
+                  {% if not notice.forwarded_at %}
+                  <form method="post" class="d-flex flex-wrap gap-1 align-items-end">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="form_action" value="forward_notice">
+                    <input type="hidden" name="notice_id" value="{{ notice.id }}">
+                    <div>
+                      <label class="form-label mb-0 small" for="internalDue{{ notice.id }}">内部截止</label>
+                      <input id="internalDue{{ notice.id }}" class="form-control form-control-sm" type="date" name="internal_due_at" value="{{ date_input_value(notice.official_due_at) }}">
+                    </div>
+                    {% if notice.needs_billing %}
+                    <button class="btn btn-sm btn-primary" type="submit" {% if not billing_owner %}disabled title="尚未指定收账人员"{% endif %}>转交业务收账</button>
+                    {% else %}
+                    <button class="btn btn-sm btn-primary" type="submit" {% if not writer %}disabled title="尚未指定撰写师"{% endif %}>转交撰写师</button>
+                    {% endif %}
+                  </form>
+                  <form method="post" data-qy-confirm="删除官方来文" data-qy-confirm-text="仅可删除尚未转交的来文，删除后需重新上传。" data-qy-confirm-ok="确认删除" data-qy-confirm-variant="danger">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="form_action" value="delete_notice">
+                    <input type="hidden" name="notice_id" value="{{ notice.id }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">删除</button>
+                  </form>
+                  {% elif not notice.received_at %}
+                  {% if notice_is_unreceived(notice) %}
+                  <form method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="form_action" value="urge_notice">
+                    <input type="hidden" name="notice_id" value="{{ notice.id }}">
+                    <button class="btn btn-sm btn-outline-warning" type="submit">催办</button>
+                  </form>
+                  {% else %}
+                  <span class="small text-muted">转交未满一天</span>
+                  {% endif %}
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      {{ empty_state('还没有官方来文', '从专利局系统下载后，用上方表单上传。', icon='folder', compact=True) }}
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm mt-4" aria-labelledby="process-collection-title">
+    <div class="card-body">
+      <h2 id="process-collection-title" class="h6 mb-2">收账确认</h2>
+      <p class="text-muted small mb-3">缴费通知转交后，业务人员交证明。按笔确认；全部确认后才能提交终审。</p>
+      {% if collections %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>来文</th>
+              <th>金额 / 备注</th>
+              <th>状态</th>
+              <th>证明</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for collection in collections %}
+            <tr>
+              <td>
+                <div>{{ collection.notice.type_label if collection.notice else "收账" }}</div>
+                {% if collection.notice %}
+                <div class="small text-muted">{{ collection.notice.original_name }}</div>
+                {% endif %}
+              </td>
+              <td class="small">
+                <div>{{ collection.amount_display }}</div>
+                {% if collection.note %}<div class="text-muted">{{ collection.note }}</div>{% endif %}
+              </td>
+              <td class="small">
+                <div>{{ collection.status_label }}</div>
+                {% if collection.submitted_by_display and collection.submitted_by_display != "—" %}
+                <div class="text-muted">{{ collection.submitted_by_display }}</div>
+                {% endif %}
+                {% if collection.reject_note %}
+                <div class="text-danger">{{ collection.reject_note }}</div>
+                {% endif %}
+              </td>
+              <td class="small">
+                {% if collection.proofs %}
+                <ul class="list-unstyled mb-0">
+                  {% for proof in collection.proofs %}
+                  <li>
+                    <a href="{{ url_for('staff.collection_proof_download', proof_id=proof.id) }}" download="{{ proof.original_name }}">{{ proof.original_name }}</a>
+                    {% if proof.note %}<span class="text-muted"> · {{ proof.note }}</span>{% endif %}
+                  </li>
+                  {% endfor %}
+                </ul>
+                {% else %}
+                <span class="text-muted">尚未上传</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if collection.status == 'pending_confirm' %}
+                <div class="d-flex flex-column gap-1">
+                  <form method="post" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="form_action" value="confirm_collection">
+                    <input type="hidden" name="collection_id" value="{{ collection.id }}">
+                    <button class="btn btn-sm btn-primary" type="submit" data-qy-confirm="确认这笔收款" data-qy-confirm-text="确认后本笔收账办结，全部确认后才能提交终审。" data-qy-confirm-ok="确认收款" data-qy-confirm-variant="primary">确认收款</button>
+                  </form>
+                  <form method="post" class="qy-process-reject-form m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="form_action" value="reject_collection">
+                    <input type="hidden" name="collection_id" value="{{ collection.id }}">
+                    <input class="form-control form-control-sm qy-process-reject-note" type="text" name="reject_note" maxlength="500" required placeholder="打回原因（必填）" aria-label="打回原因">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">打回</button>
+                  </form>
+                </div>
+                {% else %}
+                <span class="small text-muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      {{ empty_state('还没有收账记录', '转交缴费通知后，会在这里等待业务交证明。', icon='folder', compact=True) }}
+      {% endif %}
+    </div>
+  </section>
+</div>

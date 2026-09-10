@@ -1,8 +1,7 @@
 <div class="staff-page-inner staff-page-inner--admin qy-admin-page qy-customer-edit-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
   <header class="qy-admin-page-header d-flex flex-column flex-md-row flex-md-wrap align-items-start justify-content-between gap-3 pb-3 mb-3 mb-md-4 border-bottom border-secondary-subtle">
     <div class="flex-grow-1 min-w-0">
-      <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
-      <p class="text-muted small mb-0">{{ page_desc }}</p>
+      <h1 class="h4 mb-0 staff-page-title">{{ page_title }}</h1>
     </div>
     <a
       class="btn btn-outline-secondary flex-shrink-0 align-self-stretch align-self-md-center"
@@ -19,21 +18,21 @@
     <h2 id="qy-customer-edit-form-heading" class="h6 text-secondary mb-2">客户资料</h2>
     <div class="card border-0 shadow-sm qy-admin-list-card">
       <div class="card-body p-3 p-md-4">
-        <form method="post" id="qy-customer-edit-form" class="row g-3 g-md-2 align-items-end">
+        <form method="post" id="qy-customer-edit-form" class="row g-3 qy-form-grid">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="col-12 col-md-5">
-            <label class="form-label mb-1" for="customerEditNameInput">客户名称</label>
+          <div class="col-12 col-md-4">
+            <label class="form-label" for="customerEditNameInput">客户名称</label>
             <input id="customerEditNameInput" class="form-control" type="text" name="name" required maxlength="200" value="{{ customer.name }}">
           </div>
-          <div class="col-12 col-md-3">
-            <label class="form-label mb-1" for="customerEditKindInput">客户类型</label>
+          <div class="col-12 col-md-4">
+            <label class="form-label" for="customerEditKindInput">客户类型</label>
             <select id="customerEditKindInput" class="form-select" name="kind">
               <option value="{{ customer_kind_company }}" {% if customer.kind == customer_kind_company %}selected{% endif %}>公司</option>
               <option value="{{ customer_kind_individual }}" {% if customer.kind == customer_kind_individual %}selected{% endif %}>个人</option>
             </select>
           </div>
           <div class="col-12 col-md-4">
-            <label class="form-label mb-1" for="customerEditNoteInput">备注</label>
+            <label class="form-label" for="customerEditNoteInput">备注</label>
             <input id="customerEditNoteInput" class="form-control" type="text" name="note" maxlength="200" value="{{ customer.note or '' }}">
           </div>
           <div class="col-12 d-flex flex-column flex-sm-row flex-wrap gap-2 justify-content-sm-end mt-2 pt-3 border-top border-secondary-subtle">

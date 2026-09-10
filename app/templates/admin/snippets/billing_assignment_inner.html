@@ -1,0 +1,234 @@
+{% from "admin/macros/staff_kind.html" import staff_kind_badge %}
+{% from "macros/case_type.html" import case_type_badges %}
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+<div class="staff-page-inner staff-page-inner--admin qy-admin-page qy-smart-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  {% call page_header(page_title, page_desc, extra_class='qy-admin-page-header') %}
+    <a class="btn btn-outline-secondary flex-shrink-0" href="{{ url_for('admin.smart_assignment') }}" data-spa-endpoint="admin.smart_assignment">智能派单</a>
+    <a class="btn btn-outline-secondary flex-shrink-0" href="{{ url_for('admin.process_assignment') }}" data-spa-endpoint="admin.process_assignment">指定流程人员</a>
+  {% endcall %}
+
+  {% if pending_total == 0 %}
+    {% call empty_state("暂无待指定收账的案件", "有缴费通知或收账记录、但尚未指定在职业务人员时会出现在这里。也可以在新建/编辑案件时预先指定。", icon="tasks") %}
+      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.case_create') }}" data-spa-endpoint="admin.case_create">新建案件</a>
+    {% endcall %}
+  {% else %}
+  <div class="row gx-3 gx-xl-4 qy-smart-layout">
+    <div class="col-12 col-xl-4">
+      <section class="qy-admin-section qy-smart-pending" aria-labelledby="qy-billing-pending-heading">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+          <h2 id="qy-billing-pending-heading" class="h6 mb-0 fw-semibold text-body">待指定案件</h2>
+          <span class="qy-smart-count">共 {{ pending_total }} 件 · 离职转岗优先</span>
+        </div>
+        <div class="card border-0 shadow-sm qy-smart-panel">
+          <div class="list-group list-group-flush qy-smart-pending-list" data-qy-scroll-key="smart-pending">
+            {% for case in pending_cases %}
+            {% set is_selected = selected_case and case.id == selected_case.id %}
+            {% set departed = case.billing_owner_id and not (case.billing_owner_user and case.billing_owner_user.is_assignable_billing) %}
+            <a class="list-group-item list-group-item-action qy-smart-pending-item{% if is_selected %} is-selected{% endif %}"
+               href="{{ url_for('admin.billing_assignment', case_id=case.id) }}"
+               data-spa-endpoint="admin.billing_assignment"
+               aria-current="{{ 'true' if is_selected else 'false' }}">
+              <div class="d-flex justify-content-between align-items-start gap-2">
+                <span class="qy-smart-pending-item__title text-break min-w-0">{{ case.title }}</span>
+                {% if departed %}
+                <span class="badge qy-smart-flag qy-smart-flag--muted flex-shrink-0">原收账已离岗</span>
+                {% elif case.is_rejected %}
+                <span class="badge qy-smart-flag qy-smart-flag--reject flex-shrink-0">退稿重做</span>
+                {% elif case.is_internal %}
+                <span class="badge qy-smart-flag qy-smart-flag--internal flex-shrink-0">内部</span>
+                {% endif %}
+              </div>
+              <div class="qy-smart-pending-item__meta">
+                <span>{{ case.application_no }}</span>
+                <span class="qy-smart-dot" aria-hidden="true">·</span>
+                <span>{{ case.project.customer.name if case.project and case.project.customer else "—" }}</span>
+              </div>
+              <div class="qy-smart-pending-item__meta">
+                撰写师：{{ case.task.assignee_display if case.task else (case.owner_display if case.business_owner_id else "未派单") }}
+              </div>
+              <div class="qy-smart-pending-item__due{% if not case.expected_return_at %} is-missing{% endif %}">
+                应返稿：{{ case.expected_return_at | qy_format_dt if case.expected_return_at else "未填写" }}
+              </div>
+              <div class="qy-smart-pending-item__types">{{ case_type_badges(case) }}</div>
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="col-12 col-xl-8">
+      <section class="qy-admin-section qy-smart-advice" aria-labelledby="qy-billing-rank-heading">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+          <h2 id="qy-billing-rank-heading" class="h6 mb-0 fw-semibold text-body">收账人员建议顺序</h2>
+          {% if selected_case %}
+          <a class="qy-smart-detail-link" href="{{ url_for('admin.case_detail', case_id=selected_case.id) }}" data-spa-endpoint="admin.case_detail">查看案件详情</a>
+          {% endif %}
+        </div>
+
+        <div class="card border-0 shadow-sm qy-smart-panel">
+          <div class="card-body p-3 p-md-4">
+            {% if selected_case %}
+            <div class="qy-smart-case-hero">
+              <div class="qy-smart-case-hero__title">{{ selected_case.title }}</div>
+              <div class="qy-smart-case-hero__badges">{{ case_type_badges(selected_case) }}</div>
+              <div class="qy-smart-metrics" role="list">
+                <div class="qy-smart-metric{% if selected_window_days is not none and selected_window_days < 0 %} is-overdue{% elif selected_window_days is not none and selected_window_days <= 7 %} is-soon{% endif %}" role="listitem">
+                  <span class="qy-smart-metric__label">跟进窗口</span>
+                  <span class="qy-smart-metric__value">
+                    {% if selected_due_at and selected_window_days is not none and selected_window_days < 0 %}
+                    已超 {{ -selected_window_days }} 天
+                    {% elif selected_due_at and selected_window_days is not none %}
+                    剩余 {{ selected_window_days }} 天
+                    {% elif selected_due_at %}
+                    {{ selected_due_at | qy_format_dt }}
+                    {% else %}
+                    按在办负载
+                    {% endif %}
+                  </span>
+                  <span class="qy-smart-metric__hint">
+                    {% if selected_due_at %}
+                    现在 → {{ selected_due_at | qy_format_dt }}
+                    {% else %}
+                    未填应返稿时不裁时间窗口
+                    {% endif %}
+                  </span>
+                </div>
+                <div class="qy-smart-metric" role="listitem">
+                  <span class="qy-smart-metric__label">本案工作量</span>
+                  <span class="qy-smart-metric__value">{{ "%.1f"|format(selected_weight) if selected_weight is not none else "—" }}</span>
+                  <span class="qy-smart-metric__hint">发明 3 / 实用新型 1 / 外观商标 0.5</span>
+                </div>
+                <div class="qy-smart-metric" role="listitem">
+                  <span class="qy-smart-metric__label">推荐人数</span>
+                  <span class="qy-smart-metric__value">{{ rows|length if rows else 0 }}</span>
+                  <span class="qy-smart-metric__hint">在职业务人员，手动确认后指定</span>
+                </div>
+              </div>
+
+              {% if original_billing_user or selected_case.billing_owner_id %}
+              <div class="qy-smart-origin{% if original_billing_user and not original_billing_assignable %} is-departed{% elif original_billing_assignable %} is-available{% endif %}">
+                {% if original_billing_user %}
+                <div class="qy-smart-origin__row">
+                  <span class="qy-smart-origin__label">原收账人员</span>
+                  <span class="fw-semibold">{{ original_billing_user | qy_user_label }}</span>
+                  {% if original_billing_assignable %}
+                  <span class="badge qy-smart-flag qy-smart-flag--ok">在职 · 已置顶</span>
+                  {% else %}
+                  <span class="badge qy-smart-flag qy-smart-flag--muted">
+                    {% if original_billing_user.is_active %}已转{{ original_billing_user.staff_function_label }}{% else %}已离职{% endif %}
+                  </span>
+                  {% endif %}
+                </div>
+                <div class="qy-smart-origin__hint">依据：{{ original_billing_source }}</div>
+                {% if not original_billing_assignable %}
+                <div class="qy-smart-origin__note">原收账人员已不在指定池，需要重新指定；下面按忙闲排序推荐。</div>
+                {% endif %}
+                {% else %}
+                <div class="qy-smart-origin__note">查不到原收账人员，按忙闲排序重新指定。</div>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+
+            {% if not rows %}
+            {% call empty_state("没有可指定的业务人员", "指定池只含在职业务人员；请到账号分发确认是否有在职业务人员账号。", icon="users", compact=True) %}
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.accounts') }}" data-spa-endpoint="admin.accounts">账号分发</a>
+            {% endcall %}
+            {% else %}
+            {% if ranked_without_window %}
+            <div class="alert alert-info py-2 px-3 small mb-3" role="status">
+              该案件还没有应返稿时间，下面按各人当前在办总负载排序，不裁时间窗口。
+            </div>
+            {% endif %}
+            <div class="table-responsive qy-smart-table-wrap">
+              <table class="table align-middle mb-0 qy-smart-table">
+                <thead>
+                  <tr>
+                    <th scope="col" class="text-nowrap">建议</th>
+                    <th scope="col">业务人员</th>
+                    <th scope="col" class="text-nowrap">窗口内负载</th>
+                    <th scope="col" class="text-nowrap text-end">跟进中</th>
+                    <th scope="col" class="text-nowrap text-end">已超期</th>
+                    <th scope="col" class="text-nowrap">最近期限</th>
+                    <th scope="col" class="text-end">指定</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in rows %}
+                  <tr class="qy-smart-row{% if row.is_least_busy %} is-freest{% endif %}{% if row.is_original_billing %} is-origin{% endif %}{% if row.pinned_but_busy %} is-busy{% endif %}">
+                    <td class="text-nowrap">
+                      {% if row.is_least_busy %}
+                      <span class="qy-smart-rank-pill qy-smart-rank-pill--free">最闲</span>
+                      {% else %}
+                      <span class="qy-smart-rank-pill">{{ row.rank }}</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <div class="qy-smart-writer">
+                        <span class="qy-smart-avatar{% if row.is_least_busy %} is-free{% elif row.is_original_billing %} is-origin{% endif %}" aria-hidden="true">{{ (row.user.username or "?")[:1]|upper }}</span>
+                        <div class="min-w-0">
+                          <div class="qy-smart-writer__name">
+                            <span class="fw-semibold">{{ row.user | qy_user_label }}</span>
+                            {{ staff_kind_badge(row.user) }}
+                            {% if row.is_original_billing %}
+                            <span class="badge qy-smart-flag qy-smart-flag--origin">原收账 · 建议指定回</span>
+                            {% endif %}
+                          </div>
+                          {% if row.pinned_but_busy %}
+                          <div class="qy-smart-writer__warn">他当前负载偏高，指定前先确认跟得过来。</div>
+                          {% endif %}
+                        </div>
+                      </div>
+                    </td>
+                    <td class="qy-smart-load">
+                      <div class="qy-smart-load__nums">
+                        <span class="qy-smart-load__value">{{ "%.1f"|format(row.window_workload) }}</span>
+                        <span class="qy-smart-load__count">{{ row.window_count }} 件</span>
+                      </div>
+                      <div class="progress qy-smart-busy-bar" role="img" aria-label="相对忙闲 {{ row.busy_percent }}%">
+                        <div class="progress-bar{% if row.busy_percent >= 80 %} is-heavy{% elif row.busy_percent >= 50 %} is-mid{% else %} is-light{% endif %}" style="width: {{ row.busy_percent if row.busy_percent > 0 else 0 }}%"></div>
+                      </div>
+                    </td>
+                    <td class="text-end text-nowrap">
+                      <span class="qy-smart-stat">{{ row.open_count }}</span>
+                      {% if row.undated_count %}
+                      <span class="qy-smart-stat-note d-block">{{ row.undated_count }} 件无截止</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end text-nowrap">
+                      {% if row.overdue_count %}
+                      <span class="qy-smart-stat is-danger">{{ row.overdue_count }}</span>
+                      {% else %}
+                      <span class="qy-smart-stat is-muted">0</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-nowrap"><span class="qy-smart-stat-note">{{ row.next_due_at | qy_format_dt if row.next_due_at else "—" }}</span></td>
+                    <td class="text-end">
+                      <form method="post" action="{{ url_for('admin.billing_assignment_assign') }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="case_id" value="{{ selected_case.id }}">
+                        <input type="hidden" name="billing_owner_id" value="{{ row.user.id }}">
+                        <button class="btn btn-sm qy-smart-assign{% if row.is_least_busy or row.is_original_billing %} is-primary{% endif %}" type="submit">{% if row.is_original_billing %}指定回原收账{% else %}指定给他{% endif %}</button>
+                      </form>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <p class="qy-smart-footnote mb-0 mt-3">
+              窗口内负载 = 该业务人员名下收账案件中，截止时间落在本案应返稿窗口内的折算工作量之和。顺序只是建议，最终指定谁由你决定。撰写师、流程人员不会出现在这里。
+            </p>
+            {% endif %}
+            {% else %}
+            {{ empty_state("请先在左侧选择一件待指定案件", "选中案件后才能比较各业务人员的收账负载。", icon="tasks", compact=True) }}
+            {% endif %}
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  {% endif %}
+</div>

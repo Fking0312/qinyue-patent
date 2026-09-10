@@ -2,8 +2,7 @@
 {% set pg_total = (pagination.pages if pagination.pages and pagination.pages > 0 else 1) %}
 <div class="staff-page-inner staff-page-inner--admin qy-admin-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
   <header class="qy-admin-page-header pb-3 mb-3 mb-md-4 border-bottom border-secondary-subtle">
-    <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
-    <p class="text-muted small mb-0">{{ page_desc }}</p>
+    <h1 class="h4 mb-0 staff-page-title">{{ page_title }}</h1>
   </header>
 
   <section class="qy-admin-section qy-admin-section--filter mb-3 mb-md-4" aria-labelledby="qy-role-permissions-filter-heading">

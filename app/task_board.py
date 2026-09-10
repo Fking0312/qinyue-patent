@@ -12,7 +12,9 @@ from app.workflow import (
     effective_task_due_at,
     effective_task_phase,
     is_overdue_phase,
+    is_gated_review_phase,
     is_pending_review_phase,
+    is_pending_final_review_phase,
     is_task_past_due,
 )
 
@@ -46,9 +48,11 @@ def _matches_status(phase_status: str, status_filter: str) -> bool:
     if status_filter == "all":
         return True
     if status_filter == "overdue":
-        return is_overdue_phase(phase_status) and not is_pending_review_phase(phase_status)
+        return is_overdue_phase(phase_status) and not is_gated_review_phase(phase_status)
     if status_filter == "pending_review":
         return is_pending_review_phase(phase_status)
+    if status_filter == "pending_final_review":
+        return is_pending_final_review_phase(phase_status)
     if status_filter == "pending_assignment":
         return phase_status == TaskPhase.PENDING_ASSIGNMENT
     if status_filter == "in_progress":
@@ -61,7 +65,13 @@ def task_board_data_for_user(user: User, *, status_filter: str, sort_by: str) ->
     tasks = _base_query_for_user(user).order_by(Task.updated_at.desc(), Task.id.desc()).all()
 
     rows = []
-    counts = {"in_progress": 0, "pending_review": 0, "overdue": 0, "pending_assignment": 0}
+    counts = {
+        "in_progress": 0,
+        "pending_review": 0,
+        "pending_final_review": 0,
+        "overdue": 0,
+        "pending_assignment": 0,
+    }
     for task in tasks:
         case = task.case
         project = case.project if case else None
@@ -73,6 +83,8 @@ def task_board_data_for_user(user: User, *, status_filter: str, sort_by: str) ->
             counts["pending_assignment"] += 1
         elif is_pending_review_phase(display_phase):
             counts["pending_review"] += 1
+        elif is_pending_final_review_phase(display_phase):
+            counts["pending_final_review"] += 1
         elif is_overdue:
             counts["overdue"] += 1
         elif display_phase in _IN_PROGRESS_PHASES:

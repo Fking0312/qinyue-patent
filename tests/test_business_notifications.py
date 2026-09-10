@@ -49,6 +49,8 @@ def _seed(*, suffix: str):
         "customer_id": customer.id,
         "project_id": project.id,
         "business_id": business.id,
+        "writer_id": writer.id,
+        "process_id": process.id,
     }
 
 
@@ -74,10 +76,22 @@ def _submit_order(client, *, customer_id: int, project_id: int, title: str) -> i
     return case.id
 
 
-def _admin_review(client, case_id: int, *, action: str, note: str = ""):
+def _admin_review(
+    client,
+    case_id: int,
+    *,
+    action: str,
+    note: str = "",
+    writer_id: int | None = None,
+    process_id: int | None = None,
+):
     data = {"review_action": action}
     if note:
         data["reject_note"] = note
+    if writer_id is not None:
+        data["writer_id"] = str(writer_id)
+    if process_id is not None:
+        data["process_owner_id"] = str(process_id)
     reviewed = client.post(
         f"/admin/order-intake/{case_id}/action",
         data=data,
@@ -123,7 +137,7 @@ def test_business_sidebar_opens_empty_message_center():
     assert "消息中心 — 琴岳专利管理系统".encode() in spa.data
 
 
-def test_process_cannot_open_message_center():
+def test_process_opens_message_center():
     app = create_app()
     suffix = uuid4().hex[:8]
     with app.app_context():
@@ -132,15 +146,31 @@ def test_process_cannot_open_message_center():
     process = _login(app, seeded["process_name"])
     home = process.get("/staff/process-dashboard")
     assert home.status_code == 200
-    assert "消息中心".encode() not in home.data
-    assert b'data-spa-endpoint="staff.notifications"' not in home.data
-    for path in (
-        "/staff/notifications",
-        "/staff/notifications/status",
-        "/staff/notifications/1/read",
-    ):
-        assert process.get(path).status_code == 403
-    assert process.post("/staff/notifications/read-all").status_code == 403
+    home_text = home.data.decode("utf-8")
+    assert "消息中心" in home_text
+    assert 'data-spa-endpoint="staff.notifications"' in home_text
+    assert 'id="qyStaffNotificationBadge"' in home_text
+    assert "去案件列表" not in home_text
+    assert "任务看板" not in home_text
+
+    page = process.get("/staff/notifications")
+    assert page.status_code == 200
+    text = page.data.decode("utf-8")
+    assert "消息中心" in text
+    assert "撰写师提交材料或管理员指定你跟进后" in text
+    assert "去跟进案件" in text
+    assert "指定跟进" in text
+    assert "去案件列表" not in text
+    assert "去任务看板" not in text
+    assert "案件分配" not in text
+    assert "下单通过" not in text
+    assert process.get("/staff/notifications/status").get_json() == {"ok": True, "unread": 0}
+
+    spa = process.get("/staff/notifications", headers={"X-Qy-Spa": "1"})
+    assert spa.status_code == 200
+    assert b'id="qy-spa-main"' in spa.data
+    assert b'data-spa-endpoint="staff.notifications"' in spa.data
+    assert "消息中心 — 琴岳专利管理系统".encode() in spa.data
 
 
 def test_intake_approve_and_reject_filters_and_read_paths():
@@ -156,6 +186,8 @@ def test_intake_approve_and_reject_filters_and_read_paths():
         writer_name = seeded["writer_name"]
         process_name = seeded["process_name"]
         business_id = seeded["business_id"]
+        writer_id = seeded["writer_id"]
+        process_id = seeded["process_id"]
 
     business = _login(app, business_name)
     approve_title = f"_bn_ok_{suffix}"
@@ -169,7 +201,9 @@ def test_intake_approve_and_reject_filters_and_read_paths():
         )
 
     admin = _login(app, admin_name)
-    _admin_review(admin, approve_id, action="approve")
+    _admin_review(
+        admin, approve_id, action="approve", writer_id=writer_id, process_id=process_id
+    )
     _admin_review(admin, reject_id, action="reject", note="材料清单不完整")
 
     with app.app_context():
@@ -181,8 +215,13 @@ def test_intake_approve_and_reject_filters_and_read_paths():
         ).one()
         approve_log_id = approve_log.id
         reject_log_id = reject_log.id
+        process_log = CaseReviewLog.query.filter_by(
+            case_id=approve_id, action="process_assigned", recipient_id=process_id
+        ).one()
+        process_log_id = process_log.id
         assert approve_log.read_at is None
         assert reject_log.read_at is None
+        assert process_log.read_at is None
         assert reject_log.note == "材料清单不完整"
 
     status = business.get("/staff/notifications/status").get_json()
@@ -200,7 +239,7 @@ def test_intake_approve_and_reject_filters_and_read_paths():
     assert reject_title in inbox_text
     assert "下单已确认" in inbox_text
     assert "下单被打回" in inbox_text
-    assert "管理员已确认您提交的下单，案件进入待分配。" in inbox_text
+    assert "管理员已确认您提交的下单，并已指定撰写师与流程人员。" in inbox_text
     assert "材料清单不完整" in inbox_text
     assert "去下单" in inbox_text
     assert "去修改" in inbox_text
@@ -234,16 +273,31 @@ def test_intake_approve_and_reject_filters_and_read_paths():
     writer_page = writer.get("/staff/notifications")
     assert writer_page.status_code == 200
     writer_text = writer_page.data.decode("utf-8")
-    assert approve_title not in writer_text
+    assert approve_title in writer_text
+    assert "新案件已分配" in writer_text
     assert reject_title not in writer_text
     assert "下单通过" not in writer_text
     assert "下单打回" not in writer_text
     assert "案件分配" in writer_text
-    assert writer.get("/staff/notifications/status").get_json()["unread"] == 0
+    assert writer.get("/staff/notifications/status").get_json()["unread"] == 1
 
     process = _login(app, process_name)
-    assert process.get("/staff/notifications").status_code == 403
-    assert process.get(f"/staff/notifications/{reject_log_id}/read").status_code == 403
+    process_page = process.get("/staff/notifications")
+    assert process_page.status_code == 200
+    process_text = process_page.data.decode("utf-8")
+    assert approve_title in process_text
+    assert "已指定你跟进" in process_text
+    assert reject_title not in process_text
+    assert "下单通过" not in process_text
+    assert "案件分配" not in process_text
+    assert process.get("/staff/notifications/status").get_json()["unread"] == 1
+    assert process.get(f"/staff/notifications/{reject_log_id}/read").status_code == 404
+    opened_process = process.get(
+        f"/staff/notifications/{process_log_id}/read", follow_redirects=False
+    )
+    assert opened_process.status_code in (302, 303)
+    assert f"/staff/process-cases/{approve_id}" in opened_process.headers["Location"]
+    assert process.get("/staff/notifications/status").get_json()["unread"] == 0
 
     other = _login(app, other_business_name)
     assert other.get("/staff/notifications/status").get_json()["unread"] == 0

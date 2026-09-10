@@ -12,11 +12,14 @@ from app import create_app
 from app.extensions import db
 from app.models import (
     Case,
+    CaseCollection,
+    CaseCollectionProof,
     CaseMaterial,
     CaseMaterialDownloadLog,
     CaseReviewLog,
     Customer,
     LoginThrottle,
+    OfficialNotice,
     Project,
     Task,
     User,
@@ -71,6 +74,9 @@ def main() -> None:
         n_throttle = LoginThrottle.query.delete()
         n_dl = CaseMaterialDownloadLog.query.delete()
         n_rv = CaseReviewLog.query.delete()
+        n_proof = CaseCollectionProof.query.delete()
+        n_collection = CaseCollection.query.delete()
+        n_notice = OfficialNotice.query.delete()
         materials = CaseMaterial.query.all()
         n_mat = len(materials)
         CaseMaterial.query.delete()
@@ -106,7 +112,11 @@ def main() -> None:
 
         print()
         print("=== 已删除 ===")
-        print(f"login_throttles={n_throttle} download_logs={n_dl} review_logs={n_rv} materials={n_mat}")
+        print(
+            f"login_throttles={n_throttle} download_logs={n_dl} review_logs={n_rv} "
+            f"collection_proofs={n_proof} collections={n_collection} "
+            f"official_notices={n_notice} materials={n_mat}"
+        )
         print(f"tasks={n_task} cases={n_case} projects={n_proj} customers={n_cust}")
         print(f"deleted staff/client users={n_users}")
         if args.purge_test_admins:
@@ -126,7 +136,7 @@ def _print_counts() -> None:
     print(f"cases={Case.query.count()} tasks={Task.query.count()} materials={CaseMaterial.query.count()}")
     print(
         f"download_logs={CaseMaterialDownloadLog.query.count()} review_logs={CaseReviewLog.query.count()} "
-        f"login_throttles={LoginThrottle.query.count()}"
+        f"official_notices={OfficialNotice.query.count()} login_throttles={LoginThrottle.query.count()}"
     )
 
 

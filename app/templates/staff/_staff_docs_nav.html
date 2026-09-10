@@ -1,0 +1,10 @@
+{# 三职能共用：内部资料库入口 #}
+<a class="staff-nav-link {% if request.endpoint in ['staff.staff_docs', 'staff.staff_docs_download'] %}active{% endif %}" href="{{ url_for('staff.staff_docs') }}" data-tooltip="内部资料库" data-spa-endpoint="staff.staff_docs">
+  <span class="staff-nav-link-inner">
+    <svg class="staff-nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 7.5A1.5 1.5 0 0 1 5.5 6H9l2 2h7.5A1.5 1.5 0 0 1 20 9.5v8A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-10Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M8 13h8M8 16h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+    <span>内部资料库</span>
+  </span>
+</a>

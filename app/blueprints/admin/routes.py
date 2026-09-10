@@ -45,7 +45,9 @@ from app.case_trace import (
     add_review_log,
     paginate_case_trace_logs,
     stamp_assignee,
+    stamp_billing_owner,
     stamp_business_owner,
+    stamp_process_owner,
 )
 from app.order_intake import (
     apply_order_intake_review,
@@ -54,17 +56,32 @@ from app.order_intake import (
     pending_order_review_query,
 )
 from app.assignment_advisor import (
+    billing_load_rows,
     case_due_at,
     case_workload_weight,
     departed_assignee_cases,
+    original_billing_owner,
+    original_process_owner,
     original_writer,
     pending_assignment_cases,
+    pending_billing_assignment_cases,
+    pending_process_assignment_cases,
+    process_load_rows,
     window_days,
     writer_load_rows,
 )
 from app.blueprints.admin import admin_bp
 from app.extensions import db
-from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CaseReviewLog, Customer, CustomerKind, Project, Task, User
+from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CaseReviewLog, Customer, CustomerKind, Project, StaffDocument, Task, User
+from app.official_notices import get_notice, list_case_notices, official_notices_dir
+from app.collections import collections_dir, collections_for_cases, get_proof, list_case_collections, user_may_download_proof
+from app.staff_docs import (
+    delete_staff_document,
+    get_staff_document,
+    list_staff_documents,
+    save_staff_document,
+    staff_docs_dir,
+)
 from app.dashboard_stats import dashboard_page_kwargs
 from app.overdue_reminder import reminder_template_kwargs
 from app.serials import (
@@ -79,8 +96,9 @@ from app.workflow import (
     TaskPhase,
     ADMIN_CASE_PHASE_OPTIONS,
     apply_task_overdue_status,
+    is_order_intake_phase,
+    is_pending_final_review_phase,
     is_pending_order_review_phase,
-    is_pending_review_phase,
     is_terminal_phase,
     phase_for_workflow,
     resolve_case_task_phase,
@@ -100,26 +118,22 @@ def _exclude_order_revision(query):
 
 
 def _review_inbox_query():
-    """全部待审核任务；兼容尚未归一化的历史 overdue_pending_review。"""
+    """全部待终审任务。"""
     return (
         Task.query.join(Task.case)
-        .filter(
-            Task.phase_status.in_(
-                [TaskPhase.PENDING_REVIEW, TaskPhase.OVERDUE_PENDING_REVIEW]
-            )
-        )
+        .filter(Task.phase_status == TaskPhase.PENDING_FINAL_REVIEW)
     )
 
 
 def _review_inbox_counts(_user: User | None = None) -> tuple[int, int]:
-    """返回（待审核总数，待处理数）；仅审核通过/打回后待处理数才会减少。"""
+    """返回（待终审总数，待处理数）；仅终审通过/打回后待处理数才会减少。"""
     total = _review_inbox_query().count()
     return total, total
 
 
 @admin_bp.app_context_processor
 def _admin_review_nav_context():
-    """给管理端侧边栏注入待审核总数与待处理数。"""
+    """给管理端侧边栏注入待终审总数与待处理数。"""
     if not current_user.is_authenticated or current_user.role != "admin":
         return {}
     total, unread = _review_inbox_counts(current_user)
@@ -134,10 +148,15 @@ def _apply_admin_review(case: Case, task: Task | None, action: str, reject_note:
     """统一执行审核通过/打回，供案件详情与审核中心复用。"""
     if task is None:
         return False, "该案件暂无任务，无法审核。", "warning"
-    if not is_pending_review_phase(task.phase_status):
-        return False, "当前状态不是待审核，无法执行审核动作。", "warning"
+    if not is_pending_final_review_phase(task.phase_status):
+        return False, "当前状态不是待终审，无法执行审核动作。", "warning"
     if action == "approve":
-        task.phase_status = TaskPhase.PENDING_SUBMIT
+        ok, err = _resolve_actual_return_for_completed(
+            case, previous_actual_return_at=case.actual_return_at
+        )
+        if not ok:
+            case.actual_return_at = datetime.now(timezone.utc)
+        task.phase_status = TaskPhase.COMPLETED
         add_review_log(
             case_id=case.id,
             action="approve",
@@ -145,7 +164,7 @@ def _apply_admin_review(case: Case, task: Task | None, action: str, reject_note:
             recipient=task.assignee,
         )
         db.session.commit()
-        return True, "审核通过，案件已进入待递交。", "success"
+        return True, "终审通过，案件已办结。", "success"
     if action == "reject":
         if not reject_note:
             return False, "打回时请填写原因。", "warning"
@@ -180,6 +199,36 @@ def _notify_case_assigned(case: Case, old_assignee_id, new_assignee_id) -> None:
     )
 
 
+def _notify_process_assigned(case: Case, old_owner_id, new_owner_id) -> None:
+    """流程负责人变化时写入指定通知；取消指定或未变化不写。调用方负责 commit。"""
+    if new_owner_id is None or new_owner_id == old_owner_id:
+        return
+    owner = db.session.get(User, new_owner_id)
+    if owner is None or owner.role != "staff":
+        return
+    add_review_log(
+        case_id=case.id,
+        action="process_assigned",
+        operator=current_user,
+        recipient=owner,
+    )
+
+
+def _notify_billing_assigned(case: Case, old_owner_id, new_owner_id) -> None:
+    """收账负责人变化时写入指定通知；取消指定或未变化不写。调用方负责 commit。"""
+    if new_owner_id is None or new_owner_id == old_owner_id:
+        return
+    owner = db.session.get(User, new_owner_id)
+    if owner is None or owner.role != "staff":
+        return
+    add_review_log(
+        case_id=case.id,
+        action="billing_assigned",
+        operator=current_user,
+        recipient=owner,
+    )
+
+
 def _apply_case_assignment(case: Case, assignee_id: int | None) -> None:
     """派单落库：同步案件业务负责人与任务承办人，并发出指派通知；不提交事务。"""
     assignee = db.session.get(User, assignee_id) if assignee_id else None
@@ -200,6 +249,22 @@ def _apply_case_assignment(case: Case, assignee_id: int | None) -> None:
     _notify_case_assigned(case, old_assignee_id, assignee.id if assignee else None)
 
 
+def _apply_process_assignment(case: Case, process_owner_id: int | None) -> None:
+    """指定流程负责人：只改 process_owner，不改撰写师承办与任务阶段。"""
+    old_owner_id = case.process_owner_id
+    owner = db.session.get(User, process_owner_id) if process_owner_id else None
+    stamp_process_owner(case, owner)
+    _notify_process_assigned(case, old_owner_id, process_owner_id)
+
+
+def _apply_billing_assignment(case: Case, billing_owner_id: int | None) -> None:
+    """指定收账负责人：只改 billing_owner，不改撰写师承办与任务阶段。"""
+    old_owner_id = case.billing_owner_id
+    owner = db.session.get(User, billing_owner_id) if billing_owner_id else None
+    stamp_billing_owner(case, owner)
+    _notify_billing_assigned(case, old_owner_id, billing_owner_id)
+
+
 def _staff_users_ordered() -> list[User]:
     """返回可派单的在职撰写师：正式在前、外包在后，再按用户名升序。流程/业务人员不进入分配池。"""
     users = (
@@ -214,8 +279,58 @@ def _staff_users_ordered() -> list[User]:
 
 
 def _staff_users_partitioned() -> tuple[list[User], list[User]]:
-    """在职员工按正式 / 外包分区，供管理端下拉与列表使用。"""
+    """在职撰写师按正式 / 外包分区，供管理端派单下拉使用。"""
     users = _staff_users_ordered()
+    formal = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_FORMAL]
+    outsource = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_OUTSOURCE]
+    return formal, outsource
+
+
+def _process_staff_users_ordered(*, include_id: int | None = None) -> list[User]:
+    """在职流程人员：正式在前、外包在后。撰写师/业务人员不进入。"""
+    users = (
+        User.query.filter(User.role == "staff", User.is_active.is_(True))
+        .order_by(User.username.asc(), User.id.asc())
+        .all()
+    )
+    users = [u for u in users if u.is_assignable_process]
+    if include_id is not None and not any(u.id == include_id for u in users):
+        extra = db.session.get(User, include_id)
+        if extra is not None and extra.role == "staff":
+            users.append(extra)
+    formal = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_FORMAL]
+    outsource = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_OUTSOURCE]
+    return formal + outsource
+
+
+def _process_staff_users_partitioned(*, include_id: int | None = None) -> tuple[list[User], list[User]]:
+    """在职流程人员按正式 / 外包分区，供指定流程负责人下拉使用。"""
+    users = _process_staff_users_ordered(include_id=include_id)
+    formal = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_FORMAL]
+    outsource = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_OUTSOURCE]
+    return formal, outsource
+
+
+def _billing_staff_users_ordered(*, include_id: int | None = None) -> list[User]:
+    """在职业务人员：正式在前、外包在后。撰写师/流程人员不进入收账指定。"""
+    users = (
+        User.query.filter(User.role == "staff", User.is_active.is_(True))
+        .order_by(User.username.asc(), User.id.asc())
+        .all()
+    )
+    users = [u for u in users if u.is_assignable_billing]
+    if include_id is not None and not any(u.id == include_id for u in users):
+        extra = db.session.get(User, include_id)
+        if extra is not None and extra.role == "staff":
+            users.append(extra)
+    formal = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_FORMAL]
+    outsource = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_OUTSOURCE]
+    return formal + outsource
+
+
+def _billing_staff_users_partitioned(*, include_id: int | None = None) -> tuple[list[User], list[User]]:
+    """在职业务人员按正式 / 外包分区，供指定收账负责人下拉使用。"""
+    users = _billing_staff_users_ordered(include_id=include_id)
     formal = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_FORMAL]
     outsource = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_OUTSOURCE]
     return formal, outsource
@@ -288,6 +403,57 @@ def _business_owner_id_from_form(raw: str | None) -> tuple[int | None, str | Non
     if not u.is_assignable_writer:
         return None, "仅撰写师可进入案件分配池。"
     return uid, None
+
+
+def _process_owner_id_from_form(
+    raw: str | None,
+    *,
+    allow_id: int | None = None,
+) -> tuple[int | None, str | None]:
+    """流程负责人选填；空为未指定。错误时第二项为说明。"""
+    s = (raw or "").strip()
+    if not s:
+        return None, None
+    if not s.isdigit():
+        return None, "流程人员参数不合法。"
+    uid = int(s)
+    u = db.session.get(User, uid)
+    if u is None or u.role != "staff":
+        return None, "请选择有效的流程人员。"
+    if allow_id is not None and uid == allow_id:
+        return uid, None
+    if not u.is_assignable_process:
+        return None, "仅在职流程人员可指定为流程负责人。"
+    return uid, None
+
+
+def _billing_owner_id_from_form(
+    raw: str | None,
+    *,
+    allow_id: int | None = None,
+) -> tuple[int | None, str | None]:
+    """收账负责人选填；空为未指定。错误时第二项为说明。"""
+    s = (raw or "").strip()
+    if not s:
+        return None, None
+    if not s.isdigit():
+        return None, "收账人员参数不合法。"
+    uid = int(s)
+    u = db.session.get(User, uid)
+    if u is None or u.role != "staff":
+        return None, "请选择有效的业务人员。"
+    if allow_id is not None and uid == allow_id:
+        return uid, None
+    if not u.is_assignable_billing:
+        return None, "仅在职业务人员可指定为收账负责人。"
+    return uid, None
+
+
+def _form_user_id(name: str) -> int | None:
+    raw = (request.form.get(name) or "").strip()
+    if not raw.isdigit():
+        return None
+    return int(raw)
 
 
 def _customer_list_display_name(customer: Customer) -> str:
@@ -539,7 +705,7 @@ def task_board():
     _ensure_admin()
     status_filter = request.args.get("status", "all").strip()
     sort_by = request.args.get("sort", "deadline").strip()
-    if status_filter not in {"all", "in_progress", "pending_review", "pending_assignment", "overdue"}:
+    if status_filter not in {"all", "in_progress", "pending_review", "pending_final_review", "pending_assignment", "overdue"}:
         status_filter = "all"
     if sort_by not in {"deadline", "customer"}:
         sort_by = "deadline"
@@ -551,12 +717,12 @@ def task_board():
         spa_endpoint="admin.task_board",
         spa_document_title="任务看板 — 琴岳专利管理系统",
         page_title="任务看板",
-        page_desc="查看进行中、待审核与超期任务，并支持统一筛选与排序。",
+        page_desc="查看进行中、待终审与超期任务，并支持统一筛选与排序。",
         task_rows=board["rows"],
         status_filter=status_filter,
         sort_by=sort_by,
         count_in_progress=board["counts"]["in_progress"],
-        count_pending_review=board["counts"]["pending_review"],
+        count_pending_review=board["counts"]["pending_final_review"],
         count_pending_assignment=board["counts"]["pending_assignment"],
         count_overdue=board["counts"]["overdue"],
         case_detail_endpoint="admin.case_detail",
@@ -2095,6 +2261,8 @@ def case_create():
         formal_status = request.form.get("formal_status", "").strip()
         case_type_code = request.form.get("case_type_code", "").strip()
         business_owner_id_raw = request.form.get("business_owner_id", "").strip()
+        process_owner_id_raw = request.form.get("process_owner_id", "").strip()
+        billing_owner_id_raw = request.form.get("billing_owner_id", "").strip()
         case_note = request.form.get("case_note", "").strip()
         material_upload_port = request.form.get("material_upload_port", "").strip()
         patent_application_no = request.form.get("patent_application_no", "").strip()
@@ -2127,6 +2295,12 @@ def case_create():
         business_owner_id, bo_err = _business_owner_id_from_form(business_owner_id_raw)
         if bo_err:
             return redirect_with_qy_toast("admin.case_create", bo_err, "warning", project_id=project.id)
+        process_owner_id, po_err = _process_owner_id_from_form(process_owner_id_raw)
+        if po_err:
+            return redirect_with_qy_toast("admin.case_create", po_err, "warning", project_id=project.id)
+        billing_owner_id, bill_err = _billing_owner_id_from_form(billing_owner_id_raw)
+        if bill_err:
+            return redirect_with_qy_toast("admin.case_create", bill_err, "warning", project_id=project.id)
         phase_status = resolve_case_task_phase(business_owner_id, phase_status)
         try:
             order_at = _parse_due_at(order_at_raw)
@@ -2160,6 +2334,10 @@ def case_create():
         db.session.flush()
         owner = db.session.get(User, business_owner_id) if business_owner_id else None
         stamp_business_owner(case, owner)
+        process_user = db.session.get(User, process_owner_id) if process_owner_id else None
+        stamp_process_owner(case, process_user)
+        billing_user = db.session.get(User, billing_owner_id) if billing_owner_id else None
+        stamp_billing_owner(case, billing_user)
         task = Task(case_id=case.id, phase_status=phase_status)
         stamp_assignee(task, owner)
         if phase_status == TaskPhase.COMPLETED:
@@ -2175,6 +2353,8 @@ def case_create():
         apply_task_overdue_status(task)
         db.session.add(task)
         _notify_case_assigned(case, None, business_owner_id)
+        _notify_process_assigned(case, None, process_owner_id)
+        _notify_billing_assigned(case, None, billing_owner_id)
         db.session.commit()
 
         saved_count = 0
@@ -2203,6 +2383,8 @@ def case_create():
         initial_project_id = project_id_raw
     phase_options = list(ADMIN_CASE_PHASE_OPTIONS)
     staff_formal, staff_outsource = _staff_users_partitioned()
+    process_formal, process_outsource = _process_staff_users_partitioned()
+    billing_formal, billing_outsource = _billing_staff_users_partitioned()
     return render_spa_or_full(
         full_template="admin/case_create.html",
         inner_template="admin/snippets/case_create_inner.html",
@@ -2214,6 +2396,10 @@ def case_create():
         staff_users=staff_formal + staff_outsource,
         staff_users_formal=staff_formal,
         staff_users_outsource=staff_outsource,
+        process_staff_formal=process_formal,
+        process_staff_outsource=process_outsource,
+        billing_staff_formal=billing_formal,
+        billing_staff_outsource=billing_outsource,
         initial_project_id=initial_project_id,
         phase_options=phase_options,
         case_type_config=CASE_TYPE_UI_CONFIG,
@@ -2230,14 +2416,19 @@ def case_create():
 def case_detail(case_id: int):
     """案件详情：GET 渲染审核/材料/留痕；POST 处理审核动作与材料上传。"""
     _ensure_admin()
-    case = Case.query.options(joinedload(Case.business_owner_user)).filter_by(id=case_id).first()
+    case = Case.query.options(
+        joinedload(Case.business_owner_user),
+        joinedload(Case.intake_owner_user),
+        joinedload(Case.process_owner_user),
+        joinedload(Case.billing_owner_user),
+    ).filter_by(id=case_id).first()
     if case is None:
         abort(404)
     task = case.task
     latest_reject_log = (
         CaseReviewLog.query.filter(
             CaseReviewLog.case_id == case.id,
-            CaseReviewLog.action.in_(("reject", "intake_reject")),
+            CaseReviewLog.action.in_(("reject", "process_reject", "intake_reject")),
         )
         .order_by(CaseReviewLog.created_at.desc(), CaseReviewLog.id.desc())
         .first()
@@ -2369,6 +2560,8 @@ def case_detail(case_id: int):
                 action,
                 request.form.get("reject_note", "").strip(),
                 current_user,
+                writer_id=_form_user_id("writer_id"),
+                process_owner_id=_form_user_id("process_owner_id"),
             )
             if _ok:
                 db.session.commit()
@@ -2394,6 +2587,8 @@ def case_detail(case_id: int):
         phase_selected_value = (
             task.phase_status if is_terminal_phase(task.phase_status) else phase_for_workflow(task.phase_status)
         )
+    staff_formal, staff_outsource = _staff_users_partitioned()
+    process_formal, process_outsource = _process_staff_users_partitioned()
     return render_spa_or_full(
         full_template="admin/case_detail.html",
         inner_template="admin/snippets/case_detail_inner.html",
@@ -2405,6 +2600,10 @@ def case_detail(case_id: int):
         task=task,
         phase_options=phase_options,
         phase_selected_value=phase_selected_value,
+        staff_users_formal=staff_formal,
+        staff_users_outsource=staff_outsource,
+        process_staff_formal=process_formal,
+        process_staff_outsource=process_outsource,
         actual_return_at_input=_dt_input_value(case.actual_return_at),
         latest_reject_log=latest_reject_log,
         review_logs=review_logs_pagination.items,
@@ -2420,6 +2619,8 @@ def case_detail(case_id: int):
         download_role_filter=download_role_filter,
         download_page=download_page,
         download_total_pages=download_logs_pagination.pages,
+        official_notices=list_case_notices(case.id),
+        collections=list_case_collections(case.id),
     )
 
 
@@ -2449,6 +2650,38 @@ def case_material_download(case_id: int, material_id: int):
         material.stored_name,
         as_attachment=True,
         download_name=material.original_name,
+    )
+
+
+@admin_bp.route("/official-notices/<int:notice_id>")
+@login_required
+def official_notice_download(notice_id: int):
+    """管理员只读下载官方来文，不记撰写师已接收。"""
+    _ensure_admin()
+    notice = get_notice(notice_id)
+    if notice is None:
+        abort(404)
+    return send_from_directory(
+        official_notices_dir(),
+        notice.stored_name,
+        as_attachment=True,
+        download_name=notice.original_name,
+    )
+
+
+@admin_bp.route("/collection-proofs/<int:proof_id>")
+@login_required
+def collection_proof_download(proof_id: int):
+    """管理员下载收账证明；撰写师不可见此入口。"""
+    _ensure_admin()
+    proof = get_proof(proof_id)
+    if proof is None or not user_may_download_proof(current_user, proof):
+        abort(404)
+    return send_from_directory(
+        collections_dir(),
+        proof.stored_name,
+        as_attachment=True,
+        download_name=proof.original_name,
     )
 
 
@@ -2501,6 +2734,8 @@ def case_edit(case_id: int):
         formal_status = request.form.get("formal_status", "").strip()
         case_type_code = request.form.get("case_type_code", "").strip()
         business_owner_id_raw = request.form.get("business_owner_id", "").strip()
+        process_owner_id_raw = request.form.get("process_owner_id", "").strip()
+        billing_owner_id_raw = request.form.get("billing_owner_id", "").strip()
         case_note = request.form.get("case_note", "").strip()
         material_upload_port = request.form.get("material_upload_port", "").strip()
         patent_application_no = request.form.get("patent_application_no", "").strip()
@@ -2532,6 +2767,16 @@ def case_edit(case_id: int):
         business_owner_id, bo_err = _business_owner_id_from_form(business_owner_id_raw)
         if bo_err:
             return redirect_with_qy_toast("admin.case_edit", bo_err, "warning", case_id=case.id)
+        process_owner_id, po_err = _process_owner_id_from_form(
+            process_owner_id_raw, allow_id=case.process_owner_id
+        )
+        if po_err:
+            return redirect_with_qy_toast("admin.case_edit", po_err, "warning", case_id=case.id)
+        billing_owner_id, bill_err = _billing_owner_id_from_form(
+            billing_owner_id_raw, allow_id=case.billing_owner_id
+        )
+        if bill_err:
+            return redirect_with_qy_toast("admin.case_edit", bill_err, "warning", case_id=case.id)
         phase_status = resolve_case_task_phase(business_owner_id, phase_status)
         try:
             order_at = _parse_due_at(order_at_raw)
@@ -2547,6 +2792,12 @@ def case_edit(case_id: int):
         case.case_type_code = case_type_leaf.code
         owner = db.session.get(User, business_owner_id) if business_owner_id else None
         stamp_business_owner(case, owner)
+        old_process_id = case.process_owner_id
+        process_user = db.session.get(User, process_owner_id) if process_owner_id else None
+        stamp_process_owner(case, process_user)
+        old_billing_id = case.billing_owner_id
+        billing_user = db.session.get(User, billing_owner_id) if billing_owner_id else None
+        stamp_billing_owner(case, billing_user)
         case.order_at = order_at
         case.expected_return_at = expected_return_at
         # 留空表示保留已有值；清空业务时间必须通过专门、带确认的操作完成。
@@ -2573,6 +2824,8 @@ def case_edit(case_id: int):
                 return redirect_with_qy_toast("admin.case_edit", err, "warning", case_id=case.id)
         apply_task_overdue_status(task)
         _notify_case_assigned(case, old_assignee_id, business_owner_id)
+        _notify_process_assigned(case, old_process_id, process_owner_id)
+        _notify_billing_assigned(case, old_billing_id, billing_owner_id)
         db.session.commit()
 
         saved_count = 0
@@ -2599,6 +2852,12 @@ def case_edit(case_id: int):
     phase_options = list(ADMIN_CASE_PHASE_OPTIONS)
     current_phase = task.phase_status if task else TaskPhase.PENDING_ASSIGNMENT
     staff_formal, staff_outsource = _staff_users_partitioned()
+    process_formal, process_outsource = _process_staff_users_partitioned(
+        include_id=case.process_owner_id
+    )
+    billing_formal, billing_outsource = _billing_staff_users_partitioned(
+        include_id=case.billing_owner_id
+    )
     return render_spa_or_full(
         full_template="admin/case_edit.html",
         inner_template="admin/snippets/case_edit_inner.html",
@@ -2612,6 +2871,10 @@ def case_edit(case_id: int):
         staff_users=staff_formal + staff_outsource,
         staff_users_formal=staff_formal,
         staff_users_outsource=staff_outsource,
+        process_staff_formal=process_formal,
+        process_staff_outsource=process_outsource,
+        billing_staff_formal=billing_formal,
+        billing_staff_outsource=billing_outsource,
         phase_options=phase_options,
         case_type_config=CASE_TYPE_UI_CONFIG,
         case_type_selected=normalize_case_type_code(
@@ -2783,6 +3046,222 @@ def smart_assignment_release():
     )
 
 
+@admin_bp.route("/process-assignment")
+@login_required
+def process_assignment():
+    """指定流程人员：选中未指定（或原流程已不在岗）的案件，按跟进负载给出建议顺序。"""
+    _ensure_admin()
+    pending_cases = pending_process_assignment_cases()
+    raw_case_id = request.args.get("case_id", "").strip()
+    selected_case = None
+    if raw_case_id.isdigit():
+        selected_case = next(
+            (case for case in pending_cases if case.id == int(raw_case_id)), None
+        )
+    if selected_case is None and pending_cases:
+        selected_case = pending_cases[0]
+
+    window_end = case_due_at(selected_case) if selected_case is not None else None
+    owner, owner_source = (
+        original_process_owner(selected_case) if selected_case is not None else (None, "")
+    )
+    owner_assignable = owner is not None and owner.is_assignable_process
+    rows = (
+        process_load_rows(
+            _process_staff_users_ordered(),
+            window_end=window_end,
+            exclude_case_id=selected_case.id,
+            pin_user_id=owner.id if owner_assignable else None,
+        )
+        if selected_case is not None
+        else []
+    )
+
+    return render_spa_or_full(
+        full_template="admin/process_assignment.html",
+        inner_template="admin/snippets/process_assignment_inner.html",
+        spa_endpoint="admin.process_assignment",
+        spa_document_title="指定流程人员 — 琴岳专利管理系统",
+        page_title="指定流程人员",
+        page_desc="列出尚未指定流程人员、或原流程人员已离职/转岗的案件；右侧按跟进负载排序，指定仍由人工确认。",
+        pending_cases=pending_cases,
+        pending_total=len(pending_cases),
+        selected_case=selected_case,
+        selected_due_at=window_end,
+        selected_window_days=window_days(window_end),
+        selected_weight=(
+            case_workload_weight(selected_case) if selected_case is not None else None
+        ),
+        original_process_user=owner,
+        original_process_source=owner_source,
+        original_process_assignable=owner_assignable,
+        rows=rows,
+        ranked_without_window=bool(selected_case is not None and window_end is None and rows),
+    )
+
+
+@admin_bp.route("/process-assignment/assign", methods=["POST"])
+@login_required
+def process_assignment_assign():
+    """指定流程人员：只接受需要指定的案件与在职流程人员。"""
+    _ensure_admin()
+    raw_case_id = request.form.get("case_id", "").strip()
+    case = db.session.get(Case, int(raw_case_id)) if raw_case_id.isdigit() else None
+    if case is None:
+        return redirect_with_qy_toast(
+            "admin.process_assignment", "案件不存在或已被删除。", "warning"
+        )
+    task = case.task
+    if task is not None and is_order_intake_phase(task.phase_status):
+        return redirect_with_qy_toast(
+            "admin.process_assignment",
+            "下单待确认的案件请到「下单待确认」页同时指定撰写师与流程人员。",
+            "warning",
+        )
+    if task is not None and is_terminal_phase(task.phase_status) and not case.is_rejected:
+        return redirect_with_qy_toast(
+            "admin.process_assignment",
+            "已完成的案件无需再指定流程人员。",
+            "warning",
+            case_id=case.id,
+        )
+    current_owner = case.process_owner_user
+    if current_owner is not None and current_owner.is_assignable_process:
+        return redirect_with_qy_toast(
+            "admin.process_assignment",
+            "该案件已指定在职流程人员，请到案件详情转派。",
+            "warning",
+            case_id=case.id,
+        )
+
+    owner_id, err = _process_owner_id_from_form(request.form.get("process_owner_id"))
+    if err:
+        return redirect_with_qy_toast(
+            "admin.process_assignment", err, "warning", case_id=case.id
+        )
+    if owner_id is None:
+        return redirect_with_qy_toast(
+            "admin.process_assignment", "请选择要指定的流程人员。", "warning", case_id=case.id
+        )
+
+    _apply_process_assignment(case, owner_id)
+    db.session.commit()
+    owner = db.session.get(User, owner_id)
+    return redirect_with_qy_toast(
+        "admin.process_assignment",
+        f"已把《{case.title}》指定给 {owner.display_label if owner else '该员工'} 跟进。",
+        "success",
+    )
+
+
+@admin_bp.route("/billing-assignment")
+@login_required
+def billing_assignment():
+    """指定收账人员：选中未指定（或原收账已不在岗）且已有缴费/收账的案件。"""
+    _ensure_admin()
+    pending_cases = pending_billing_assignment_cases()
+    raw_case_id = request.args.get("case_id", "").strip()
+    selected_case = None
+    if raw_case_id.isdigit():
+        selected_case = next(
+            (case for case in pending_cases if case.id == int(raw_case_id)), None
+        )
+    if selected_case is None and pending_cases:
+        selected_case = pending_cases[0]
+
+    window_end = case_due_at(selected_case) if selected_case is not None else None
+    owner, owner_source = (
+        original_billing_owner(selected_case) if selected_case is not None else (None, "")
+    )
+    owner_assignable = owner is not None and owner.is_assignable_billing
+    rows = (
+        billing_load_rows(
+            _billing_staff_users_ordered(),
+            window_end=window_end,
+            exclude_case_id=selected_case.id,
+            pin_user_id=owner.id if owner_assignable else None,
+        )
+        if selected_case is not None
+        else []
+    )
+
+    return render_spa_or_full(
+        full_template="admin/billing_assignment.html",
+        inner_template="admin/snippets/billing_assignment_inner.html",
+        spa_endpoint="admin.billing_assignment",
+        spa_document_title="指定收账人员 — 琴岳专利管理系统",
+        page_title="指定收账人员",
+        page_desc="列出已有缴费通知或收账记录、但尚未指定在职业务人员的案件；右侧按收账负载排序，指定仍由人工确认。",
+        pending_cases=pending_cases,
+        pending_total=len(pending_cases),
+        selected_case=selected_case,
+        selected_due_at=window_end,
+        selected_window_days=window_days(window_end),
+        selected_weight=(
+            case_workload_weight(selected_case) if selected_case is not None else None
+        ),
+        original_billing_user=owner,
+        original_billing_source=owner_source,
+        original_billing_assignable=owner_assignable,
+        rows=rows,
+        ranked_without_window=bool(selected_case is not None and window_end is None and rows),
+    )
+
+
+@admin_bp.route("/billing-assignment/assign", methods=["POST"])
+@login_required
+def billing_assignment_assign():
+    """指定收账人员：只接受需要指定的案件与在职业务人员。"""
+    _ensure_admin()
+    raw_case_id = request.form.get("case_id", "").strip()
+    case = db.session.get(Case, int(raw_case_id)) if raw_case_id.isdigit() else None
+    if case is None:
+        return redirect_with_qy_toast(
+            "admin.billing_assignment", "案件不存在或已被删除。", "warning"
+        )
+    task = case.task
+    if task is not None and is_order_intake_phase(task.phase_status):
+        return redirect_with_qy_toast(
+            "admin.billing_assignment",
+            "下单待确认的案件请先确认下单后再指定收账人员。",
+            "warning",
+        )
+    if task is not None and is_terminal_phase(task.phase_status) and not case.is_rejected:
+        return redirect_with_qy_toast(
+            "admin.billing_assignment",
+            "已完成的案件无需再指定收账人员。",
+            "warning",
+            case_id=case.id,
+        )
+    current_owner = case.billing_owner_user
+    if current_owner is not None and current_owner.is_assignable_billing:
+        return redirect_with_qy_toast(
+            "admin.billing_assignment",
+            "该案件已指定在职收账人员，请到案件详情转派。",
+            "warning",
+            case_id=case.id,
+        )
+
+    owner_id, err = _billing_owner_id_from_form(request.form.get("billing_owner_id"))
+    if err:
+        return redirect_with_qy_toast(
+            "admin.billing_assignment", err, "warning", case_id=case.id
+        )
+    if owner_id is None:
+        return redirect_with_qy_toast(
+            "admin.billing_assignment", "请选择要指定的业务人员。", "warning", case_id=case.id
+        )
+
+    _apply_billing_assignment(case, owner_id)
+    db.session.commit()
+    owner = db.session.get(User, owner_id)
+    return redirect_with_qy_toast(
+        "admin.billing_assignment",
+        f"已把《{case.title}》指定给 {owner.display_label if owner else '该员工'} 收账。",
+        "success",
+    )
+
+
 @admin_bp.route("/flow-map")
 @login_required
 def flow_map():
@@ -2877,7 +3356,7 @@ def overtime_warning():
 @admin_bp.route("/review-quality")
 @login_required
 def review_quality():
-    """待审核案件中心：集中查看、筛选、通过或打回案件。"""
+    """待终审案件中心：流程提交后由管理员办结或打回。"""
     _ensure_admin()
     keyword = request.args.get("q", "").strip()
     case_type_primary = request.args.get("case_type_primary", "").strip()
@@ -2983,8 +3462,13 @@ def review_quality():
                 "waiting_label": waiting_label,
                 "due_at": due_at,
                 "is_overdue": is_overdue,
+                "collections": [],
             }
         )
+
+    collections_by_case = collections_for_cases([row["case"].id for row in rows])
+    for row in rows:
+        row["collections"] = collections_by_case.get(row["case"].id, [])
 
     filter_url_kwargs = {}
     if keyword:
@@ -3003,8 +3487,8 @@ def review_quality():
         full_template="admin/review_quality.html",
         inner_template="admin/snippets/review_quality_inner.html",
         spa_endpoint="admin.review_quality",
-        spa_document_title="多级审核 — 琴岳专利管理系统",
-        page_title="多级审核",
+        spa_document_title="终审 — 琴岳专利管理系统",
+        page_title="终审",
         review_rows=rows,
         pagination=pagination,
         total_pending=total_pending,
@@ -3057,7 +3541,7 @@ def review_quality_action(case_id: int):
 @admin_bp.route("/order-intake")
 @login_required
 def order_intake():
-    """下单待确认：业务人员提交的案件，通过后才进入待分配。"""
+    """下单待确认：业务人员提交的案件，通过时指定撰写师与流程人员。"""
     _ensure_admin()
     keyword = request.args.get("q", "").strip()
     case_type_primary = request.args.get("case_type_primary", "").strip()
@@ -3148,6 +3632,8 @@ def order_intake():
         .order_by(User.username.asc())
         .all()
     )
+    staff_formal, staff_outsource = _staff_users_partitioned()
+    process_formal, process_outsource = _process_staff_users_partitioned()
     return render_spa_or_full(
         full_template="admin/order_intake.html",
         inner_template="admin/snippets/order_intake_inner.html",
@@ -3162,6 +3648,10 @@ def order_intake():
         case_type_primary_options=CASE_TYPE_PRIMARY_OPTIONS,
         intake_owner_id=intake_owner_id,
         owner_options=owner_options,
+        staff_users_formal=staff_formal,
+        staff_users_outsource=staff_outsource,
+        process_staff_formal=process_formal,
+        process_staff_outsource=process_outsource,
         filter_url_kwargs=filter_url_kwargs,
     )
 
@@ -3189,6 +3679,8 @@ def order_intake_action(case_id: int):
         request.form.get("review_action", "").strip(),
         request.form.get("reject_note", "").strip(),
         current_user,
+        writer_id=_form_user_id("writer_id"),
+        process_owner_id=_form_user_id("process_owner_id"),
     )
     if _ok:
         db.session.commit()
@@ -3612,3 +4104,63 @@ def historical_archive():
         page_title="历史归档",
         page_desc="长期归档案件库，后续承接按年/客户检索与只读查阅。",
     )
+
+
+@admin_bp.route("/staff-docs", methods=["GET", "POST"])
+@login_required
+def staff_docs():
+    """内部资料库：管理员上传并指定哪些职能可见。"""
+    _ensure_admin()
+    if request.method == "POST":
+        _ok, error = save_staff_document(
+            title=request.form.get("title", ""),
+            note=request.form.get("note", ""),
+            audience=request.form.get("audience", ""),
+            file_storage=request.files.get("file"),
+            uploader=current_user,
+        )
+        if error:
+            return redirect_with_qy_toast("admin.staff_docs", error, "warning")
+        return redirect_with_qy_toast("admin.staff_docs", "资料已上传。", "success")
+
+    audience_filter = request.args.get("audience", "").strip()
+    documents = list_staff_documents(audience=audience_filter or None)
+    return render_spa_or_full(
+        full_template="admin/staff_docs.html",
+        inner_template="admin/snippets/staff_docs_inner.html",
+        spa_endpoint="admin.staff_docs",
+        spa_document_title="内部资料库 — 琴岳专利管理系统",
+        page_title="内部资料库",
+        documents=documents,
+        audience_filter=StaffDocument.normalize_audience(audience_filter) or "",
+        audience_choices=StaffDocument.AUDIENCE_CHOICES,
+    )
+
+
+@admin_bp.route("/staff-docs/<int:doc_id>")
+@login_required
+def staff_docs_download(doc_id: int):
+    """管理员下载内部资料。"""
+    _ensure_admin()
+    document = get_staff_document(doc_id)
+    if document is None:
+        abort(404)
+    return send_from_directory(
+        staff_docs_dir(),
+        document.stored_name,
+        as_attachment=True,
+        download_name=document.original_name,
+    )
+
+
+@admin_bp.route("/staff-docs/<int:doc_id>/delete", methods=["POST"])
+@login_required
+def staff_docs_delete(doc_id: int):
+    """管理员删除内部资料。"""
+    _ensure_admin()
+    document = get_staff_document(doc_id)
+    if document is None:
+        abort(404)
+    title = document.title
+    delete_staff_document(document)
+    return redirect_with_qy_toast("admin.staff_docs", f"已删除《{title}》。", "success")

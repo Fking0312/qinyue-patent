@@ -6,7 +6,7 @@ from urllib.parse import unquote
 from uuid import uuid4
 
 from app import create_app
-from app.case_trace import display_trace, writing_material_submit_note
+from app.case_trace import display_trace, stamp_process_owner, writing_material_submit_note
 from app.extensions import db
 from app.models import Case, CaseMaterial, CaseReviewLog, Customer, CustomerKind, Project, Task, User
 from app.workflow import TaskPhase
@@ -22,7 +22,13 @@ def _seed_assigned_case():
         staff_function=User.STAFF_FUNCTION_WRITER,
     )
     writer.set_password("secret")
-    db.session.add_all([admin, writer])
+    process = User(
+        username=f"_tr_proc_{suffix}",
+        role="staff",
+        staff_function=User.STAFF_FUNCTION_PROCESS,
+    )
+    process.set_password("secret")
+    db.session.add_all([admin, writer, process])
     db.session.flush()
     customer = Customer(kind=CustomerKind.COMPANY, name=f"_tr_customer_{suffix}")
     db.session.add(customer)
@@ -38,6 +44,9 @@ def _seed_assigned_case():
         business_owner_id=writer.id,
         business_owner_label=writer.display_label,
     )
+    db.session.add(case)
+    db.session.flush()
+    stamp_process_owner(case, process)
     db.session.add(case)
     db.session.flush()
     db.session.add(
@@ -103,7 +112,7 @@ def test_submit_for_review_snapshots_files_and_name_survives_departure():
     client.get("/auth/logout")
     client.post("/auth/login", data={"username": admin_name, "password": "secret"}, follow_redirects=True)
     page = client.get(f"/admin/case-detail/{case_id}").data.decode("utf-8")
-    assert "提交审核" in page
+    assert "提交流程核对" in page
     assert "退稿重做说明书.pdf" in page
     assert writer_label in page
     assert "已离职" in page
@@ -177,3 +186,61 @@ def test_submit_requires_writing_file_and_records_operator_snapshot():
             ).count()
             == 0
         )
+
+
+def test_correction_submit_note_lists_only_new_files():
+    """改正提交的提示只冻结本轮新上传的撰写文件。"""
+    app = create_app()
+    with app.app_context():
+        seeded = _seed_assigned_case()
+        case_id = seeded["case_id"]
+        writer_id = seeded["writer_id"]
+        writer_label = seeded["writer_label"]
+        older = datetime.now(timezone.utc) - timedelta(hours=2)
+        newer = datetime.now(timezone.utc) - timedelta(minutes=5)
+        first = CaseMaterial(
+            case_id=case_id,
+            uploaded_by_id=writer_id,
+            uploaded_by_label=writer_label,
+            uploaded_by_role="staff",
+            original_name="定稿.docx",
+            stored_name=f"stored_{uuid4().hex}.docx",
+            version_tag="final",
+            created_at=older,
+        )
+        db.session.add(first)
+        db.session.add(
+            CaseReviewLog(
+                case_id=case_id,
+                operator_id=writer_id,
+                action="submit_for_review",
+                created_at=older + timedelta(minutes=1),
+            )
+        )
+        db.session.add(
+            CaseReviewLog(
+                case_id=case_id,
+                operator_id=writer_id,
+                action="process_reject",
+                created_at=older + timedelta(minutes=10),
+            )
+        )
+        db.session.add(
+            CaseMaterial(
+                case_id=case_id,
+                uploaded_by_id=writer_id,
+                uploaded_by_label=writer_label,
+                uploaded_by_role="staff",
+                original_name="改正稿.docx",
+                stored_name=f"stored_{uuid4().hex}.docx",
+                version_tag="final",
+                note="只改权利要求",
+                created_at=newer,
+            )
+        )
+        db.session.commit()
+        note = writing_material_submit_note(case_id, correction=True)
+        assert note.startswith("提交改正材料：改正稿.docx")
+        assert "定稿.docx" not in note
+        assert "只改权利要求" in note
+        assert writing_material_submit_note(case_id).startswith("提交撰写材料：定稿.docx")

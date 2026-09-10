@@ -8,7 +8,12 @@ from flask import Response, abort, current_app, jsonify, redirect, request, send
 from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
 
-from app.case_material_upload import case_material_dir, fetch_case_materials_grouped, save_case_material_upload
+from app.case_material_upload import (
+    case_material_dir,
+    fetch_case_materials_grouped,
+    save_case_material_upload,
+    user_may_download_case_material,
+)
 from app.case_statistics import (
     case_statistics_available_years,
     case_statistics_basis,
@@ -33,16 +38,24 @@ from app.blueprints.staff.common.routes import (
     notification_group_label,
     staff_review_notifications_query,
 )
-from app.blueprints.staff.guards import ensure_notifications_access, ensure_writer
+from app.blueprints.staff.guards import ensure_notifications_access, ensure_staff, ensure_writer
 from app.blueprints.staff.utils import CN_TZ, beijing_datetime_text
 from app.extensions import db
 from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CaseReviewLog, Task, User
 from app.dashboard_stats import dashboard_page_kwargs
+from app.official_notices import (
+    has_staff_writing_since,
+    list_writer_notices,
+    reopen_task_for_writer_reply,
+    writer_material_lock_state,
+)
 from app.overdue_reminder import reminder_template_kwargs
 from app.spa_helpers import redirect_with_qy_toast, render_spa_or_full
 from app.task_board import task_board_data_for_user
 from app.workflow import (
     TaskPhase,
+    is_writer_correction_cycle,
+    notify_process_of_revised_writing,
     phase_for_workflow,
     staff_submit_case_for_review,
 )
@@ -59,6 +72,12 @@ def _ensure_staff_case_assignee(case: Case):
 def _staff_material_changes_locked(task: Task) -> bool:
     """仅撰写中允许员工增删材料；提交待审后锁定，打回撰写中时自动解锁。"""
     return phase_for_workflow(task.phase_status) != TaskPhase.IN_PROGRESS
+
+
+def _writer_lock_toast(reason: str | None) -> str:
+    if reason == "await_receipt":
+        return "请先下载并接收审查意见或补正通知，再上传改正材料。"
+    return "案件已提交流程核对，当前材料已锁定；如被打回到撰写中可继续修改。"
 
 
 def _case_has_staff_writing_material(case_id: int) -> bool:
@@ -121,12 +140,13 @@ def task_board():
         spa_endpoint="staff.task_board",
         spa_document_title="任务看板 — 琴岳专利管理系统",
         page_title="任务看板",
-        page_desc="查看进行中、待审核与超期任务，并支持统一筛选与排序。",
-        task_rows=board["rows"],
+
         status_filter=status_filter,
         sort_by=sort_by,
+        task_rows=board["rows"],
         count_in_progress=board["counts"]["in_progress"],
         count_pending_review=board["counts"]["pending_review"],
+        count_pending_final_review=board["counts"]["pending_final_review"],
         count_overdue=board["counts"]["overdue"],
         case_detail_endpoint="staff.case_detail_by_id",
     )
@@ -230,17 +250,22 @@ def case_detail():
 def case_detail_by_id(case_id: int):
     """员工案件详情：GET 渲染状态/材料/留痕；POST 处理材料上传（不可手动改状态）。"""
     ensure_writer()
-    case = Case.query.options(joinedload(Case.business_owner_user)).filter_by(id=case_id).first()
+    case = Case.query.options(
+        joinedload(Case.business_owner_user),
+        joinedload(Case.process_owner_user),
+    ).filter_by(id=case_id).first()
     if case is None:
         abort(404)
     task = _ensure_staff_case_assignee(case)
-    material_changes_locked = _staff_material_changes_locked(task)
+    material_changes_locked, lock_reason, open_reply_notice = writer_material_lock_state(
+        task, case.id, current_user.id
+    )
     if request.method == "POST":
         form_action = request.form.get("form_action", "").strip()
         if form_action in {"upload_material", "delete_material"} and material_changes_locked:
             return redirect_with_qy_toast(
                 "staff.case_detail_by_id",
-                "案件已提交审核，当前材料已锁定；如被打回到撰写中可继续修改。",
+                _writer_lock_toast(lock_reason),
                 "warning",
                 case_id=case.id,
             )
@@ -249,41 +274,78 @@ def case_detail_by_id(case_id: int):
             version_tag = request.form.get("material_version_tag", "draft").strip()
             if version_tag not in {"draft", "final"}:
                 version_tag = "draft"
-            material_note = request.form.get("material_note", "").strip() or "撰写材料"
+            material_note = request.form.get("material_note", "").strip()
+            if not material_note:
+                material_note = (
+                    f"答复{open_reply_notice.type_label}"
+                    if open_reply_notice is not None and open_reply_notice.received_at
+                    else "撰写材料"
+                )
             material_saved, upload_err = save_case_material_upload(
                 case.id, material_file, current_user.id, version_tag, material_note
             )
             if material_saved is not None:
+                if notify_process_of_revised_writing(
+                    case, current_user, material_saved, open_reply_notice=open_reply_notice
+                ):
+                    db.session.commit()
                 return redirect_with_qy_toast("staff.case_detail_by_id", "撰写文件已上传。", "success", case_id=case.id)
             return redirect_with_qy_toast(
                 "staff.case_detail_by_id", upload_err or "上传失败。", "warning", case_id=case.id
             )
         if form_action == "submit_for_review":
-            if material_changes_locked:
+            if open_reply_notice is not None and open_reply_notice.received_at is None:
                 return redirect_with_qy_toast(
                     "staff.case_detail_by_id",
-                    "当前状态无法提交审核。",
+                    "请先下载并接收官方来文，再提交改正材料。",
                     "warning",
                     case_id=case.id,
                 )
-            if not _case_has_staff_writing_material(case.id):
+            if open_reply_notice is not None and open_reply_notice.received_at is not None:
+                reopen_task_for_writer_reply(task)
+            if material_changes_locked and open_reply_notice is None:
                 return redirect_with_qy_toast(
                     "staff.case_detail_by_id",
-                    "请先上传撰写材料后再提交审核。",
+                    "当前状态无法提交流程核对。",
                     "warning",
                     case_id=case.id,
                 )
-            if staff_submit_case_for_review(task, operator_id=current_user.id):
+            if open_reply_notice is not None:
+                if not has_staff_writing_since(case.id, open_reply_notice.received_at):
+                    return redirect_with_qy_toast(
+                        "staff.case_detail_by_id",
+                        "请先上传针对官方来文的改正材料，再提交流程核对。",
+                        "warning",
+                        case_id=case.id,
+                    )
+            elif not _case_has_staff_writing_material(case.id):
+                return redirect_with_qy_toast(
+                    "staff.case_detail_by_id",
+                    "请先上传撰写材料后再提交流程核对。",
+                    "warning",
+                    case_id=case.id,
+                )
+            if task.case is None or task.case.process_owner_id is None:
+                return redirect_with_qy_toast(
+                    "staff.case_detail_by_id",
+                    "本案尚未指定流程人员，无法提交。请联系管理员。",
+                    "warning",
+                    case_id=case.id,
+                )
+            correction = is_writer_correction_cycle(case.id, open_reply_notice=open_reply_notice)
+            if staff_submit_case_for_review(
+                task, operator_id=current_user.id, correction=correction
+            ):
                 db.session.commit()
                 return redirect_with_qy_toast(
                     "staff.case_detail_by_id",
-                    "已提交审核，材料已锁定等待管理员处理。",
+                    "已提交流程人员核对，材料已锁定。",
                     "success",
                     case_id=case.id,
                 )
             return redirect_with_qy_toast(
                 "staff.case_detail_by_id",
-                "当前状态无法提交审核。",
+                "当前状态无法提交流程核对。",
                 "warning",
                 case_id=case.id,
             )
@@ -313,7 +375,10 @@ def case_detail_by_id(case_id: int):
             return redirect_with_qy_toast("staff.case_detail_by_id", "材料已删除。", "success", case_id=case.id)
         return redirect_with_qy_toast("staff.case_detail_by_id", "不支持的操作。", "warning", case_id=case.id)
     latest_reject_log = (
-        CaseReviewLog.query.filter_by(case_id=case.id, action="reject")
+        CaseReviewLog.query.filter(
+            CaseReviewLog.case_id == case.id,
+            CaseReviewLog.action.in_(("reject", "process_reject")),
+        )
         .order_by(CaseReviewLog.created_at.desc(), CaseReviewLog.id.desc())
         .first()
     )
@@ -342,9 +407,13 @@ def case_detail_by_id(case_id: int):
         case.id, material_version_filter
     )
     _, all_writing_material_files = fetch_case_materials_grouped(case.id, "all")
-    can_submit_for_review = (
-        not material_changes_locked and len(all_writing_material_files) > 0
-    )
+    if open_reply_notice is not None:
+        can_submit_for_review = (
+            open_reply_notice.received_at is not None
+            and has_staff_writing_since(case.id, open_reply_notice.received_at)
+        )
+    else:
+        can_submit_for_review = not material_changes_locked and len(all_writing_material_files) > 0
     return render_spa_or_full(
         full_template="staff/case_detail.html",
         inner_template="staff/snippets/case_detail_inner.html",
@@ -369,20 +438,24 @@ def case_detail_by_id(case_id: int):
         download_page=download_page,
         download_total_pages=download_logs_pagination.pages,
         material_changes_locked=material_changes_locked,
+        material_lock_reason=lock_reason,
+        open_reply_notice=open_reply_notice,
         can_submit_for_review=can_submit_for_review,
         has_writing_material=bool(all_writing_material_files),
+        official_notices=list_writer_notices(case.id, current_user.id),
     )
 
 
 @staff_bp.route("/case-material/<int:case_id>/<int:material_id>")
 @login_required
 def case_material_download(case_id: int, material_id: int):
-    """员工下载案件材料：写入留痕后以 send_from_directory 返回文件。"""
-    ensure_writer()
+    """员工下载案件材料：撰写师下自己承办的案件；本案流程负责人也可下载。"""
+    ensure_staff()
     case = db.session.get(Case, case_id)
     if case is None:
         abort(404)
-    _ensure_staff_case_assignee(case)
+    if not user_may_download_case_material(current_user, case):
+        abort(404)
     material = db.session.get(CaseMaterial, material_id)
     if material is None or material.case_id != case.id:
         abort(404)
@@ -577,7 +650,7 @@ def worklog_export():
 @staff_bp.route("/notifications")
 @login_required
 def notifications():
-    """消息中心：撰写师看分配与审核结果，业务人员看下单确认/打回。"""
+    """消息中心：撰写师看分配与审核结果，流程人员看指定跟进，业务人员看下单确认/打回。"""
     ensure_notifications_access()
     status_filter = request.args.get("status", "all").strip()
     if status_filter not in {"all", "unread", "actionable"}:
@@ -630,8 +703,8 @@ def notifications():
     notification_groups = [(label, grouped[label]) for label in ("今天", "昨天", "更早") if grouped[label]]
     hour = now_beijing.hour
     greeting = "上午好" if 5 <= hour < 12 else "下午好" if hour < 18 else "晚上好"
-    is_business = current_user.staff_function_normalized == User.STAFF_FUNCTION_BUSINESS
-    page_title = "消息中心" if is_business else "消息通知"
+    is_writer = current_user.staff_function_normalized == User.STAFF_FUNCTION_WRITER
+    page_title = "消息通知" if is_writer else "消息中心"
     return render_spa_or_full(
         full_template="staff/notifications.html",
         inner_template="staff/snippets/notifications_inner.html",
@@ -674,7 +747,7 @@ def notifications_read_all():
 @staff_bp.route("/notifications/<int:log_id>/read")
 @login_required
 def notification_read(log_id: int):
-    """点击「查看」：标记已读。撰写师进案件详情，业务人员进下单页。"""
+    """点击「查看」：标记已读。撰写师进案件详情，流程人员进官文跟进，业务人员进下单页。"""
     ensure_notifications_access()
     log = mark_staff_notification_read(log_id)
     if log is None:
@@ -682,10 +755,21 @@ def notification_read(log_id: int):
     case = log.case
     if case is None:
         abort(404)
-    if current_user.staff_function_normalized == User.STAFF_FUNCTION_BUSINESS:
+    function = current_user.staff_function_normalized
+    if function == User.STAFF_FUNCTION_BUSINESS:
         if log.action == "intake_reject":
             return redirect(url_for("staff.business_orders", edit=case.id))
+        if log.action in ("billing_assigned", "official_forward", "official_urge", "collection_reject", "collection_ok"):
+            return redirect(url_for("staff.business_collection_case", case_id=case.id))
         return redirect(url_for("staff.business_orders"))
+    if function == User.STAFF_FUNCTION_PROCESS:
+        if case.process_owner_id != current_user.id:
+            return redirect_with_qy_toast(
+                "staff.notifications",
+                "该案件已不再由你负责，无法查看。",
+                "warning",
+            )
+        return redirect(url_for("staff.process_case", case_id=case.id))
     task = case.task
     if task is None or task.assignee_id != current_user.id:
         return redirect_with_qy_toast(

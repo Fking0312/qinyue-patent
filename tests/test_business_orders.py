@@ -1,4 +1,5 @@
 from io import BytesIO
+from re import search
 from uuid import uuid4
 
 from app import create_app
@@ -482,4 +483,119 @@ def test_business_order_can_upload_disclosure_material():
     writer = app.test_client()
     writer.post("/auth/login", data={"username": writer_name, "password": "secret"})
     assert writer.get(f"/staff/business-orders/materials/{case_id}/{material_id}").status_code == 403
+
+
+def _dashboard_stat(html: str, label: str) -> int:
+    match = search(
+        rf'{label}</div>\s*<div class="qy-dash-stat-value">(\d+)</div>',
+        html,
+    )
+    assert match, f"missing dashboard stat {label}"
+    return int(match.group(1))
+
+
+def test_business_dashboard_is_followup_of_own_orders():
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        seeded = _seed(suffix=suffix)
+        other = User(
+            username=f"_bo_biz2_{suffix}",
+            role="staff",
+            staff_function=User.STAFF_FUNCTION_BUSINESS,
+        )
+        other.set_password("secret")
+        db.session.add(other)
+        db.session.commit()
+        customer_id = seeded["customer_id"]
+        project_id = seeded["project_id"]
+        admin_name = seeded["admin_name"]
+        business_name = seeded["business_name"]
+        other_name = other.username
+        writer_name = seeded["writer_name"]
+
+    owner = app.test_client()
+    owner.post("/auth/login", data={"username": business_name, "password": "secret"})
+    empty = owner.get("/staff/business-dashboard")
+    empty_text = empty.data.decode("utf-8")
+    assert empty.status_code == 200
+    assert _dashboard_stat(empty_text, "待我修改") == 0
+    assert _dashboard_stat(empty_text, "待管理员确认") == 0
+    assert _dashboard_stat(empty_text, "未读消息") == 0
+    assert _dashboard_stat(empty_text, "本月已提交") == 0
+    assert "目前没有需要修改的下单" in empty_text
+    assert "去下单" in empty_text
+    assert 'href="/staff/business-orders"' in empty_text
+    assert "/staff/notifications?status=unread" in empty_text
+    assert "功能建设中" not in empty_text
+    assert "撰写中" not in empty_text
+    assert "登记与核对客户款项" not in empty_text
+    assert "期限关注" not in empty_text
+
+    pending_title = f"_bo_dash_pending_{suffix}"
+    revision_title = f"_bo_dash_revise_{suffix}"
+    other_title = f"_bo_dash_other_{suffix}"
+    for title in (pending_title, revision_title):
+        submitted = owner.post(
+            "/staff/business-orders/cases",
+            data={
+                "customer_id": str(customer_id),
+                "project_id": str(project_id),
+                "title": title,
+                "case_type_code": "utility_utility_model",
+            },
+            follow_redirects=False,
+        )
+        assert submitted.status_code in (302, 303)
+
+    other_client = app.test_client()
+    other_client.post("/auth/login", data={"username": other_name, "password": "secret"})
+    other_submitted = other_client.post(
+        "/staff/business-orders/cases",
+        data={
+            "customer_id": str(customer_id),
+            "project_id": str(project_id),
+            "title": other_title,
+            "case_type_code": "utility_utility_model",
+        },
+        follow_redirects=False,
+    )
+    assert other_submitted.status_code in (302, 303)
+
+    with app.app_context():
+        revision_id = Case.query.filter_by(title=revision_title).one().id
+
+    admin = app.test_client()
+    admin.post("/auth/login", data={"username": admin_name, "password": "secret"})
+    rejected = admin.post(
+        f"/admin/order-intake/{revision_id}/action",
+        data={"review_action": "reject", "reject_note": "交底材料缺附图"},
+        follow_redirects=False,
+    )
+    assert rejected.status_code in (302, 303)
+
+    home = owner.get("/staff/business-dashboard")
+    home_text = home.data.decode("utf-8")
+    assert _dashboard_stat(home_text, "待我修改") == 1
+    assert _dashboard_stat(home_text, "待管理员确认") == 1
+    assert _dashboard_stat(home_text, "未读消息") == 1
+    assert _dashboard_stat(home_text, "本月已提交") == 2
+    assert revision_title in home_text
+    assert pending_title not in home_text
+    assert other_title not in home_text
+    assert "交底材料缺附图" in home_text
+    assert "修改再提交" in home_text
+    assert f"edit={revision_id}" in home_text
+
+    other_home = other_client.get("/staff/business-dashboard").data.decode("utf-8")
+    assert _dashboard_stat(other_home, "待我修改") == 0
+    assert _dashboard_stat(other_home, "待管理员确认") == 1
+    assert _dashboard_stat(other_home, "本月已提交") == 1
+    assert other_title not in other_home
+    assert revision_title not in other_home
+    assert "目前没有需要修改的下单" in other_home
+
+    writer = app.test_client()
+    writer.post("/auth/login", data={"username": writer_name, "password": "secret"})
+    assert writer.get("/staff/business-dashboard").status_code == 403
 

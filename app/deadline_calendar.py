@@ -10,7 +10,7 @@ from app.overdue_reminder import tasks_for_reminder_scope
 from app.workflow import (
     effective_task_due_at,
     effective_task_phase,
-    is_pending_review_phase,
+    is_gated_review_phase,
     is_terminal_phase,
 )
 
@@ -45,7 +45,7 @@ def _due_cn_date(task: Task) -> date | None:
 
 def _task_due_severity(task: Task, now: datetime, horizon: datetime) -> str | None:
     display_phase = effective_task_phase(task, now=now)
-    if is_terminal_phase(display_phase) or is_pending_review_phase(display_phase):
+    if is_terminal_phase(display_phase) or is_gated_review_phase(display_phase):
         return None
     due = effective_task_due_at(task)
     if due is None:

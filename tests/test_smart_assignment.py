@@ -204,6 +204,7 @@ def test_smart_assignment_page_ranks_writers_and_hides_other_functions():
     assert r.status_code == 200
     text = r.data.decode("utf-8")
     assert "撰写师建议顺序" in text
+    assert 'data-qy-scroll-key="smart-pending"' in text
     assert seeded["target_title"] in text
     assert "派单窗口" in text
     # 分配池只含在职撰写师。

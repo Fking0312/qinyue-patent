@@ -77,11 +77,13 @@ def test_admin_cases_list_renders_phase_badges():
         db.session.add(Task(case_id=case.id, phase_status=TaskPhase.PENDING_REVIEW))
         db.session.commit()
         admin_name = admin.username
+        case_title = case.title
 
     client = app.test_client()
     client.post("/auth/login", data={"username": admin_name, "password": "secret"})
-    page = client.get("/admin/cases")
+    page = client.get(f"/admin/cases?q={case_title}")
     assert page.status_code == 200
+    assert case_title.encode() in page.data
     assert b"qy-phase-badge" in page.data
     assert b"qy-phase-badge--warning" in page.data
     assert b"qy-case-type-badge" in page.data

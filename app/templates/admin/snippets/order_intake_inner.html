@@ -1,8 +1,9 @@
+{% from "admin/macros/staff_kind.html" import staff_kind_optgroups %}
 {% from "macros/case_type.html" import case_type_badges %}
 {% from "macros/page_header.html" import page_header %}
 {% from "macros/empty_state.html" import empty_state %}
 <div class="staff-page-inner staff-page-inner--admin qy-admin-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
-  {% call page_header(page_title, "业务人员提交的案件先在这里确认，通过后才进入待分配。", extra_class='qy-admin-page-header') %}
+  {% call page_header(page_title, extra_class='qy-admin-page-header') %}
     <span class="badge rounded-pill text-bg-warning fs-6 align-self-center">待确认 {{ total_pending }} 件</span>
   {% endcall %}
 
@@ -103,11 +104,19 @@
               </td>
               <td class="qy-review-actions-cell">
                 <div class="d-flex flex-column gap-2">
-                  <form method="post" action="{{ url_for('admin.order_intake_action', case_id=row.case.id) }}">
+                  <form method="post" action="{{ url_for('admin.order_intake_action', case_id=row.case.id) }}" class="d-flex flex-column gap-1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="review_action" value="approve">
                     {% for key, value in filter_url_kwargs.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-                    <button class="btn btn-sm btn-primary w-100" type="submit" onclick="return confirm('确认这件下单？确认后将进入待分配。')">确认下单</button>
+                    <label class="form-label mb-0 small" for="intakeWriter{{ row.case.id }}">撰写师</label>
+                    <select id="intakeWriter{{ row.case.id }}" class="form-select form-select-sm" name="writer_id" required>
+                      {{ staff_kind_optgroups(staff_users_formal, staff_users_outsource, selected_id=None, empty_label="请选择撰写师") }}
+                    </select>
+                    <label class="form-label mb-0 small" for="intakeProcess{{ row.case.id }}">流程人员</label>
+                    <select id="intakeProcess{{ row.case.id }}" class="form-select form-select-sm" name="process_owner_id" required>
+                      {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=None, empty_label="请选择流程人员") }}
+                    </select>
+                    <button class="btn btn-sm btn-primary w-100" type="submit">确认下单</button>
                   </form>
                   <form method="post" action="{{ url_for('admin.order_intake_action', case_id=row.case.id) }}" class="d-flex gap-1">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -138,6 +147,6 @@
   </nav>
   {% endif %}
   {% else %}
-  {% call empty_state("暂无待确认下单", "业务人员提交案件后会出现在这里；确认后才会进入智能派单。", icon="review") %}{% endcall %}
+  {% call empty_state("暂无待确认下单", "业务人员提交案件后会出现在这里；确认时指定撰写师与流程人员，案件进入撰写中。", icon="review") %}{% endcall %}
   {% endif %}
 </div>

@@ -1,0 +1,137 @@
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+<div class="staff-page-inner p-3 p-md-4">
+  {% call page_header(page_title) %}
+    <a class="btn btn-primary" href="{{ url_for('staff.process_followup') }}" data-spa-endpoint="staff.process_followup">去跟进案件</a>
+  {% endcall %}
+
+  {% include "partials/dashboard_stat_cards.html" %}
+
+  {% if attention_cases %}
+  <section class="mb-4" aria-labelledby="process-check-title">
+    <h2 id="process-check-title" class="h6 text-secondary mb-3">待核对材料</h2>
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 qy-data-table">
+            <thead class="table-light">
+              <tr>
+                <th scope="col">案件</th>
+                <th scope="col">撰写师</th>
+                <th scope="col">状态</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for case in attention_cases %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ case.title }}</div>
+                  <div class="small text-muted">{{ case.application_no }}</div>
+                  {% for hint in (attention_case_hints|default({})).get(case.id, []) %}
+                  <div class="small text-secondary mt-1">{{ hint }}</div>
+                  {% endfor %}
+                </td>
+                <td class="small">{{ case.task.assignee_display if case.task else "—" }}</td>
+                <td>{{ task_phase_badge(case.task.phase_status if case.task else '') }}</td>
+                <td>
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.process_case', case_id=case.id) }}" data-spa-endpoint="staff.process_case">核对</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <section aria-labelledby="process-attention-title">
+    <h2 id="process-attention-title" class="h6 text-secondary mb-3">马上处理</h2>
+    {% if attention_notices %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 qy-data-table">
+            <thead class="table-light">
+              <tr>
+                <th scope="col">案件</th>
+                <th scope="col">来文</th>
+                <th scope="col">官方期限</th>
+                <th scope="col">状态</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for notice in attention_notices %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ notice.case.title }}</div>
+                  <div class="small text-muted">{{ notice.case.application_no }}</div>
+                  {% if notice.case.task %}
+                  <div class="mt-1">{{ task_phase_badge(notice.case.task.phase_status) }}</div>
+                  {% endif %}
+                </td>
+                <td>{{ notice.type_label }}</td>
+                <td class="text-nowrap small">{{ notice.official_due_at|qy_format_dt if notice.official_due_at else "—" }}</td>
+                <td>
+                  {% if notice.forwarded_at and not notice.received_at %}
+                  <span class="badge text-bg-danger-subtle text-danger-emphasis border">未接收</span>
+                  {% else %}
+                  <span class="badge text-bg-warning-subtle text-warning-emphasis border">待转交</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.process_case', case_id=notice.case.id) }}" data-spa-endpoint="staff.process_case">打开</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    {{ empty_state('暂时没有要马上处理的官文', '上传需要转交的来文后，待转交和超过一天未下载的会显示在这里。', icon='review', compact=True) }}
+    {% endif %}
+  </section>
+
+  {% if attention_collections %}
+  <section class="mt-4" aria-labelledby="process-collection-attention-title">
+    <h2 id="process-collection-attention-title" class="h6 text-secondary mb-3">待确认收款</h2>
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 qy-data-table">
+            <thead class="table-light">
+              <tr>
+                <th scope="col">案件</th>
+                <th scope="col">收账</th>
+                <th scope="col">金额</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for collection in attention_collections %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ collection.case.title }}</div>
+                  <div class="small text-muted">{{ collection.case.application_no }}</div>
+                </td>
+                <td>{{ collection.notice.type_label if collection.notice else "收账" }}</td>
+                <td class="text-nowrap small">{{ collection.amount_display }}</td>
+                <td>
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.process_case', case_id=collection.case.id) }}" data-spa-endpoint="staff.process_case">去确认</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+</div>

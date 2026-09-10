@@ -2,51 +2,50 @@
 {% set pg_total = (pagination.pages if pagination.pages and pagination.pages > 0 else 1) %}
 <div class="staff-page-inner staff-page-inner--admin qy-admin-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
   <header class="qy-admin-page-header pb-3 mb-3 mb-md-4 border-bottom border-secondary-subtle">
-    <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
-    <p class="text-muted small mb-0">{{ page_desc }}</p>
+    <h1 class="h4 mb-0 staff-page-title">{{ page_title }}</h1>
   </header>
 
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
       <h2 class="h6 mb-3">新建账号</h2>
-      <form method="post" class="row g-2 align-items-end" id="qy-account-create-form">
+      <form method="post" class="row g-3 qy-form-grid" id="qy-account-create-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="col-md-3">
-          <label class="form-label mb-1" for="accountUsernameInput">账号名</label>
+        <div class="col-md-4">
+          <label class="form-label" for="accountUsernameInput">账号名</label>
           <input id="accountUsernameInput" class="form-control" type="text" name="username" required maxlength="50" placeholder="登录用账号名">
         </div>
-        <div class="col-md-3">
-          <label class="form-label mb-1" for="accountPhoneInput">手机号</label>
+        <div class="col-md-4">
+          <label class="form-label" for="accountPhoneInput">手机号</label>
           <input id="accountPhoneInput" class="form-control" type="tel" name="phone" maxlength="20" inputmode="numeric" placeholder="11 位手机号，选填">
         </div>
-        <div class="col-md-2">
-          <label class="form-label mb-1" for="accountPasswordInput">初始密码</label>
+        <div class="col-md-4">
+          <label class="form-label" for="accountPasswordInput">初始密码</label>
           <input id="accountPasswordInput" class="form-control" type="password" name="password" required minlength="6" placeholder="至少 6 位">
         </div>
-        <div class="col-md-2">
-          <label class="form-label mb-1" for="accountRoleInput">账号类型</label>
+        <div class="col-md-4">
+          <label class="form-label" for="accountRoleInput">账号类型</label>
           <select id="accountRoleInput" class="form-select" name="role">
             <option value="staff">员工</option>
             <option value="client" selected>客户</option>
           </select>
         </div>
-        <div class="col-md-2" id="qy-account-staff-kind-wrap" hidden>
-          <label class="form-label mb-1" for="accountStaffKindInput">员工编制</label>
+        <div class="col-md-4" id="qy-account-staff-kind-wrap" hidden>
+          <label class="form-label" for="accountStaffKindInput">员工编制</label>
           <select id="accountStaffKindInput" class="form-select" name="staff_kind">
             <option value="formal" selected>正式</option>
             <option value="outsource">外包</option>
           </select>
         </div>
-        <div class="col-md-2" id="qy-account-staff-function-wrap" hidden>
-          <label class="form-label mb-1" for="accountStaffFunctionInput">员工职能</label>
+        <div class="col-md-4" id="qy-account-staff-function-wrap" hidden>
+          <label class="form-label" for="accountStaffFunctionInput">员工职能</label>
           <select id="accountStaffFunctionInput" class="form-select" name="staff_function">
             <option value="writer" selected>撰写师</option>
             <option value="process">流程人员</option>
             <option value="business">业务人员</option>
           </select>
         </div>
-        <div class="col-md-2" id="qy-account-customer-wrap">
-          <label class="form-label mb-1" for="accountCustomerInput">绑定客户</label>
+        <div class="col-md-4" id="qy-account-customer-wrap">
+          <label class="form-label" for="accountCustomerInput">绑定客户</label>
           <select id="accountCustomerInput" class="form-select" name="customer_id">
             <option value="">客户账号必选</option>
             {% for customer in customers %}
@@ -54,7 +53,7 @@
             {% endfor %}
           </select>
         </div>
-        <div class="col-12">
+        <div class="col-12 d-flex justify-content-end pt-1">
           <button class="btn btn-primary" type="submit">创建账号</button>
         </div>
       </form>
@@ -335,7 +334,7 @@
     </div>
   </section>
 
-  <div class="modal fade" id="qyAccountBulkDeleteModal" tabindex="-1" aria-labelledby="qyAccountBulkDeleteModalLabel" aria-hidden="true">
+  <div class="modal fade qy-app-confirm" id="qyAccountBulkDeleteModal" tabindex="-1" aria-labelledby="qyAccountBulkDeleteModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">

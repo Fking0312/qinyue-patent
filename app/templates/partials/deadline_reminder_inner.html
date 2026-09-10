@@ -198,8 +198,7 @@
 
 {% if reminder_page_title %}
 <div class="staff-page-inner p-3 p-md-4">
-  <h1 class="h4 mb-2 staff-page-title">{{ reminder_page_title }}</h1>
-  <p class="text-muted mb-4">已超期任务会显示在下方并自动标记为超期阶段；临期指截止日在未来 {{ due_soon_days }} 个自然日内、尚未超期的任务。</p>
+  <h1 class="h4 mb-4 staff-page-title">{{ reminder_page_title }}</h1>
 {% endif %}
 
 {% set has_overdue = overdue_tasks and overdue_tasks|length > 0 %}

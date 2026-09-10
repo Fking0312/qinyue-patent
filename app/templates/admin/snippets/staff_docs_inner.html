@@ -1,0 +1,141 @@
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+<div class="staff-page-inner staff-page-inner--admin qy-admin-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  {% call page_header(page_title, "上传所内制度、模板与说明，并指定哪些职能能看见。员工端只能下载，不能上传。", extra_class='qy-admin-page-header') %}
+    <span class="badge rounded-pill text-bg-secondary fs-6 align-self-center">共 {{ documents|length }} 份</span>
+  {% endcall %}
+
+  <section class="card border-0 shadow-sm mb-4" aria-labelledby="staff-docs-upload-title">
+    <div class="card-body p-3 p-md-4">
+      <h2 id="staff-docs-upload-title" class="h6 mb-3">上传资料</h2>
+      <form method="post" action="{{ url_for('admin.staff_docs') }}" enctype="multipart/form-data" class="row g-3 qy-form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-6">
+          <label class="form-label mb-1" for="staffDocTitleInput">标题</label>
+          <input id="staffDocTitleInput" class="form-control" type="text" name="title" required maxlength="200" placeholder="例如：撰写规范、流程操作手册">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label mb-1" for="staffDocNoteInput">说明（选填）</label>
+          <input id="staffDocNoteInput" class="form-control" type="text" name="note" maxlength="500" placeholder="一句话说明这份资料做什么用">
+        </div>
+        <div class="col-12">
+          <span class="form-label mb-2 d-block">可见范围</span>
+          <div class="qy-staff-docs-audience" role="radiogroup" aria-label="可见范围">
+            {% for value, label in audience_choices %}
+            <label class="qy-staff-docs-audience-option">
+              <input type="radio" name="audience" value="{{ value }}" {% if value == 'all' %}checked{% endif %} required>
+              <span>{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <div class="form-text mb-0">「全部员工」三类职能都能看；其余选项只给对应职能看。</div>
+        </div>
+        <div class="col-12">
+          <div class="qy-material-upload-panel qy-dropzone">
+            <div class="d-flex align-items-start gap-2 mb-2">
+              <span class="qy-material-upload-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                  <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+                </svg>
+              </span>
+              <div>
+                <label class="form-label fw-semibold mb-0 qy-material-upload-title" for="staffDocFileInput">选择文件</label>
+                <div class="form-text mb-0">支持 Word、Excel、PPT、PDF、图片、压缩包等常见格式，与案件材料相同。</div>
+              </div>
+            </div>
+            <input id="staffDocFileInput" class="form-control" type="file" name="file" required>
+            <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽文件到此区域，或点击上方选择文件。</div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-auto">
+          <button class="btn btn-primary" type="submit">上传资料</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm qy-admin-filter-card mb-4" aria-labelledby="staff-docs-filter-title">
+    <div class="card-body p-3 p-md-4">
+      <h2 id="staff-docs-filter-title" class="h6 mb-3">筛选资料</h2>
+      <form method="get" action="{{ url_for('admin.staff_docs') }}" class="row g-2 align-items-end">
+        <div class="col-12 col-md-4">
+          <label class="form-label mb-1" for="staffDocAudienceFilter">可见范围</label>
+          <select id="staffDocAudienceFilter" class="form-select" name="audience">
+            <option value="">全部范围</option>
+            {% for value, label in audience_choices %}
+            <option value="{{ value }}" {% if audience_filter == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-4 d-flex gap-2">
+          <a class="btn btn-outline-secondary flex-fill" href="{{ url_for('admin.staff_docs') }}" data-spa-endpoint="admin.staff_docs">重置</a>
+          <button class="btn btn-primary flex-fill" type="submit">查询</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  {% if documents %}
+  <section class="card border-0 shadow-sm" aria-labelledby="staff-docs-list-title">
+    <div class="card-header bg-transparent py-3">
+      <h2 id="staff-docs-list-title" class="h6 mb-0">已上传资料</h2>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 qy-data-table">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">标题</th>
+              <th scope="col">文件</th>
+              <th scope="col">可见范围</th>
+              <th scope="col">上传人</th>
+              <th scope="col">上传时间</th>
+              <th scope="col">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for doc in documents %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ doc.title }}</div>
+                {% if doc.note %}
+                <div class="small text-muted mt-1">{{ doc.note }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('admin.staff_docs_download', doc_id=doc.id) }}">{{ doc.original_name }}</a>
+              </td>
+              <td>
+                {% if doc.audience == 'writer' %}
+                <span class="badge text-bg-primary-subtle text-primary-emphasis border border-primary-subtle">{{ doc.audience_label }}</span>
+                {% elif doc.audience == 'process' %}
+                <span class="badge text-bg-info-subtle text-info-emphasis border border-info-subtle">{{ doc.audience_label }}</span>
+                {% elif doc.audience == 'business' %}
+                <span class="badge text-bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">{{ doc.audience_label }}</span>
+                {% else %}
+                <span class="badge text-bg-light border">{{ doc.audience_label }}</span>
+                {% endif %}
+              </td>
+              <td>{{ doc.uploader_display }}</td>
+              <td>{{ doc.created_at|qy_format_dt }}</td>
+              <td>
+                <div class="d-flex flex-wrap gap-2">
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.staff_docs_download', doc_id=doc.id) }}">下载</a>
+                  <form method="post" action="{{ url_for('admin.staff_docs_delete', doc_id=doc.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit" data-qy-confirm="删除资料" data-qy-confirm-text="删除后同事将无法再下载这份资料。" data-qy-confirm-ok="确认删除" data-qy-confirm-variant="danger">删除</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  {% else %}
+  {% call empty_state('暂无内部资料', '上传后，对应职能的员工就能在自己的资料库里下载。', icon='folder') %}{% endcall %}
+  {% endif %}
+</div>

@@ -1,0 +1,151 @@
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+<div class="staff-page-inner p-3 p-md-4">
+  {% call page_header(page_title) %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('staff.business_collections') }}" data-spa-endpoint="staff.business_collections">返回收账列表</a>
+  {% endcall %}
+
+  <section class="qy-case-hero card border-0 shadow-sm mb-4" aria-label="案件概览">
+    <div class="card-body">
+      <h2 class="h5 mb-2 text-break">{{ case.title }}</h2>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="font-monospace small text-muted">{{ case.application_no }}</span>
+        {{ task_phase_badge(case.task.phase_status if case.task else '') }}
+      </div>
+      <div class="row g-3 mt-1 small">
+        <div class="col-md-4">
+          <div class="text-muted">客户</div>
+          <div>{{ case.project.customer.name if case.project and case.project.customer else "—" }}</div>
+        </div>
+        <div class="col-md-4">
+          <div class="text-muted">申请号</div>
+          <div>{{ case.patent_application_no or "—" }}</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm mb-4" aria-labelledby="billing-notice-title">
+    <div class="card-body">
+      <h2 id="billing-notice-title" class="h6 mb-3">缴费通知</h2>
+      {% if notices %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>种类</th>
+              <th>文件</th>
+              <th>官方期限</th>
+              <th>接收</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for notice in notices %}
+            <tr>
+              <td>{{ notice.type_label }}</td>
+              <td>
+                <a href="{{ url_for('staff.official_notice_download', notice_id=notice.id) }}" download="{{ notice.original_name }}">{{ notice.original_name }}</a>
+              </td>
+              <td class="text-nowrap small">{{ notice.official_due_at|qy_format_dt if notice.official_due_at else "—" }}</td>
+              <td class="small">
+                {% if notice.received_at %}
+                <span class="text-success">已接收 {{ notice.received_at|qy_format_dt }}</span>
+                {% else %}
+                <span class="text-danger">尚未下载</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      {{ empty_state('还没有转交给你的缴费通知', '流程人员转交后会显示在这里。', icon='folder', compact=True) }}
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm" aria-labelledby="billing-proof-title">
+    <div class="card-body">
+      <h2 id="billing-proof-title" class="h6 mb-3">收款证明</h2>
+      {% if collections %}
+      {% for collection in collections %}
+      {% set can_edit = collection.status in ('pending_proof', 'rejected') %}
+      <div class="border rounded p-3 mb-3">
+        <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+          <div>
+            <div class="fw-semibold">{{ collection.notice.type_label if collection.notice else "收账" }}</div>
+            <div class="small text-muted">{{ collection.status_label }}{% if collection.amount_display != "—" %} · {{ collection.amount_display }} 元{% endif %}</div>
+          </div>
+        </div>
+        {% if collection.reject_note %}
+        <div class="alert alert-warning py-2 px-3 small mb-2">打回原因：{{ collection.reject_note }}</div>
+        {% endif %}
+        {% if collection.proofs %}
+        <ul class="list-unstyled small mb-2">
+          {% for proof in collection.proofs %}
+          <li class="d-flex flex-wrap align-items-center gap-2 mb-1">
+            <a href="{{ url_for('staff.collection_proof_download', proof_id=proof.id) }}" download="{{ proof.original_name }}">{{ proof.original_name }}</a>
+            {% if proof.note %}<span class="text-muted">{{ proof.note }}</span>{% endif %}
+            {% if can_edit %}
+            <form method="post" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="form_action" value="delete_proof">
+              <input type="hidden" name="collection_id" value="{{ collection.id }}">
+              <input type="hidden" name="proof_id" value="{{ proof.id }}">
+              <button class="btn btn-sm btn-outline-danger" type="submit">删除</button>
+            </form>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="small text-muted mb-2">尚未上传证明。</p>
+        {% endif %}
+        {% if can_edit %}
+        <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end mb-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="form_action" value="upload_proof">
+          <input type="hidden" name="collection_id" value="{{ collection.id }}">
+          <div class="col-md-6">
+            <label class="form-label mb-1" for="proofFile{{ collection.id }}">上传证明</label>
+            <input id="proofFile{{ collection.id }}" class="form-control form-control-sm" type="file" name="proof_file" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label mb-1" for="proofNote{{ collection.id }}">备注</label>
+            <input id="proofNote{{ collection.id }}" class="form-control form-control-sm" type="text" name="proof_note" maxlength="200" placeholder="选填">
+          </div>
+          <div class="col-md-2 d-grid">
+            <button class="btn btn-sm btn-outline-primary" type="submit">上传</button>
+          </div>
+        </form>
+        <form method="post" class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="form_action" value="submit_collection">
+          <input type="hidden" name="collection_id" value="{{ collection.id }}">
+          <div class="col-md-3">
+            <label class="form-label mb-1" for="amount{{ collection.id }}">金额</label>
+            <input id="amount{{ collection.id }}" class="form-control form-control-sm" type="number" name="amount" step="0.01" min="0" value="{{ collection.amount if collection.amount is not none else '' }}" placeholder="选填">
+          </div>
+          <div class="col-md-7">
+            <label class="form-label mb-1" for="note{{ collection.id }}">说明</label>
+            <input id="note{{ collection.id }}" class="form-control form-control-sm" type="text" name="note" maxlength="500" value="{{ collection.note or '' }}" placeholder="选填">
+          </div>
+          <div class="col-md-2 d-grid">
+            <button class="btn btn-sm btn-primary" type="submit" {% if not collection.proofs %}disabled{% endif %}>提交确认</button>
+          </div>
+        </form>
+        {% elif collection.status == 'pending_confirm' %}
+        <p class="small text-muted mb-0">已提交，等待流程人员确认。</p>
+        {% else %}
+        <p class="small text-success mb-0">流程人员已确认本笔收款。</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% else %}
+      {{ empty_state('还没有收账记录', '流程人员转交缴费通知后会出现在这里。', icon='folder', compact=True) }}
+      {% endif %}
+    </div>
+  </section>
+</div>

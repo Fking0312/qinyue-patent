@@ -1,4 +1,4 @@
-"""下单：业务人员建客户/项目/案件，管理员确认后才进入待分配。
+"""下单：业务人员建客户/项目/案件，管理员确认时指定撰写师与流程人员。
 
 归属链是 客户 → 项目 → 案件。案件不直接绑客户；业务端能看客户名和项目名，
 不能浏览项目下的案件。
@@ -7,22 +7,25 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
 
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
-from app.case_trace import add_review_log, stamp_assignee, stamp_intake_owner
+from app.case_trace import (
+    add_review_log,
+    stamp_assignee,
+    stamp_business_owner,
+    stamp_intake_owner,
+    stamp_process_owner,
+)
 from app.case_types import validate_case_type_code
 from app.extensions import db
-from app.models import Case, CaseReviewLog, Customer, CustomerKind, Project, Task
+from app.models import Case, CaseReviewLog, Customer, CustomerKind, Project, Task, User
 from app.serials import next_case_serial, next_project_code
 from app.workflow import (
     TaskPhase,
     is_pending_order_review_phase,
 )
-
-if TYPE_CHECKING:
-    from app.models import User
 
 _CN_TZ = timezone(timedelta(hours=8))
 _CUSTOMER_PHONE_RE = re.compile(r"^[\d+\s\-()（）]{5,40}$")
@@ -50,23 +53,46 @@ def apply_order_intake_review(
     action: str,
     reject_note: str,
     operator: "User",
+    *,
+    writer_id: int | None = None,
+    process_owner_id: int | None = None,
 ) -> tuple[bool, str, str]:
-    """确认或打回下单。通过 → 待分配；打回 → 下单待修改。调用方负责 commit。"""
+    """确认或打回下单。通过须指定撰写师与流程人员，进入撰写中；打回 → 下单待修改。调用方负责 commit。"""
     if task is None:
         return False, "该案件暂无任务，无法确认下单。", "warning"
     if not is_pending_order_review_phase(task.phase_status):
         return False, "当前不是待下单确认，无法执行该动作。", "warning"
     recipient = case.intake_owner_user
     if action == "approve":
-        stamp_assignee(task, None)
-        task.phase_status = TaskPhase.PENDING_ASSIGNMENT
+        writer = db.session.get(User, writer_id) if writer_id else None
+        if writer is None or not writer.is_assignable_writer:
+            return False, "确认下单请指定在职撰写师。", "warning"
+        process_owner = db.session.get(User, process_owner_id) if process_owner_id else None
+        if process_owner is None or not process_owner.is_assignable_process:
+            return False, "确认下单请指定在职流程人员。", "warning"
+        stamp_business_owner(case, writer)
+        stamp_assignee(task, writer)
+        stamp_process_owner(case, process_owner)
+        task.phase_status = TaskPhase.IN_PROGRESS
         add_review_log(
             case_id=case.id,
             action="intake_approve",
             operator=operator,
             recipient=recipient,
         )
-        return True, "已确认下单，案件进入待分配。", "success"
+        add_review_log(
+            case_id=case.id,
+            action="assigned",
+            operator=operator,
+            recipient=writer,
+        )
+        add_review_log(
+            case_id=case.id,
+            action="process_assigned",
+            operator=operator,
+            recipient=process_owner,
+        )
+        return True, "已确认下单，并指定撰写师与流程人员，案件进入撰写中。", "success"
     if action == "reject":
         note = (reject_note or "").strip()
         if not note:
@@ -108,19 +134,57 @@ def project_options_payload() -> list[dict]:
     ]
 
 
+def _my_orders_query(user_id: int):
+    """当前业务人员自己当过下单人的任务，不含别人在同一项目下的案件。"""
+    return Task.query.join(Case, Case.id == Task.case_id).filter(Case.intake_owner_id == user_id)
+
+
 def my_submitted_orders(user_id: int) -> list[Task]:
     """当前业务人员自己提交的下单，不是某个项目下的全部案件。"""
-    from sqlalchemy import func
-
     return (
-        Task.query.join(Case, Case.id == Task.case_id)
-        .filter(Case.intake_owner_id == user_id)
+        _my_orders_query(user_id)
         .options(
             joinedload(Task.case).joinedload(Case.project).joinedload(Project.customer),
         )
         .order_by(func.coalesce(Task.updated_at, Task.created_at).desc(), Task.id.desc())
         .all()
     )
+
+
+def my_order_phase_count(user_id: int, phase: str) -> int:
+    """自己提交的下单中，处于某阶段的件数。"""
+    return _my_orders_query(user_id).filter(Task.phase_status == phase).count()
+
+
+def my_orders_created_this_month_count(user_id: int) -> int:
+    """本月自己提交的案件数（按创建时间，北京时间自然月）。"""
+    now = datetime.now(timezone.utc).astimezone(_CN_TZ)
+    start_cn = datetime(now.year, now.month, 1, tzinfo=_CN_TZ)
+    if now.month == 12:
+        end_cn = datetime(now.year + 1, 1, 1, tzinfo=_CN_TZ)
+    else:
+        end_cn = datetime(now.year, now.month + 1, 1, tzinfo=_CN_TZ)
+    start_at = start_cn.astimezone(timezone.utc)
+    end_at = end_cn.astimezone(timezone.utc)
+    return Case.query.filter(
+        Case.intake_owner_id == user_id,
+        Case.created_at >= start_at,
+        Case.created_at < end_at,
+    ).count()
+
+
+def my_order_revision_rows(user_id: int) -> list[tuple[Task, str]]:
+    """首页待改列表：自己的下单待修改，等得最久的在前。"""
+    tasks = (
+        _my_orders_query(user_id)
+        .filter(Task.phase_status == TaskPhase.ORDER_REVISION)
+        .options(
+            joinedload(Task.case).joinedload(Case.project).joinedload(Project.customer),
+        )
+        .order_by(func.coalesce(Task.updated_at, Task.created_at).asc(), Task.id.asc())
+        .all()
+    )
+    return [(task, latest_intake_reject_note(task.case_id)) for task in tasks]
 
 
 def order_revision_for_owner(user_id: int, case_id: int) -> Case | None:

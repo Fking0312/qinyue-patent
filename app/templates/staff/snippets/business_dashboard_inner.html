@@ -1,0 +1,95 @@
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+<div class="staff-page-inner p-3 p-md-4">
+  {% call page_header(page_title, "先看有没有被打回的单，再去提交新单。") %}
+    <a class="btn btn-primary" href="{{ url_for('staff.business_orders') }}" data-spa-endpoint="staff.business_orders">去下单</a>
+  {% endcall %}
+
+  {% include "partials/dashboard_stat_cards.html" %}
+
+  <section aria-labelledby="business-revision-title">
+    <h2 id="business-revision-title" class="h6 text-secondary mb-3">需要修改的下单</h2>
+    {% if revision_rows %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 qy-data-table">
+            <thead class="table-light">
+              <tr>
+                <th scope="col">案件</th>
+                <th scope="col">客户</th>
+                <th scope="col">所属项目</th>
+                <th scope="col">打回原因</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for task, reject_note in revision_rows %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ task.case.title }}</div>
+                  <div class="small text-muted">{{ task.case.application_no }}</div>
+                  <div class="mt-1">{{ task_phase_badge(task.phase_status) }}</div>
+                </td>
+                <td>{{ task.case.project.customer.name if task.case.project and task.case.project.customer else "—" }}</td>
+                <td>{{ task.case.project.name if task.case.project else "—" }}</td>
+                <td>
+                  {% if reject_note %}
+                  <div class="small qy-order-revise-note rounded px-2 py-1">{{ reject_note }}</div>
+                  {% else %}
+                  <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.business_orders', edit=task.case.id) }}" data-spa-endpoint="staff.business_orders">修改再提交</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    {{ empty_state('目前没有需要修改的下单', '管理员打回后会出现在这里。要开新单请点右上角「去下单」。', icon='review', compact=True) }}
+    {% endif %}
+  </section>
+
+  {% if attention_collections %}
+  <section class="mt-4" aria-labelledby="business-billing-title">
+    <h2 id="business-billing-title" class="h6 text-secondary mb-3">待交收款证明</h2>
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 qy-data-table">
+            <thead class="table-light">
+              <tr>
+                <th scope="col">案件</th>
+                <th scope="col">收账</th>
+                <th scope="col">状态</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for collection in attention_collections %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ collection.case.title }}</div>
+                  <div class="small text-muted">{{ collection.case.application_no }}</div>
+                </td>
+                <td>{{ collection.notice.type_label if collection.notice else "收账" }}</td>
+                <td>{{ collection.status_label }}</td>
+                <td>
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.business_collection_case', case_id=collection.case.id) }}" data-spa-endpoint="staff.business_collection_case">去收账</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+</div>

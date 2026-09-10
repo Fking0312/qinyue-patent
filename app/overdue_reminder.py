@@ -13,7 +13,7 @@ from app.workflow import (
     effective_task_due_at,
     effective_task_phase,
     is_overdue_phase,
-    is_pending_review_phase,
+    is_gated_review_phase,
     is_terminal_phase,
     normalize_legacy_draft_phases,
     normalize_legacy_overdue_pending_review,
@@ -61,7 +61,7 @@ def reminder_lists(user: User, *, due_soon_days: int = 7) -> tuple[list[Task], l
         display_phase = effective_task_phase(t, now=now)
         if is_terminal_phase(display_phase):
             continue
-        if is_pending_review_phase(display_phase):
+        if is_gated_review_phase(display_phase):
             continue
         if is_overdue_phase(display_phase):
             overdue.append(t)

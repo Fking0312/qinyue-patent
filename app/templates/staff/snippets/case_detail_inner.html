@@ -64,6 +64,10 @@
               <div>{% if case.business_owner_user or case.business_owner_label %}{{ trace_person(case.business_owner_user, case.business_owner_label) }}{% else %}—{% endif %}</div>
             </div>
             <div class="col-md-3">
+              <div class="text-muted small mb-1">流程人员</div>
+              <div>{% if case.process_owner_user or case.process_owner_label %}{{ trace_person(case.process_owner_user, case.process_owner_label) }}{% else %}—{% endif %}</div>
+            </div>
+            <div class="col-md-3">
               <div class="text-muted small mb-1">下单时间</div>
               <div>{{ case.order_at|qy_format_dt }}</div>
             </div>
@@ -105,8 +109,16 @@
                 </svg>
               </span>
               <div>
-                <h2 class="h5 mb-1 qy-material-upload-title">材料上传</h2>
-                <p class="text-muted small mb-0">在此上传撰写文件；确认无误后再点击「提交审核」。</p>
+                <h2 class="h5 mb-1 qy-material-upload-title">{% if open_reply_notice %}改正材料上传{% else %}材料上传{% endif %}</h2>
+                <p class="text-muted small mb-0">
+                  {% if open_reply_notice and not open_reply_notice.received_at %}
+                  请先下载下方「{{ open_reply_notice.type_label }}」，接收后再上传改正材料。
+                  {% elif open_reply_notice %}
+                  已接收「{{ open_reply_notice.type_label }}」。请上传改正后的撰写材料，再提交给流程人员核对并递交官方。
+                  {% else %}
+                  在此上传撰写文件；确认无误后再点击「提交流程核对」。
+                  {% endif %}
+                </p>
               </div>
             </div>
             <span class="badge text-bg-primary qy-material-upload-badge align-self-center">撰写材料</span>
@@ -129,16 +141,20 @@
               </div>
               <div class="col-lg-4 col-md-6">
                 <label class="form-label fw-semibold" for="staffMaterialNoteInput">备注</label>
-                <input id="staffMaterialNoteInput" class="form-control" type="text" name="material_note" maxlength="200" value="撰写材料" placeholder="上传备注（默认：撰写材料）" {% if material_changes_locked %}disabled{% endif %}>
+                <input id="staffMaterialNoteInput" class="form-control" type="text" name="material_note" maxlength="200" value="{% if open_reply_notice and open_reply_notice.received_at %}答复{{ open_reply_notice.type_label }}{% else %}撰写材料{% endif %}" placeholder="上传备注（默认：撰写材料）" {% if material_changes_locked %}disabled{% endif %}>
               </div>
               <div class="col-lg-2 col-md-3 d-grid">
                 <button class="btn {% if material_changes_locked %}btn-secondary{% else %}btn-primary{% endif %} qy-upload-submit" type="submit" {% if material_changes_locked %}disabled aria-disabled="true"{% endif %}>上传文件</button>
               </div>
             </form>
-            {% if material_changes_locked %}
+            {% if material_changes_locked and material_lock_reason == 'await_receipt' %}
+            <div class="qy-dropzone-hint small fw-semibold mt-2 mb-0">请先下载并接收「{{ open_reply_notice.type_label }}」，接收后即可上传改正材料。</div>
+            {% elif material_changes_locked %}
             <div class="qy-dropzone-hint small fw-semibold mt-2 mb-0">当前案件已进入“{{ task.phase_status|qy_task_phase_label }}”，材料上传已锁定。</div>
+            {% elif open_reply_notice %}
+            <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽上传改正稿；上传新文件后才能再次提交流程核对。</div>
             {% else %}
-            <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽文件到此区域上传；上传后仍可继续修改，确认无误后再提交审核。</div>
+            <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽文件到此区域上传；上传后仍可继续修改，确认无误后再提交流程核对。</div>
             {% endif %}
           </div>
 
@@ -146,12 +162,16 @@
           <div class="qy-submit-review-panel mb-4">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
               <div>
-                <div class="fw-bold mb-1">提交审核</div>
+                <div class="fw-bold mb-1">{% if open_reply_notice %}提交改正材料{% else %}提交流程核对{% endif %}</div>
                 <div class="small text-muted">
-                  {% if has_writing_material %}
-                  材料准备完成后，点击右侧按钮提交给管理员审核。
+                  {% if open_reply_notice and not can_submit_for_review %}
+                  请先上传针对「{{ open_reply_notice.type_label }}」的改正材料，再提交给流程人员核对并递交官方。
+                  {% elif open_reply_notice %}
+                  改正材料将提交给本案流程人员核对，核对后可向官方递交。
+                  {% elif has_writing_material %}
+                  材料准备完成后，提交给本案流程人员核对并递交官方。
                   {% else %}
-                  请先上传至少一份撰写材料，再提交审核。
+                  请先上传至少一份撰写材料，再提交流程核对。
                   {% endif %}
                 </div>
               </div>
@@ -162,8 +182,11 @@
                   class="btn btn-success btn-lg qy-submit-review-btn"
                   type="submit"
                   {% if not can_submit_for_review %}disabled aria-disabled="true"{% endif %}
-                  onclick="return confirm('确认提交审核？提交后材料将锁定，需管理员打回后才能再次修改。')"
-                >提交审核</button>
+                  data-qy-confirm="{% if open_reply_notice %}提交改正材料{% else %}提交流程核对{% endif %}"
+                  data-qy-confirm-text="{% if open_reply_notice %}提交后材料将锁定。流程人员核对后可向官方递交改正材料。{% else %}提交后材料将锁定，需流程人员打回后才能再次修改。{% endif %}"
+                  data-qy-confirm-ok="确认提交"
+                  data-qy-confirm-variant="success"
+                >{% if open_reply_notice %}提交改正材料{% else %}提交流程核对{% endif %}</button>
               </form>
             </div>
           </div>
@@ -255,7 +278,7 @@
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="form_action" value="delete_material">
                         <input type="hidden" name="material_id" value="{{ file_item.id }}">
-                        <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('确认删除该材料？')">删除</button>
+                        <button class="btn btn-sm btn-outline-danger" type="submit" data-qy-confirm="删除材料" data-qy-confirm-text="删除后无法从本页恢复，请确认这份文件不再需要。" data-qy-confirm-ok="确认删除" data-qy-confirm-variant="danger">删除</button>
                       </form>
                       {% elif file_item.uploaded_by_id == current_user.id %}
                       <button class="btn btn-sm btn-outline-secondary" type="button" disabled>已锁定</button>
@@ -268,7 +291,54 @@
                   <td colspan="6" class="p-0">
                     <div class="qy-material-empty-state">
                       <div class="fw-semibold mb-1">暂无撰写材料</div>
-                      <div class="text-muted small">请在上方选择文件上传，确认无误后点击「提交审核」。</div>
+                      <div class="text-muted small">请在上方选择文件上传，确认无误后点击「提交流程核对」。</div>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="fw-semibold mb-2 mt-4">官方来文</div>
+          <p class="text-muted small mb-2">流程人员转交给你的专利局来文。审查意见、补正通知需先下载接收，再上传改正材料。</p>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>种类</th>
+                  <th>文件</th>
+                  <th>官方期限</th>
+                  <th>接收</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for notice in official_notices|default([]) %}
+                <tr>
+                  <td>{{ notice.type_label }}</td>
+                  <td>
+                    <div>{{ notice.original_name }}</div>
+                    <div class="small text-muted">{{ notice.forwarded_at|qy_format_dt if notice.forwarded_at else "—" }}</div>
+                  </td>
+                  <td class="text-nowrap small">{{ notice.official_due_at|qy_format_dt if notice.official_due_at else "—" }}</td>
+                  <td class="small">
+                    {% if notice.received_at %}
+                    <span class="text-success">已接收 {{ notice.received_at|qy_format_dt }}</span>
+                    {% else %}
+                    <span class="text-danger">尚未下载</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('staff.official_notice_download', notice_id=notice.id) }}" download="{{ notice.original_name }}" data-qy-notice-download data-filename="{{ notice.original_name }}">下载</a>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="5" class="p-0">
+                    <div class="qy-material-empty-state">
+                      <div class="fw-semibold mb-1">暂无官方来文</div>
+                      <div class="text-muted small">流程人员转交给你之后，来文会显示在这里。</div>
                     </div>
                   </td>
                 </tr>

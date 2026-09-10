@@ -34,7 +34,7 @@ def test_admin_review_inbox_unread_filters_and_actions():
         task = Task(
             case_id=case.id,
             assignee_id=staff.id,
-            phase_status=TaskPhase.PENDING_REVIEW,
+            phase_status=TaskPhase.PENDING_FINAL_REVIEW,
             updated_at=datetime.now(timezone.utc),
         )
         db.session.add(task)
@@ -65,7 +65,7 @@ def test_admin_review_inbox_unread_filters_and_actions():
     assert page.status_code == 200
     assert f"_review_inbox_case_{suffix}".encode() in page.data
     assert f"_review_inbox_note_{suffix}".encode() in page.data
-    assert "审核通过".encode() in page.data
+    assert "终审通过并办结".encode() in page.data
     assert "打回".encode() in page.data
 
     after_open = client.get("/admin/review-quality/status").get_json()
@@ -78,7 +78,7 @@ def test_admin_review_inbox_unread_filters_and_actions():
     )
     assert approved.status_code in (302, 303)
     with app.app_context():
-        assert db.session.get(Task, task_id).phase_status == TaskPhase.PENDING_SUBMIT
+        assert db.session.get(Task, task_id).phase_status == TaskPhase.COMPLETED
         assert CaseReviewLog.query.filter_by(case_id=case_id, action="approve").count() == 1
 
     after_approve = client.get("/admin/review-quality/status").get_json()
@@ -97,7 +97,7 @@ def test_admin_review_inbox_unread_filters_and_actions():
         second_task = Task(
             case_id=second_case.id,
             assignee_id=staff_id,
-            phase_status=TaskPhase.PENDING_REVIEW,
+            phase_status=TaskPhase.PENDING_FINAL_REVIEW,
             updated_at=datetime.now(timezone.utc) + timedelta(seconds=2),
         )
         db.session.add(second_task)
@@ -147,8 +147,8 @@ def test_admin_review_inbox_unread_filters_and_actions():
     assert "_review_inbox_reject_".encode() in notification_page.data
     assert "请补充技术效果说明".encode() in notification_page.data
     assert "案件审核被打回".encode() in notification_page.data
-    assert "案件审核已通过".encode() in notification_page.data
-    assert "待递交".encode() in notification_page.data
+    assert "终审已通过".encode() in notification_page.data
+    assert "已办结".encode() in notification_page.data
     assert "立即修改".encode() in notification_page.data
     assert "个人消息中心".encode() in notification_page.data
     assert "今日动态".encode() in notification_page.data
@@ -156,13 +156,13 @@ def test_admin_review_inbox_unread_filters_and_actions():
 
     reject_only = client.get("/staff/notifications?type=reject")
     assert reject_only.status_code == 200
-    assert "案件审核已通过".encode() not in reject_only.data.split("全部类型".encode())[-1]
+    assert "终审已通过".encode() not in reject_only.data.split("全部类型".encode())[-1]
     assert "案件审核被打回".encode() in reject_only.data
 
     actionable_only = client.get("/staff/notifications?status=actionable")
     assert actionable_only.status_code == 200
     assert "案件审核被打回".encode() in actionable_only.data
-    assert "案件审核已通过".encode() not in actionable_only.data
+    assert "终审已通过".encode() not in actionable_only.data
 
     after_open_list = client.get("/staff/notifications/status").get_json()
     assert after_open_list["unread"] == 2

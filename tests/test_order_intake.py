@@ -23,6 +23,12 @@ def _seed_intake_case(*, suffix: str, title: str, application_no: str):
         staff_function=User.STAFF_FUNCTION_WRITER,
     )
     writer.set_password("secret")
+    process = User(
+        username=f"_intake_proc_{suffix}",
+        role="staff",
+        staff_function=User.STAFF_FUNCTION_PROCESS,
+    )
+    process.set_password("secret")
     business = User(
         username=f"_intake_biz_{suffix}",
         role="staff",
@@ -30,7 +36,7 @@ def _seed_intake_case(*, suffix: str, title: str, application_no: str):
     )
     business.set_password("secret")
     customer = Customer(kind=CustomerKind.COMPANY, name=f"_intake_customer_{suffix}")
-    db.session.add_all([admin, writer, business, customer])
+    db.session.add_all([admin, writer, process, business, customer])
     db.session.flush()
     project = Project(customer_id=customer.id, name=f"_intake_project_{suffix}")
     db.session.add(project)
@@ -51,7 +57,11 @@ def _seed_intake_case(*, suffix: str, title: str, application_no: str):
     return {
         "admin_name": admin.username,
         "writer_name": writer.username,
+        "writer_id": writer.id,
+        "process_name": process.username,
+        "process_id": process.id,
         "business_name": business.username,
+        "business_id": business.id,
         "case_id": case.id,
         "task_id": task.id,
         "title": title,
@@ -79,7 +89,7 @@ def test_order_intake_page_lists_cases_and_excludes_writer_review():
         db.session.add(
             Task(
                 case_id=review_case.id,
-                phase_status=TaskPhase.PENDING_REVIEW,
+                phase_status=TaskPhase.PENDING_FINAL_REVIEW,
             )
         )
         db.session.commit()
@@ -96,6 +106,8 @@ def test_order_intake_page_lists_cases_and_excludes_writer_review():
     assert "下单待确认".encode() in page.data
     assert intake_title.encode() in page.data
     assert "确认下单".encode() in page.data
+    assert b'name="writer_id"' in page.data
+    assert b'name="process_owner_id"' in page.data
     assert review_title.encode() not in page.data
 
     review_page = client.get("/admin/review-quality")
@@ -127,7 +139,7 @@ def test_order_intake_page_lists_cases_and_excludes_writer_review():
     assert denied.status_code == 403
 
 
-def test_order_intake_approve_enters_assignment_pool():
+def test_order_intake_approve_assigns_writer_and_process():
     app = create_app()
     suffix = uuid4().hex[:8]
     title = f"_intake_approve_{suffix}"
@@ -140,6 +152,10 @@ def test_order_intake_approve_enters_assignment_pool():
         case_id = seeded["case_id"]
         task_id = seeded["task_id"]
         admin_name = seeded["admin_name"]
+        writer_name = seeded["writer_name"]
+        writer_id = seeded["writer_id"]
+        process_id = seeded["process_id"]
+        business_id = seeded["business_id"]
         assert case_id not in [c.id for c in pending_assignment_cases()]
 
     client = app.test_client()
@@ -147,25 +163,94 @@ def test_order_intake_approve_enters_assignment_pool():
     before = client.get("/admin/order-intake/status").get_json()
     assert before["ok"] is True
     unread_before = before["unread"]
-    approved = client.post(
+
+    missing = client.post(
         f"/admin/order-intake/{case_id}/action",
         data={"review_action": "approve"},
+        follow_redirects=False,
+    )
+    assert missing.status_code in (302, 303)
+    with app.app_context():
+        task = db.session.get(Task, task_id)
+        assert task.phase_status == TaskPhase.PENDING_ORDER_REVIEW
+        assert task.assignee_id is None
+
+    swapped = client.post(
+        f"/admin/order-intake/{case_id}/action",
+        data={
+            "review_action": "approve",
+            "writer_id": str(process_id),
+            "process_owner_id": str(writer_id),
+        },
+        follow_redirects=False,
+    )
+    assert swapped.status_code in (302, 303)
+    with app.app_context():
+        assert db.session.get(Task, task_id).phase_status == TaskPhase.PENDING_ORDER_REVIEW
+
+    business_as_process = client.post(
+        f"/admin/order-intake/{case_id}/action",
+        data={
+            "review_action": "approve",
+            "writer_id": str(writer_id),
+            "process_owner_id": str(business_id),
+        },
+        follow_redirects=False,
+    )
+    assert business_as_process.status_code in (302, 303)
+    with app.app_context():
+        assert db.session.get(Task, task_id).phase_status == TaskPhase.PENDING_ORDER_REVIEW
+
+    approved = client.post(
+        f"/admin/order-intake/{case_id}/action",
+        data={
+            "review_action": "approve",
+            "writer_id": str(writer_id),
+            "process_owner_id": str(process_id),
+        },
         follow_redirects=False,
     )
     assert approved.status_code in (302, 303)
 
     with app.app_context():
         task = db.session.get(Task, task_id)
-        assert task.phase_status == TaskPhase.PENDING_ASSIGNMENT
-        assert task.assignee_id is None
-        assert case_id in [c.id for c in pending_assignment_cases()]
+        case = db.session.get(Case, case_id)
+        assert task.phase_status == TaskPhase.IN_PROGRESS
+        assert task.assignee_id == writer_id
+        assert case.business_owner_id == writer_id
+        assert case.process_owner_id == process_id
+        assert case_id not in [c.id for c in pending_assignment_cases()]
         assert CaseReviewLog.query.filter_by(case_id=case_id, action="intake_approve").count() == 1
+        assert CaseReviewLog.query.filter_by(
+            case_id=case_id, action="assigned", recipient_id=writer_id
+        ).count() == 1
+        assert CaseReviewLog.query.filter_by(
+            case_id=case_id, action="process_assigned", recipient_id=process_id
+        ).count() == 1
 
     after_status = client.get("/admin/order-intake/status").get_json()
     assert after_status["unread"] == unread_before - 1
     after = client.get("/admin/order-intake")
     assert title.encode() not in after.data
     assert after.data.count(b"data-order-intake-badge") == 2
+
+    writer_client = app.test_client()
+    writer_client.post(
+        "/auth/login", data={"username": writer_name, "password": "secret"}
+    )
+    notices = writer_client.get("/staff/notifications")
+    assert notices.status_code == 200
+    assert title.encode() in notices.data
+    assert "新案件已分配".encode() in notices.data
+
+    process_client = app.test_client()
+    process_client.post(
+        "/auth/login", data={"username": seeded["process_name"], "password": "secret"}
+    )
+    process_notices = process_client.get("/staff/notifications")
+    assert process_notices.status_code == 200
+    assert title.encode() in process_notices.data
+    assert "已指定你跟进".encode() in process_notices.data
 
 
 def test_order_intake_reject_requires_note_and_leaves_pool():
@@ -249,6 +334,6 @@ def test_order_revision_hidden_from_admin_project_case_lists():
     assert visible_title.encode() in cases_page.data
     assert revision_title.encode() not in cases_page.data
 
-    all_cases = client.get("/admin/cases")
+    all_cases = client.get(f"/admin/cases?q={visible_title}")
     assert visible_title.encode() in all_cases.data
     assert revision_title.encode() not in all_cases.data

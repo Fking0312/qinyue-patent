@@ -4,6 +4,7 @@
 - 客户 1—N 项目；项目 1—N 案件；案件 1—1 任务（通过 `phase_status` 表达流程）。
 - 超期由后台维护（见 `app.workflow`），表层不区分独立 overdue 表。
 - `User.role` 枚举：admin / staff / client；客户端账号归属 `customer_id`。
+- 所内资料库 `StaffDocument` 与案件材料分开，按员工职能控制可见范围。
 """
 
 import re
@@ -90,6 +91,12 @@ class Case(db.Model):
     # 下单人（业务人员），与承办撰写师分开；确认前不进派单池。
     intake_owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
     intake_owner_label = db.Column(db.String(120), nullable=True)
+    # 流程负责人：管理员指定，不进撰写师派单池。
+    process_owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    process_owner_label = db.Column(db.String(120), nullable=True)
+    # 收账负责人：仅在职业务人员；与承办撰写师、流程人员分开。
+    billing_owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    billing_owner_label = db.Column(db.String(120), nullable=True)
     order_at = db.Column(db.DateTime, nullable=True)
     expected_return_at = db.Column(db.DateTime, nullable=True)
     actual_return_at = db.Column(db.DateTime, nullable=True)
@@ -116,6 +123,8 @@ class Case(db.Model):
     project = db.relationship("Project", back_populates="cases")
     business_owner_user = db.relationship("User", foreign_keys=[business_owner_id])
     intake_owner_user = db.relationship("User", foreign_keys=[intake_owner_id])
+    process_owner_user = db.relationship("User", foreign_keys=[process_owner_id])
+    billing_owner_user = db.relationship("User", foreign_keys=[billing_owner_id])
 
     @property
     def owner_display(self) -> str:
@@ -131,6 +140,20 @@ class Case(db.Model):
 
         return display_trace(self.intake_owner_user, self.intake_owner_label)
 
+    @property
+    def process_owner_display(self) -> str:
+        """流程负责人展示名：账号还在用实时姓名，否则用指定时的快照。"""
+        from app.case_trace import display_trace
+
+        return display_trace(self.process_owner_user, self.process_owner_label)
+
+    @property
+    def billing_owner_display(self) -> str:
+        """收账负责人展示名：账号还在用实时姓名，否则用指定时的快照。"""
+        from app.case_trace import display_trace
+
+        return display_trace(self.billing_owner_user, self.billing_owner_label)
+
     task = db.relationship(
         "Task",
         back_populates="case",
@@ -139,6 +162,18 @@ class Case(db.Model):
     )
     review_logs = db.relationship("CaseReviewLog", back_populates="case", lazy="dynamic", cascade="all, delete-orphan")
     materials = db.relationship("CaseMaterial", back_populates="case", lazy="dynamic", cascade="all, delete-orphan")
+    official_notices = db.relationship(
+        "OfficialNotice",
+        back_populates="case",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+    )
+    collections = db.relationship(
+        "CaseCollection",
+        back_populates="case",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+    )
     material_download_logs = db.relationship(
         "CaseMaterialDownloadLog",
         back_populates="case",
@@ -376,6 +411,237 @@ class CaseMaterialDownloadLog(db.Model):
         return display_trace(self.operator, self.operator_label)
 
 
+class OfficialNotice(db.Model):
+    """官方来文：流程人员从专利局系统下载后上传，与案件交底/撰写材料分开存。"""
+
+    __tablename__ = "official_notices"
+
+    TYPE_ACCEPTANCE = "acceptance"
+    TYPE_AMENDMENT = "amendment"
+    TYPE_OA1 = "oa1"
+    TYPE_OA2 = "oa2"
+    TYPE_GRANT = "grant"
+    TYPE_FEE = "fee"
+    TYPE_OTHER = "other"
+    TYPES = (
+        (TYPE_ACCEPTANCE, "受理通知书", False),
+        (TYPE_AMENDMENT, "补正通知书", True),
+        (TYPE_OA1, "审查意见通知书（一通）", True),
+        (TYPE_OA2, "审查意见通知书（二通）", True),
+        (TYPE_GRANT, "授权通知书", False),
+        (TYPE_FEE, "缴费通知", False),  # 第三项表示是否需要撰写师答复；缴费走业务收账。
+        (TYPE_OTHER, "其他", True),
+    )
+    TYPE_VALUES = frozenset(item[0] for item in TYPES)
+    TYPE_LABELS = {item[0]: item[1] for item in TYPES}
+    WRITER_REPLY_TYPES = frozenset(item[0] for item in TYPES if item[2])
+    BILLING_TYPES = frozenset({TYPE_FEE})
+
+    id = db.Column(db.Integer, primary_key=True)
+    case_id = db.Column(db.Integer, db.ForeignKey("cases.id"), nullable=False, index=True)
+    notice_type = db.Column(db.String(40), nullable=False, index=True)
+    original_name = db.Column(db.String(255), nullable=False)
+    stored_name = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    official_due_at = db.Column(db.DateTime, nullable=True, index=True)
+    internal_due_at = db.Column(db.DateTime, nullable=True)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    uploaded_by_label = db.Column(db.String(120), nullable=True)
+    forwarded_to_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    forwarded_to_label = db.Column(db.String(120), nullable=True)
+    forwarded_at = db.Column(db.DateTime, nullable=True, index=True)
+    received_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    case = db.relationship("Case", back_populates="official_notices")
+    uploaded_by = db.relationship("User", foreign_keys=[uploaded_by_id])
+    forwarded_to = db.relationship("User", foreign_keys=[forwarded_to_id])
+    collection = db.relationship("CaseCollection", back_populates="notice", uselist=False)
+
+    @classmethod
+    def normalize_type(cls, raw: str | None) -> str | None:
+        value = (raw or "").strip()
+        if value in cls.TYPE_VALUES:
+            return value
+        return None
+
+    @property
+    def type_label(self) -> str:
+        return self.TYPE_LABELS.get(self.notice_type, self.notice_type or "—")
+
+    @property
+    def needs_writer_reply(self) -> bool:
+        return self.notice_type in self.WRITER_REPLY_TYPES
+
+    @property
+    def needs_billing(self) -> bool:
+        return self.notice_type in self.BILLING_TYPES
+
+    @property
+    def uploader_display(self) -> str:
+        from app.case_trace import display_trace
+
+        return display_trace(self.uploaded_by, self.uploaded_by_label)
+
+    @property
+    def forwarded_to_display(self) -> str:
+        from app.case_trace import display_trace
+
+        return display_trace(self.forwarded_to, self.forwarded_to_label)
+
+
+class CaseCollection(db.Model):
+    """收账记录：一案多笔；缴费通知转交后生成，业务交证明，流程按笔确认。"""
+
+    __tablename__ = "case_collections"
+    __table_args__ = (db.UniqueConstraint("notice_id", name="uq_case_collections_notice_id"),)
+
+    STATUS_PENDING_PROOF = "pending_proof"
+    STATUS_PENDING_CONFIRM = "pending_confirm"
+    STATUS_CONFIRMED = "confirmed"
+    STATUS_REJECTED = "rejected"
+    STATUSES = frozenset(
+        {STATUS_PENDING_PROOF, STATUS_PENDING_CONFIRM, STATUS_CONFIRMED, STATUS_REJECTED}
+    )
+    STATUS_LABELS = {
+        STATUS_PENDING_PROOF: "待交证明",
+        STATUS_PENDING_CONFIRM: "待流程确认",
+        STATUS_CONFIRMED: "已确认",
+        STATUS_REJECTED: "已打回",
+    }
+
+    id = db.Column(db.Integer, primary_key=True)
+    case_id = db.Column(db.Integer, db.ForeignKey("cases.id"), nullable=False, index=True)
+    notice_id = db.Column(db.Integer, db.ForeignKey("official_notices.id"), nullable=True, index=True)
+    amount = db.Column(db.Numeric(12, 2), nullable=True)
+    note = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(32), nullable=False, default=STATUS_PENDING_PROOF, index=True)
+    submitted_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    submitted_by_label = db.Column(db.String(120), nullable=True)
+    submitted_at = db.Column(db.DateTime, nullable=True)
+    confirmed_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    confirmed_by_label = db.Column(db.String(120), nullable=True)
+    confirmed_at = db.Column(db.DateTime, nullable=True)
+    reject_note = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    case = db.relationship("Case", back_populates="collections")
+    notice = db.relationship("OfficialNotice", back_populates="collection")
+    submitted_by = db.relationship("User", foreign_keys=[submitted_by_id])
+    confirmed_by = db.relationship("User", foreign_keys=[confirmed_by_id])
+    proofs = db.relationship(
+        "CaseCollectionProof",
+        back_populates="collection",
+        cascade="all, delete-orphan",
+        order_by="CaseCollectionProof.created_at.desc()",
+    )
+
+    @property
+    def status_label(self) -> str:
+        return self.STATUS_LABELS.get(self.status, self.status or "—")
+
+    @property
+    def amount_display(self) -> str:
+        if self.amount is None:
+            return "—"
+        return f"{self.amount:.2f}"
+
+    @property
+    def submitted_by_display(self) -> str:
+        from app.case_trace import display_trace
+
+        return display_trace(self.submitted_by, self.submitted_by_label)
+
+    @property
+    def confirmed_by_display(self) -> str:
+        from app.case_trace import display_trace
+
+        return display_trace(self.confirmed_by, self.confirmed_by_label)
+
+    @property
+    def is_open(self) -> bool:
+        return self.status != self.STATUS_CONFIRMED
+
+
+class CaseCollectionProof(db.Model):
+    """收账证明文件：与撰写材料分开存，撰写师不可见。"""
+
+    __tablename__ = "case_collection_proofs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    collection_id = db.Column(db.Integer, db.ForeignKey("case_collections.id"), nullable=False, index=True)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    uploaded_by_label = db.Column(db.String(120), nullable=True)
+    original_name = db.Column(db.String(255), nullable=False)
+    stored_name = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    note = db.Column(db.String(200), nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    collection = db.relationship("CaseCollection", back_populates="proofs")
+    uploaded_by = db.relationship("User", foreign_keys=[uploaded_by_id])
+
+    @property
+    def uploader_display(self) -> str:
+        from app.case_trace import display_trace
+
+        return display_trace(self.uploaded_by, self.uploaded_by_label)
+
+
+class StaffDocument(db.Model):
+    """所内资料库：仅管理员上传；按员工职能控制可见范围。与案件材料分开存。"""
+
+    __tablename__ = "staff_documents"
+
+    AUDIENCE_ALL = "all"
+    AUDIENCES = frozenset({"all", "writer", "process", "business"})
+    AUDIENCE_LABELS = {
+        "all": "全部员工",
+        "writer": "仅撰写师",
+        "process": "仅流程人员",
+        "business": "仅业务人员",
+    }
+    AUDIENCE_CHOICES = (
+        ("all", "全部员工"),
+        ("writer", "仅撰写师"),
+        ("process", "仅流程人员"),
+        ("business", "仅业务人员"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    note = db.Column(db.Text, nullable=True)
+    original_name = db.Column(db.String(255), nullable=False)
+    stored_name = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    audience = db.Column(db.String(20), nullable=False, default="all", index=True)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    uploaded_by_label = db.Column(db.String(120), nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    uploaded_by = db.relationship("User", foreign_keys=[uploaded_by_id])
+
+    @classmethod
+    def normalize_audience(cls, raw: str | None) -> str | None:
+        value = (raw or "").strip()
+        if value in cls.AUDIENCES:
+            return value
+        return None
+
+    @property
+    def audience_label(self) -> str:
+        return self.AUDIENCE_LABELS.get(self.audience, self.audience or "—")
+
+    @property
+    def uploader_display(self) -> str:
+        from app.case_trace import display_trace
+
+        return display_trace(self.uploaded_by, self.uploaded_by_label)
+
+    def visible_to_function(self, staff_function: str | None) -> bool:
+        if self.audience == self.AUDIENCE_ALL:
+            return True
+        function = User.normalize_staff_function(staff_function)
+        return self.audience == function
+
+
 class User(UserMixin, db.Model):
     """系统用户：角色由 `role` 区分；客户端账号通过 `customer_id` 绑定客户。"""
 
@@ -513,6 +779,30 @@ class User(UserMixin, db.Model):
             self.role == "staff"
             and bool(active)
             and self.staff_function_normalized == self.STAFF_FUNCTION_WRITER
+        )
+
+    @property
+    def is_assignable_process(self) -> bool:
+        """流程负责人仅含在职流程人员；撰写师、业务人员不能指定为流程跟进。"""
+        active = getattr(self, "is_active", True)
+        if active is None:
+            active = True
+        return (
+            self.role == "staff"
+            and bool(active)
+            and self.staff_function_normalized == self.STAFF_FUNCTION_PROCESS
+        )
+
+    @property
+    def is_assignable_billing(self) -> bool:
+        """收账负责人仅含在职业务人员；撰写师、流程人员不能指定为收账。"""
+        active = getattr(self, "is_active", True)
+        if active is None:
+            active = True
+        return (
+            self.role == "staff"
+            and bool(active)
+            and self.staff_function_normalized == self.STAFF_FUNCTION_BUSINESS
         )
 
     @property

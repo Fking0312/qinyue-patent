@@ -4,7 +4,7 @@
       <div>
         <div class="qy-notification-hero__eyebrow">个人消息中心</div>
         <h1 class="h4 mb-1">{{ greeting }}，{{ current_user.username }}</h1>
-        <p class="mb-0">{% if current_user.staff_function_normalized == 'business' %}下单确认结果会显示在这里。{% else %}案件进展、审核结果与待办事项，都为您整理在这里。{% endif %}</p>
+        <p class="mb-0">{% if current_user.staff_function_normalized == 'business' %}下单确认结果会显示在这里。{% elif current_user.staff_function_normalized == 'process' %}管理员指定你跟进的案件会显示在这里。{% else %}案件进展、审核结果与待办事项，都为您整理在这里。{% endif %}</p>
       </div>
       {% if unread_count %}
       <form method="post" action="{{ url_for('staff.notifications_read_all') }}">
@@ -20,19 +20,16 @@
         <span>未读消息</span><strong>{{ unread_count }}</strong><small>需要您关注的新动态</small>
       </a>
       <a href="{{ url_for('staff.notifications', status='actionable', type='all') }}" data-spa-endpoint="staff.notifications" class="qy-notification-summary-card">
-        <span>待处理</span><strong>{{ actionable_count }}</strong><small>{% if current_user.staff_function_normalized == 'business' %}下单被打回，需要修改后再提交{% else %}新分配与审核打回{% endif %}</small>
+        <span>待处理</span><strong>{{ actionable_count }}</strong><small>{% if current_user.staff_function_normalized == 'business' %}下单被打回，需要修改后再提交{% elif current_user.staff_function_normalized == 'process' %}新指定给你跟进的案件{% else %}新分配、审核打回与官方来文{% endif %}</small>
       </a>
       <a href="{{ url_for('staff.notifications', status='all', type='all') }}" data-spa-endpoint="staff.notifications" class="qy-notification-summary-card">
-        <span>今日动态</span><strong>{{ today_count }}</strong><small>{% if current_user.staff_function_normalized == 'business' %}今天收到的下单消息{% else %}今天收到的案件消息{% endif %}</small>
+        <span>今日动态</span><strong>{{ today_count }}</strong><small>{% if current_user.staff_function_normalized == 'business' %}今天收到的下单消息{% elif current_user.staff_function_normalized == 'process' %}今天收到的指定消息{% else %}今天收到的案件消息{% endif %}</small>
       </a>
     </div>
   </section>
 
   <header class="d-flex flex-wrap align-items-center justify-content-between gap-2 pb-3 mb-3 border-bottom border-secondary-subtle">
-    <div>
-      <h2 class="h6 mb-1 staff-page-title">消息动态</h2>
-      <div class="small text-muted">按时间和处理状态快速定位消息</div>
-    </div>
+    <h2 class="h6 mb-0 staff-page-title">消息动态</h2>
     {% from "macros/staff_notification.html" import staff_notification_filters %}
     {{ staff_notification_filters(status_filter, type_filter, unread_count, actionable_count, action_counts, current_user) }}
   </header>
@@ -76,13 +73,17 @@
       <div class="small text-muted mb-3">
         {% if current_user.staff_function_normalized == 'business' %}
           {% if status_filter == 'actionable' %}目前没有需要处理的下单打回。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}管理员确认或打回下单后，消息会显示在这里。{% endif %}
+        {% elif current_user.staff_function_normalized == 'process' %}
+          {% if status_filter == 'actionable' %}目前没有需要核对的材料。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}撰写师提交材料或管理员指定你跟进后，消息会显示在这里。{% endif %}
         {% else %}
-          {% if status_filter == 'actionable' %}目前没有需要处理的消息，工作节奏很好。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}案件分配、审核通过或打回后，提醒会显示在这里。{% endif %}
+          {% if status_filter == 'actionable' %}目前没有需要处理的消息，工作节奏很好。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}案件分配、流程核对或终审结果会显示在这里。{% endif %}
         {% endif %}
       </div>
       <div class="d-flex flex-wrap justify-content-center gap-2">
         {% if current_user.staff_function_normalized == 'business' %}
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.business_orders') }}" data-spa-endpoint="staff.business_orders">去下单</a>
+        {% elif current_user.staff_function_normalized == 'process' %}
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.process_followup') }}" data-spa-endpoint="staff.process_followup">去跟进案件</a>
         {% else %}
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.case_detail') }}" data-spa-endpoint="staff.case_detail">去案件列表</a>
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('staff.task_board') }}" data-spa-endpoint="staff.task_board">去任务看板</a>

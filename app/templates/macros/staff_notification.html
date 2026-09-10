@@ -1,5 +1,7 @@
 {% macro staff_notification_filters(status_filter, type_filter, unread_count, actionable_count, action_counts, current_user) -%}
-{% set is_business = current_user.staff_function_normalized == 'business' %}
+{% set staff_fn = current_user.staff_function_normalized %}
+{% set is_business = staff_fn == 'business' %}
+{% set is_process = staff_fn == 'process' %}
 <div class="d-flex flex-wrap align-items-center gap-2">
   <div class="qy-notification-filter-tabs" role="group" aria-label="通知状态筛选">
     <a class="{% if status_filter == 'all' %}is-active{% endif %}" href="{{ url_for('staff.notifications', status='all', type=type_filter) }}" data-spa-endpoint="staff.notifications">全部</a>
@@ -13,9 +15,11 @@
   <div class="dropdown">
     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
       {% if is_business %}
-        {% if type_filter == 'intake_approve' %}下单通过{% elif type_filter == 'intake_reject' %}下单打回{% else %}全部类型{% endif %}
+        {% if type_filter == 'intake_approve' %}下单通过{% elif type_filter == 'intake_reject' %}下单打回{% elif type_filter == 'official' %}缴费通知{% elif type_filter == 'billing_assigned' %}指定收账{% elif type_filter == 'collection' %}收账打回{% else %}全部类型{% endif %}
+      {% elif is_process %}
+        {% if type_filter == 'process_assigned' %}指定跟进{% elif type_filter == 'submit_for_review' %}材料提交{% elif type_filter == 'collection' %}收账确认{% else %}全部类型{% endif %}
       {% else %}
-        {% if type_filter == 'assigned' %}案件分配{% elif type_filter == 'approve' %}审核通过{% elif type_filter == 'reject' %}审核打回{% else %}全部类型{% endif %}
+        {% if type_filter == 'assigned' %}案件分配{% elif type_filter == 'approve' %}通过{% elif type_filter == 'reject' %}打回{% elif type_filter == 'official' %}官方来文{% else %}全部类型{% endif %}
       {% endif %}
     </button>
     <ul class="dropdown-menu dropdown-menu-end">
@@ -23,10 +27,18 @@
       {% if is_business %}
       <li><a class="dropdown-item {% if type_filter == 'intake_approve' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='intake_approve') }}" data-spa-endpoint="staff.notifications">下单通过 <span class="text-muted ms-1">{{ action_counts.intake_approve }}</span></a></li>
       <li><a class="dropdown-item {% if type_filter == 'intake_reject' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='intake_reject') }}" data-spa-endpoint="staff.notifications">下单打回 <span class="text-muted ms-1">{{ action_counts.intake_reject }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'billing_assigned' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='billing_assigned') }}" data-spa-endpoint="staff.notifications">指定收账 <span class="text-muted ms-1">{{ action_counts.billing_assigned|default(0) }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'official' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='official') }}" data-spa-endpoint="staff.notifications">缴费通知 <span class="text-muted ms-1">{{ (action_counts.official_forward|default(0)) + (action_counts.official_urge|default(0)) }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'collection' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='collection') }}" data-spa-endpoint="staff.notifications">收账打回 <span class="text-muted ms-1">{{ action_counts.collection_reject|default(0) }}</span></a></li>
+      {% elif is_process %}
+      <li><a class="dropdown-item {% if type_filter == 'process_assigned' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='process_assigned') }}" data-spa-endpoint="staff.notifications">指定跟进 <span class="text-muted ms-1">{{ action_counts.process_assigned }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'submit_for_review' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='submit_for_review') }}" data-spa-endpoint="staff.notifications">材料提交 <span class="text-muted ms-1">{{ action_counts.submit_for_review + (action_counts.writing_revised|default(0)) }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'collection' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='collection') }}" data-spa-endpoint="staff.notifications">收账确认 <span class="text-muted ms-1">{{ action_counts.collection_submit|default(0) }}</span></a></li>
       {% else %}
       <li><a class="dropdown-item {% if type_filter == 'assigned' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='assigned') }}" data-spa-endpoint="staff.notifications">案件分配 <span class="text-muted ms-1">{{ action_counts.assigned }}</span></a></li>
-      <li><a class="dropdown-item {% if type_filter == 'approve' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='approve') }}" data-spa-endpoint="staff.notifications">审核通过 <span class="text-muted ms-1">{{ action_counts.approve }}</span></a></li>
-      <li><a class="dropdown-item {% if type_filter == 'reject' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='reject') }}" data-spa-endpoint="staff.notifications">审核打回 <span class="text-muted ms-1">{{ action_counts.reject }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'approve' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='approve') }}" data-spa-endpoint="staff.notifications">通过 <span class="text-muted ms-1">{{ action_counts.approve }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'reject' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='reject') }}" data-spa-endpoint="staff.notifications">打回 <span class="text-muted ms-1">{{ action_counts.reject }}</span></a></li>
+      <li><a class="dropdown-item {% if type_filter == 'official' %}active{% endif %}" href="{{ url_for('staff.notifications', status=status_filter, type='official') }}" data-spa-endpoint="staff.notifications">官方来文 <span class="text-muted ms-1">{{ action_counts.official_forward + action_counts.official_urge }}</span></a></li>
       {% endif %}
     </ul>
   </div>
@@ -34,20 +46,48 @@
 {%- endmacro %}
 
 {% macro staff_notification_item(notification, current_user) -%}
-  {% set is_business = current_user.staff_function_normalized == 'business' %}
+  {% set staff_fn = current_user.staff_function_normalized %}
+  {% set is_business = staff_fn == 'business' %}
+  {% set is_process = staff_fn == 'process' %}
   {% if notification.action == "assigned" %}
     {% set tone = "primary" %}{% set icon = "folder" %}{% set label = "新案件已分配" %}
   {% elif notification.action == "approve" %}
-    {% set tone = "success" %}{% set icon = "check" %}{% set label = "案件审核已通过" %}
+    {% set tone = "success" %}{% set icon = "check" %}{% set label = "终审已通过" %}
+  {% elif notification.action == "process_accept" %}
+    {% set tone = "success" %}{% set icon = "check" %}{% set label = "流程已确认材料" %}
+  {% elif notification.action == "process_filed" %}
+    {% set tone = "success" %}{% set icon = "check" %}{% set label = "已递交官方" %}
+  {% elif notification.action == "submit_for_review" %}
+    {% set tone = "primary" %}{% set icon = "folder" %}{% set label = "改正材料已提交" if notification.note and "改正" in notification.note else "撰写材料已提交" %}
+  {% elif notification.action == "writing_revised" %}
+    {% set tone = "primary" %}{% set icon = "folder" %}{% set label = "撰写师已上传改正材料" %}
+  {% elif notification.action == "process_reject" %}
+    {% set tone = "danger" %}{% set icon = "alert" %}{% set label = "流程打回材料" %}
   {% elif notification.action == "intake_approve" %}
     {% set tone = "success" %}{% set icon = "check" %}{% set label = "下单已确认" %}
   {% elif notification.action == "intake_reject" %}
     {% set tone = "danger" %}{% set icon = "alert" %}{% set label = "下单被打回" %}
+  {% elif notification.action == "official_forward" %}
+    {% set tone = "warning" %}{% set icon = "folder" %}{% set label = "官方来文已转交" %}
+  {% elif notification.action == "official_urge" %}
+    {% set tone = "danger" %}{% set icon = "alert" %}{% set label = "催办：请查收官方来文" %}
+  {% elif notification.action == "process_assigned" %}
+    {% set tone = "primary" %}{% set icon = "folder" %}{% set label = "已指定你跟进" %}
+  {% elif notification.action == "billing_assigned" %}
+    {% set tone = "primary" %}{% set icon = "folder" %}{% set label = "已指定你收账" %}
+  {% elif notification.action == "collection_submit" %}
+    {% set tone = "primary" %}{% set icon = "folder" %}{% set label = "收款证明已提交" %}
+  {% elif notification.action == "collection_ok" %}
+    {% set tone = "success" %}{% set icon = "check" %}{% set label = "收款已确认" %}
+  {% elif notification.action == "collection_reject" %}
+    {% set tone = "danger" %}{% set icon = "alert" %}{% set label = "收账被打回" %}
   {% else %}
     {% set tone = "danger" %}{% set icon = "alert" %}{% set label = "案件审核被打回" %}
   {% endif %}
   {% if is_business %}
-    {% set can_open = notification.action in ("intake_approve", "intake_reject") %}
+    {% set can_open = notification.action in ("intake_approve", "intake_reject", "billing_assigned", "official_forward", "official_urge", "collection_reject", "collection_ok") %}
+  {% elif is_process %}
+    {% set can_open = notification.action in ("process_assigned", "submit_for_review", "writing_revised", "collection_submit") and notification.case.process_owner_id == current_user.id %}
   {% else %}
     {% set can_open = notification.case.task and notification.case.task.assignee_id == current_user.id %}
   {% endif %}
@@ -80,11 +120,41 @@
         {% if notification.action == "assigned" %}
         <div class="small text-body-secondary mt-1">您好，新的案件已由管理员分配给您，请及时查看案件要求与返稿期限。</div>
         {% elif notification.action == "approve" %}
-        <div class="small text-success-emphasis mt-1">您的撰写材料已通过审核，案件现已进入待递交阶段。</div>
+        <div class="small text-success-emphasis mt-1">管理员终审已通过，本案已办结。</div>
+        {% elif notification.action == "process_accept" %}
+        <div class="small text-success-emphasis mt-1">流程人员已确认你的撰写材料，案件进入待递交官方。</div>
+        {% elif notification.action == "process_filed" %}
+        <div class="small text-success-emphasis mt-1">流程人员已向官方递交材料，请等待官方来文。</div>
+        {% elif notification.action == "submit_for_review" %}
+        <div class="small text-body-secondary mt-1">{% if notification.note and "改正" in notification.note %}撰写师已提交改正材料，请核对后递交官方或打回修改。{% else %}撰写师已提交材料，请核对后递交官方或打回修改。{% endif %}</div>
+        {% if notification.note %}
+        <div class="small text-body mt-1">{{ notification.note }}</div>
+        {% endif %}
+        {% elif notification.action == "writing_revised" %}
+        <div class="small text-body-secondary mt-1">撰写师已上传改正材料，请关注文件备注；撰写师提交核对后即可确认。</div>
+        {% if notification.note %}
+        <div class="small text-body mt-1">{{ notification.note }}</div>
+        {% endif %}
+        {% elif notification.action == "process_reject" %}
+        <div class="small text-danger-emphasis mt-1"><span class="fw-semibold">打回原因：</span>{{ notification.note or "流程人员未填写打回原因" }}</div>
         {% elif notification.action == "intake_approve" %}
-        <div class="small text-success-emphasis mt-1">管理员已确认您提交的下单，案件进入待分配。</div>
+        <div class="small text-success-emphasis mt-1">管理员已确认您提交的下单，并已指定撰写师与流程人员。</div>
         {% elif notification.action == "intake_reject" %}
         <div class="small text-danger-emphasis mt-1"><span class="fw-semibold">打回原因：</span>{{ notification.note or "管理员未填写打回原因" }}</div>
+        {% elif notification.action == "official_forward" %}
+        <div class="small text-warning-emphasis mt-1">流程人员已将「{{ notification.note or "官方来文" }}」转交给您，请下载查收。</div>
+        {% elif notification.action == "official_urge" %}
+        <div class="small text-danger-emphasis mt-1">流程人员催办：请尽快下载「{{ notification.note or "官方来文" }}」。</div>
+        {% elif notification.action == "process_assigned" %}
+        <div class="small text-body-secondary mt-1">管理员已指定你为本案流程人员，请及时跟进官方来文。</div>
+        {% elif notification.action == "billing_assigned" %}
+        <div class="small text-body-secondary mt-1">管理员已指定你为本案收账人员，缴费通知转交后请下载并提交收款证明。</div>
+        {% elif notification.action == "collection_submit" %}
+        <div class="small text-body-secondary mt-1">业务人员已提交「{{ notification.note or "收款证明" }}」，请按笔确认或打回。</div>
+        {% elif notification.action == "collection_ok" %}
+        <div class="small text-success-emphasis mt-1">流程人员已确认「{{ notification.note or "收款" }}」。</div>
+        {% elif notification.action == "collection_reject" %}
+        <div class="small text-danger-emphasis mt-1"><span class="fw-semibold">打回原因：</span>{{ notification.note or "流程人员未填写打回原因" }}</div>
         {% else %}
         <div class="small text-danger-emphasis mt-1"><span class="fw-semibold">打回原因：</span>{{ notification.note or "管理员未填写打回原因" }}</div>
         {% endif %}
@@ -98,7 +168,7 @@
       </div>
       <div class="flex-shrink-0 qy-notification-item__action">
         {% if can_open %}
-        <span class="btn btn-sm btn-outline-{{ tone }}">{% if notification.action == "intake_reject" %}去修改{% elif is_business %}去下单{% elif notification.action == "reject" %}立即修改{% else %}查看案件{% endif %}</span>
+        <span class="btn btn-sm btn-outline-{{ tone }}">{% if notification.action == "intake_reject" %}去修改{% elif is_business and notification.action in ("billing_assigned", "official_forward", "official_urge", "collection_reject", "collection_ok") %}去收账{% elif is_business %}去下单{% elif is_process and notification.action == "submit_for_review" %}去核对{% elif is_process and notification.action == "writing_revised" %}去查看{% elif is_process and notification.action == "collection_submit" %}去确认{% elif is_process %}去跟进{% elif notification.action in ("official_forward", "official_urge") %}查看官文{% elif notification.action in ("reject", "process_reject") %}立即修改{% else %}查看案件{% endif %}</span>
         {% else %}
         <span class="badge rounded-pill text-bg-secondary">已转派</span>
         {% endif %}

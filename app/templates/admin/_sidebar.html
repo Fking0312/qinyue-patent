@@ -49,7 +49,7 @@
           class="qy-review-unread-badge {% if not review_nav_unread %}d-none{% endif %}"
           data-review-unread-badge
           data-status-url="{{ url_for('admin.review_quality_status') }}"
-          aria-label="待审核案件 {{ review_nav_unread or 0 }} 件"
+          aria-label="待终审案件 {{ review_nav_unread or 0 }} 件"
         >{{ review_nav_unread or 0 }}</span>
         <svg class="staff-nav-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </span>
@@ -77,7 +77,7 @@
             class="qy-review-unread-badge {% if not review_nav_unread %}d-none{% endif %}"
             data-review-unread-badge
             data-status-url="{{ url_for('admin.review_quality_status') }}"
-            aria-label="待审核案件 {{ review_nav_unread or 0 }} 件"
+            aria-label="待终审案件 {{ review_nav_unread or 0 }} 件"
           >{{ review_nav_unread or 0 }}</span>
           {% elif item.endpoint == "admin.order_intake" %}
           <span
@@ -105,12 +105,14 @@
     {"id": "adminNavDispatch", "title": "任务分派与监控", "tooltip": "任务分派与监控", "icon": "dispatch", "items": [
       {"endpoint": "admin.task_board", "title": "任务看板"},
       {"endpoint": "admin.smart_assignment", "title": "智能派单"},
+      {"endpoint": "admin.process_assignment", "title": "指定流程人员"},
+      {"endpoint": "admin.billing_assignment", "title": "指定收账人员"},
       {"endpoint": "admin.order_intake", "title": "下单待确认"},
       {"endpoint": "admin.flow_map", "title": "案件统计"},
       {"endpoint": "admin.overtime_warning", "title": "超时预警看板"},
     ]},
     {"id": "adminNavQa", "title": "审核与质检", "tooltip": "审核与质检", "icon": "qa", "items": [
-      {"endpoint": "admin.review_quality", "title": "多级审核"},
+      {"endpoint": "admin.review_quality", "title": "终审"},
       {"endpoint": "admin.statutory_deadline", "title": "官方期限管理"},
     ]},
     {"id": "adminNavFee", "title": "费用与官文", "tooltip": "费用与官文", "icon": "fee", "items": [
@@ -124,6 +126,7 @@
     ]},
     {"id": "adminNavConfig", "title": "系统配置", "tooltip": "系统配置", "icon": "config", "items": [
       {"endpoint": "admin.accounts", "title": "账号分发"},
+      {"endpoint": "admin.staff_docs", "title": "内部资料库"},
       {"endpoint": "admin.role_permissions", "title": "角色权限"},
       {"endpoint": "admin.notification_templates", "title": "通知书模板"},
     ]},

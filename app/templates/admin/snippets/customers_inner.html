@@ -1,7 +1,6 @@
 <div class="staff-page-inner staff-page-inner--admin qy-admin-page qy-customers-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
   <header class="qy-admin-page-header pb-3 mb-3 mb-md-4 border-bottom border-secondary-subtle">
-    <h1 class="h4 mb-1 staff-page-title">{{ page_title }}</h1>
-    <p class="text-muted small mb-0">{{ page_desc }}</p>
+    <h1 class="h4 mb-0 staff-page-title">{{ page_title }}</h1>
   </header>
 
   <section class="qy-admin-section qy-admin-section--filter mb-3 mb-md-4" aria-labelledby="qy-customers-filter-heading">
@@ -95,7 +94,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <fieldset class="mb-4">
               <legend class="form-label fw-semibold text-secondary small text-uppercase mb-3">基本信息</legend>
-              <div class="row g-3">
+              <div class="row g-3 qy-form-grid">
                 <div class="col-md-6">
                   <label class="form-label" for="qyModalCustomerName">客户名称 <span class="text-danger">*</span></label>
                   <input
@@ -357,7 +356,7 @@
   </div>
   </section>
 
-  <div class="modal fade" id="qyCustomerBulkDeleteModal" tabindex="-1" aria-labelledby="qyCustomerBulkDeleteModalLabel" aria-hidden="true">
+  <div class="modal fade qy-app-confirm" id="qyCustomerBulkDeleteModal" tabindex="-1" aria-labelledby="qyCustomerBulkDeleteModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">

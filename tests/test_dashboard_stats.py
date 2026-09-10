@@ -37,7 +37,7 @@ def test_admin_dashboard_renders_stat_cards():
         db.session.flush()
         db.session.add_all(
             [
-                Task(case_id=pending_case.id, phase_status=TaskPhase.PENDING_REVIEW),
+                Task(case_id=pending_case.id, phase_status=TaskPhase.PENDING_FINAL_REVIEW),
                 Task(case_id=unassigned_case.id, phase_status=TaskPhase.PENDING_ASSIGNMENT),
             ]
         )
@@ -48,14 +48,16 @@ def test_admin_dashboard_renders_stat_cards():
     client.post("/auth/login", data={"username": admin_name, "password": "secret"})
     page = client.get("/admin/dashboard")
     assert page.status_code == 200
-    assert "待审核".encode() in page.data
+    assert "待终审".encode() in page.data
     assert "下单待确认".encode() in page.data
     assert "本月新建".encode() in page.data
     assert "已超期".encode() in page.data
     assert "待分配".encode() in page.data
+    assert "待指定流程".encode() in page.data
     assert b"qy-dash-stat-card" in page.data
     assert b'data-spa-endpoint="admin.review_quality"' in page.data
     assert b'data-spa-endpoint="admin.order_intake"' in page.data
+    assert b'data-spa-endpoint="admin.process_assignment"' in page.data
     assert "期限提醒".encode("utf-8") in page.data
 
 
@@ -97,9 +99,37 @@ def test_staff_dashboard_renders_stat_cards():
     page = client.get("/staff/dashboard")
     assert page.status_code == 200
     assert "撰写中".encode() in page.data
-    assert "待审核".encode() in page.data
+    assert "待流程核对".encode() in page.data
     assert "未读消息".encode() in page.data
     assert "期限关注".encode() in page.data
     assert b"qy-dash-stat-card" in page.data
     assert b'data-spa-endpoint="staff.task_board"' in page.data
+    assert b'data-spa-endpoint="staff.notifications"' in page.data
+
+
+def test_process_dashboard_renders_official_notice_stat_cards():
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        process = User(
+            username=f"_dash_proc_{suffix}",
+            role="staff",
+            staff_function=User.STAFF_FUNCTION_PROCESS,
+        )
+        process.set_password("secret")
+        db.session.add(process)
+        db.session.commit()
+        process_name = process.username
+
+    client = app.test_client()
+    client.post("/auth/login", data={"username": process_name, "password": "secret"})
+    page = client.get("/staff/process-dashboard")
+    assert page.status_code == 200
+    assert "待核对".encode() in page.data
+    assert "未接收".encode() in page.data
+    assert "待递交".encode() in page.data
+    assert "马上处理".encode() in page.data
+    assert "消息中心".encode() in page.data
+    assert b"qy-dash-stat-card" in page.data
+    assert b'data-spa-endpoint="staff.process_followup"' in page.data
     assert b'data-spa-endpoint="staff.notifications"' in page.data

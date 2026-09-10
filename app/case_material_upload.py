@@ -103,6 +103,53 @@ def _safe_display_filename(raw_basename: str) -> str:
     return cleaned[:255] if cleaned else ""
 
 
+def persist_uploaded_file(
+    target_dir: Path,
+    file_storage: FileStorage | None,
+) -> tuple[str | None, str | None, str | None]:
+    """校验扩展名与大小后写入目录。成功返回 (展示名, 存储名, None)，失败 (None, None, 中文说明)。"""
+    if file_storage is None:
+        return None, None, "请选择要上传的文件。"
+    raw_name = (file_storage.filename or "").strip()
+    if not raw_name:
+        return None, None, "请选择要上传的文件。"
+
+    raw_basename = raw_name.replace("\\", "/").rsplit("/", 1)[-1]
+    if "." not in raw_basename:
+        return None, None, "请上传带扩展名的文件（如 .pdf、.docx）。"
+
+    ext = raw_basename.rsplit(".", 1)[-1].lower()
+    if ext not in ALLOWED_MATERIAL_EXTENSIONS:
+        return None, None, "该文件类型不允许上传，请使用 pdf、Office 文档或常见图片/压缩包格式。"
+
+    display_name = _safe_display_filename(raw_basename)
+    if not display_name or "." not in display_name:
+        display_name = f"upload.{ext}"
+
+    stored_base = secure_filename(raw_basename.rsplit(".", 1)[0]) or "upload"
+    suffix = uuid4().hex[:8]
+    final_name = f"{stored_base}_{suffix}.{ext}"
+
+    max_bytes = int(current_app.config.get("CASE_MATERIAL_MAX_FILE_BYTES") or (25 * 1024 * 1024))
+    try:
+        sz = _file_stream_size(file_storage)
+    except OSError:
+        return None, None, "无法读取上传文件，请重试。"
+    if sz <= 0:
+        return None, None, "文件为空或无法读取，请重试。"
+    if sz > max_bytes:
+        mb = max(1, max_bytes // (1024 * 1024))
+        return None, None, f"单个文件不得超过 {mb} MB。"
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        file_storage.stream.seek(0)
+        file_storage.save(target_dir / final_name)
+    except OSError:
+        return None, None, "保存文件失败，请稍后重试。"
+    return display_name, final_name, None
+
+
 def save_case_material_upload(
     case_id: int,
     file_storage: FileStorage,
@@ -114,48 +161,10 @@ def save_case_material_upload(
     校验并保存案件材料。
     成功返回 (material, None)；失败返回 (None, 简短中文说明供 Toast 使用)。
     """
-    if file_storage is None:
-        return None, "请选择要上传的文件。"
-    raw_name = (file_storage.filename or "").strip()
-    if not raw_name:
-        return None, "请选择要上传的文件。"
-
-    raw_basename = raw_name.replace("\\", "/").rsplit("/", 1)[-1]
-    if "." not in raw_basename:
-        return None, "请上传带扩展名的文件（如 .pdf、.docx）。"
-
-    ext = raw_basename.rsplit(".", 1)[-1].lower()
-    if ext not in ALLOWED_MATERIAL_EXTENSIONS:
-        return None, "该文件类型不允许上传，请使用 pdf、Office 文档或常见图片/压缩包格式。"
-
-    display_name = _safe_display_filename(raw_basename)
-    if not display_name or "." not in display_name:
-        display_name = f"upload.{ext}"
-
-    # 磁盘存储名仅用 ASCII，避免中文路径兼容问题；展示名仍保留中文。
-    stored_base = secure_filename(raw_basename.rsplit(".", 1)[0]) or "upload"
-    suffix = uuid4().hex[:8]
-    final_name = f"{stored_base}_{suffix}.{ext}"
-
-    max_bytes = int(current_app.config.get("CASE_MATERIAL_MAX_FILE_BYTES") or (25 * 1024 * 1024))
-    try:
-        sz = _file_stream_size(file_storage)
-    except OSError:
-        return None, "无法读取上传文件，请重试。"
-    if sz <= 0:
-        return None, "文件为空或无法读取，请重试。"
-    if sz > max_bytes:
-        mb = max(1, max_bytes // (1024 * 1024))
-        return None, f"单个文件不得超过 {mb} MB。"
-
     target_dir = case_material_dir(case_id)
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        file_storage.stream.seek(0)
-        file_storage.save(target_dir / final_name)
-    except OSError:
-        return None, "保存文件失败，请稍后重试。"
+    display_name, final_name, error = persist_uploaded_file(target_dir, file_storage)
+    if error or not display_name or not final_name:
+        return None, error or "请选择要上传的文件。"
 
     material = CaseMaterial(
         case_id=case_id,
@@ -178,3 +187,16 @@ def save_case_material_upload(
             pass
         return None, "保存附件记录失败，请稍后重试。"
     return material, None
+
+
+def user_may_download_case_material(user: User, case) -> bool:
+    """撰写师下自己承办的案件材料；本案流程负责人也可下载以便核对后交局。"""
+    if user is None or getattr(user, "role", None) != "staff":
+        return False
+    function = user.staff_function_normalized
+    if function == User.STAFF_FUNCTION_WRITER:
+        task = case.task if case is not None else None
+        return task is not None and task.assignee_id == user.id
+    if function == User.STAFF_FUNCTION_PROCESS:
+        return case is not None and case.process_owner_id == user.id
+    return False

@@ -1,4 +1,4 @@
-{% from "admin/macros/staff_kind.html" import staff_kind_badge %}
+{% from "admin/macros/staff_kind.html" import staff_kind_badge, staff_kind_optgroups %}
 {% from "macros/case_type.html" import case_type_badges %}
 {% from "macros/task_phase.html" import task_phase_badge %}
 {% from "macros/page_header.html" import page_header %}
@@ -85,6 +85,14 @@
                 <span>{% if case.business_owner_user or case.business_owner_label %}{{ trace_person(case.business_owner_user, case.business_owner_label) }}{% else %}—{% endif %}</span>
                 {{ staff_kind_badge(case.business_owner_user) }}
               </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-muted small mb-1">流程人员</div>
+              <div>{% if case.process_owner_user or case.process_owner_label %}{{ trace_person(case.process_owner_user, case.process_owner_label) }}{% else %}—{% endif %}</div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-muted small mb-1">收账人员</div>
+              <div>{% if case.billing_owner_user or case.billing_owner_label %}{{ trace_person(case.billing_owner_user, case.billing_owner_label) }}{% else %}—{% endif %}</div>
             </div>
             <div class="col-md-3">
               <div class="text-muted small mb-1">下单人</div>
@@ -202,7 +210,7 @@
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="form_action" value="delete_material">
                       <input type="hidden" name="material_id" value="{{ file_item.id }}">
-                      <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('确认删除该材料？')">删除</button>
+                      <button class="btn btn-sm btn-outline-danger" type="submit" data-qy-confirm="删除材料" data-qy-confirm-text="删除后无法从本页恢复，请确认这份文件不再需要。" data-qy-confirm-ok="确认删除" data-qy-confirm-variant="danger">删除</button>
                     </form>
                   </td>
                 </tr>
@@ -259,7 +267,7 @@
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="form_action" value="delete_material">
                       <input type="hidden" name="material_id" value="{{ file_item.id }}">
-                      <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('确认删除该材料？')">删除</button>
+                      <button class="btn btn-sm btn-outline-danger" type="submit" data-qy-confirm="删除材料" data-qy-confirm-text="删除后无法从本页恢复，请确认这份文件不再需要。" data-qy-confirm-ok="确认删除" data-qy-confirm-variant="danger">删除</button>
                     </form>
                   </td>
                 </tr>
@@ -269,6 +277,122 @@
                     <div class="qy-material-empty-state">
                       <div class="fw-semibold mb-1">暂无撰写材料</div>
                       <div class="text-muted small">员工上传后将在此显示；当前可由员工端上传撰写文件。</div>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="fw-semibold mb-2 mt-4">官方来文</div>
+          <p class="text-muted small mb-2">由本案流程人员从专利局系统下载后上传。管理端只读，不能代传。</p>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>种类</th>
+                  <th>文件</th>
+                  <th>官方期限</th>
+                  <th>转交 / 接收</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for notice in official_notices|default([]) %}
+                <tr>
+                  <td>{{ notice.type_label }}</td>
+                  <td>
+                    <div>{{ notice.original_name }}</div>
+                    <div class="small text-muted">{{ notice.uploader_display }} · {{ notice.created_at|qy_format_dt }}</div>
+                  </td>
+                  <td class="text-nowrap small">{{ notice.official_due_at|qy_format_dt if notice.official_due_at else "—" }}</td>
+                  <td class="small">
+                    {% if notice.forwarded_at %}
+                    <div>转交 {{ notice.forwarded_to_display }}</div>
+                    <div class="text-muted">{{ notice.forwarded_at|qy_format_dt }}</div>
+                    {% if notice.received_at %}
+                    <div class="text-success">已接收 {{ notice.received_at|qy_format_dt }}</div>
+                    {% else %}
+                    <div class="text-danger">尚未下载</div>
+                    {% endif %}
+                    {% else %}
+                    <span class="text-muted">未转交</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.official_notice_download', notice_id=notice.id) }}" download="{{ notice.original_name }}">下载</a>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="5" class="p-0">
+                    <div class="qy-material-empty-state">
+                      <div class="fw-semibold mb-1">暂无官方来文</div>
+                      <div class="text-muted small">流程人员在官文跟进页上传后，会显示在这里。</div>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="fw-semibold mb-2 mt-4">收账记录</div>
+          <p class="text-muted small mb-2">缴费通知转交业务人员后，收款证明在这里查看。撰写师看不到这些文件。</p>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>来文</th>
+                  <th>金额</th>
+                  <th>状态</th>
+                  <th>证明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for collection in collections|default([]) %}
+                <tr>
+                  <td>
+                    <div>{{ collection.notice.type_label if collection.notice else "收账" }}</div>
+                    {% if collection.notice %}
+                    <div class="small text-muted">{{ collection.notice.original_name }}</div>
+                    {% endif %}
+                  </td>
+                  <td class="text-nowrap small">{{ collection.amount_display }}</td>
+                  <td class="small">
+                    <div>{{ collection.status_label }}</div>
+                    {% if collection.submitted_at %}
+                    <div class="text-muted">提交 {{ collection.submitted_at|qy_format_dt }}</div>
+                    {% endif %}
+                    {% if collection.confirmed_at %}
+                    <div class="text-success">确认 {{ collection.confirmed_at|qy_format_dt }}</div>
+                    {% endif %}
+                    {% if collection.reject_note %}
+                    <div class="text-danger">打回：{{ collection.reject_note }}</div>
+                    {% endif %}
+                  </td>
+                  <td class="small">
+                    {% if collection.proofs %}
+                    <ul class="list-unstyled mb-0">
+                      {% for proof in collection.proofs %}
+                      <li>
+                        <a href="{{ url_for('admin.collection_proof_download', proof_id=proof.id) }}" download="{{ proof.original_name }}">{{ proof.original_name }}</a>
+                        {% if proof.note %}<span class="text-muted"> · {{ proof.note }}</span>{% endif %}
+                      </li>
+                      {% endfor %}
+                    </ul>
+                    {% else %}
+                    <span class="text-muted">尚未上传</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="4" class="p-0">
+                    <div class="qy-material-empty-state">
+                      <div class="fw-semibold mb-1">暂无收账记录</div>
+                      <div class="text-muted small">流程人员转交缴费通知后，业务交证明会显示在这里。</div>
                     </div>
                   </td>
                 </tr>
@@ -300,7 +424,7 @@
             </div>
           </div>
           <hr>
-          <form method="post" class="row g-2 mb-2" id="adminCasePhaseForm">
+          <form method="post" class="row g-3 qy-form-grid mb-2" id="adminCasePhaseForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="form_action" value="update_phase">
             <div class="col-md-5">
@@ -347,10 +471,10 @@
           <form method="post" class="mb-2">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="form_action" value="revert_rejected">
-            <button class="btn btn-sm btn-outline-secondary" type="submit" onclick="return confirm('确认撤销退稿标记？归属将恢复为客户案件。')">撤销退稿标记</button>
+            <button class="btn btn-sm btn-outline-secondary" type="submit" data-qy-confirm="撤销退稿标记" data-qy-confirm-text="撤销后本案将恢复为客户案件，客户端可见并计入客户统计。" data-qy-confirm-ok="确认撤销" data-qy-confirm-variant="warning">撤销退稿标记</button>
           </form>
           {% else %}
-          <form method="post" class="row g-2 mb-2">
+          <form method="post" class="row g-3 qy-form-grid mb-2">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="form_action" value="mark_rejected">
             <div class="col-md-9">
@@ -390,26 +514,38 @@
           </script>
           {% if task.phase_status == 'pending_order_review' %}
           <hr>
-          <div class="row g-2 align-items-end">
+          <form method="post" class="row g-2 align-items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="review_action" value="approve">
+            <div class="col-md-4">
+              <label class="form-label mb-1" for="adminIntakeWriterInput">撰写师</label>
+              <select id="adminIntakeWriterInput" class="form-select" name="writer_id" required>
+                {{ staff_kind_optgroups(staff_users_formal, staff_users_outsource, selected_id=None, empty_label="请选择撰写师") }}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label mb-1" for="adminIntakeProcessInput">流程人员</label>
+              <select id="adminIntakeProcessInput" class="form-select" name="process_owner_id" required>
+                {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=None, empty_label="请选择流程人员") }}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <button class="btn btn-primary" type="submit">确认下单</button>
+            </div>
+          </form>
+          <form method="post" class="row g-2 align-items-end mt-1">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="review_action" value="reject">
             <div class="col-md-8">
               <label class="form-label mb-1" for="adminIntakeRejectNoteInput">打回原因（必填）</label>
-              <form method="post" class="d-flex gap-2">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input id="adminIntakeRejectNoteInput" class="form-control" type="text" name="reject_note" maxlength="500" placeholder="请输入打回原因">
-                <input type="hidden" name="review_action" value="reject">
-                <button class="btn btn-outline-danger" type="submit">打回</button>
-              </form>
+              <input id="adminIntakeRejectNoteInput" class="form-control" type="text" name="reject_note" maxlength="500" required placeholder="请输入打回原因">
             </div>
-            <div class="col-md-4 d-flex justify-content-md-end">
-              <form method="post">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="review_action" value="approve">
-                <button class="btn btn-primary" type="submit">确认下单</button>
-              </form>
+            <div class="col-md-4">
+              <button class="btn btn-outline-danger" type="submit">打回</button>
             </div>
-          </div>
+          </form>
           {% endif %}
-          {% if task.phase_status == 'pending_review' or task.phase_status == 'overdue_pending_review' %}
+          {% if task.phase_status == 'pending_final_review' %}
           <hr>
           <div class="row g-2 align-items-end">
             <div class="col-md-8">
@@ -425,10 +561,13 @@
               <form method="post">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="review_action" value="approve">
-                <button class="btn btn-primary" type="submit">审核通过</button>
+                <button class="btn btn-primary" type="submit" data-qy-confirm="终审通过并办结" data-qy-confirm-text="通过后本案将标记为已完成，请确认材料与流程均已就绪。" data-qy-confirm-ok="确认办结" data-qy-confirm-variant="success">终审通过并办结</button>
               </form>
             </div>
           </div>
+          {% elif task.phase_status == 'pending_review' or task.phase_status == 'overdue_pending_review' %}
+          <hr>
+          <div class="alert alert-info mb-0 py-2 small">撰写材料正在由流程人员核对，终审在官方往来完成之后进行。</div>
           {% endif %}
           {% if latest_reject_log and latest_reject_log.note %}
           <hr>

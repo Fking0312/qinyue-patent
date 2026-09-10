@@ -24,11 +24,16 @@ def ensure_writer():
     ensure_staff_function(User.STAFF_FUNCTION_WRITER)
 
 
+def ensure_process():
+    """流程相关页面仅流程人员可访问。"""
+    ensure_staff_function(User.STAFF_FUNCTION_PROCESS)
+
+
 def ensure_business():
-    """下单相关页面仅业务人员可访问。"""
+    """业务相关页面仅业务人员可访问。"""
     ensure_staff_function(User.STAFF_FUNCTION_BUSINESS)
 
 
 def ensure_notifications_access():
-    """消息中心：撰写师与业务人员可访问，流程人员不能进。"""
-    ensure_staff_function(User.STAFF_FUNCTION_WRITER, User.STAFF_FUNCTION_BUSINESS)
+    """消息中心：撰写师、流程人员与业务人员均可访问。"""
+    ensure_staff()

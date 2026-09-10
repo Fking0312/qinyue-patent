@@ -1,5 +1,6 @@
 """员工职能：默认回填、账号维护、登录分流与越权边界。"""
 
+import re
 from urllib.parse import unquote
 from uuid import uuid4
 
@@ -12,6 +13,12 @@ from app.models import Case, Customer, CustomerKind, Project, User
 
 def _unique(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex[:8]}"
+
+
+def _select_named(html: str, name: str) -> str:
+    match = re.search(rf'<select[^>]*name="{name}"[^>]*>.*?</select>', html, flags=re.S)
+    assert match, name
+    return match.group(0)
 
 
 def _make_user(*, username: str, role: str, password: str = "secret", **kwargs) -> User:
@@ -35,17 +42,25 @@ def test_staff_function_read_fallback_and_labels():
         assert empty.staff_function_normalized == "writer"
         assert empty.staff_function_label == "撰写师"
         assert empty.is_assignable_writer is True
+        assert empty.is_assignable_process is False
+        assert empty.is_assignable_billing is False
         assert empty.home_endpoint == "staff.dashboard"
         assert invalid.staff_function_normalized == "writer"
         assert writer.staff_function_label == "撰写师"
         assert writer.is_assignable_writer is True
+        assert writer.is_assignable_process is False
+        assert writer.is_assignable_billing is False
         assert process.staff_function_normalized == "process"
         assert process.is_assignable_writer is False
+        assert process.is_assignable_process is True
+        assert process.is_assignable_billing is False
         assert process.staff_function_label == "流程人员"
         assert process.home_endpoint == "staff.process_dashboard"
         assert business.home_endpoint == "staff.business_dashboard"
         assert business.staff_function_label == "业务人员"
         assert business.is_assignable_writer is False
+        assert business.is_assignable_process is False
+        assert business.is_assignable_billing is True
         assert client.staff_function_normalized == ""
         assert client.staff_function_label == ""
         assert client.home_endpoint == "client.dashboard"
@@ -224,6 +239,8 @@ def test_staff_function_login_redirects_and_forbidden_writer_pages():
     assert writer_login.status_code == 302
     assert "/staff/dashboard" in writer_login.headers["Location"]
     assert writer_client.get("/staff/dashboard").status_code == 200
+    assert "内部资料库".encode("utf-8") in writer_client.get("/staff/dashboard").data
+    assert writer_client.get("/staff/staff-docs").status_code == 200
     assert writer_client.get("/staff/process-dashboard").status_code == 403
     assert writer_client.get("/staff/business-dashboard").status_code == 403
 
@@ -237,17 +254,22 @@ def test_staff_function_login_redirects_and_forbidden_writer_pages():
     home = process_client.get("/staff/process-dashboard")
     assert home.status_code == 200
     assert "流程工作台".encode("utf-8") in home.data
-    assert "审核案件跟进".encode("utf-8") in home.data
-    assert "功能建设中".encode("utf-8") in home.data
+    assert "案件跟进".encode("utf-8") in home.data
+    assert "待转交".encode("utf-8") in home.data
+    assert "内部资料库".encode("utf-8") in home.data
+    assert "消息中心".encode("utf-8") in home.data
+    assert "功能建设中".encode("utf-8") not in home.data
     assert "任务看板".encode("utf-8") not in home.data
     followup = process_client.get("/staff/process-followup")
     assert followup.status_code == 200
+    assert "案件跟进".encode("utf-8") in followup.data
+    assert process_client.get("/staff/staff-docs").status_code == 200
+    assert process_client.get("/staff/notifications").status_code == 200
     for path in (
         "/staff/dashboard",
         "/staff/task-board",
         "/staff/case-detail",
         "/staff/worklog",
-        "/staff/notifications",
         "/staff/business-dashboard",
     ):
         assert process_client.get(path).status_code == 403
@@ -265,10 +287,20 @@ def test_staff_function_login_redirects_and_forbidden_writer_pages():
     biz_home = business_client.get("/staff/business-dashboard")
     assert biz_home.status_code == 200
     assert "业务工作台".encode("utf-8") in biz_home.data
+    assert "去下单".encode("utf-8") in biz_home.data
+    assert "待我修改".encode("utf-8") in biz_home.data
+    assert "待管理员确认".encode("utf-8") in biz_home.data
+    assert "本月已提交".encode("utf-8") in biz_home.data
+    assert "需要修改的下单".encode("utf-8") in biz_home.data
+    assert "功能建设中".encode("utf-8") not in biz_home.data
+    assert "撰写中".encode("utf-8") not in biz_home.data
+    assert "登记与核对客户款项".encode("utf-8") not in biz_home.data
     assert "下单".encode("utf-8") in biz_home.data
     assert "收账".encode("utf-8") in biz_home.data
     assert "消息中心".encode("utf-8") in biz_home.data
+    assert "内部资料库".encode("utf-8") in biz_home.data
     assert business_client.get("/staff/business-orders").status_code == 200
+    assert business_client.get("/staff/staff-docs").status_code == 200
     assert business_client.get("/staff/business-collections").status_code == 200
     assert business_client.get("/staff/notifications").status_code == 200
     assert business_client.get("/staff/dashboard").status_code == 403
@@ -370,12 +402,21 @@ def test_only_writers_enter_case_assignment_pool():
     create_page = http.get("/admin/case-create")
     assert create_page.status_code == 200
     html = create_page.data.decode("utf-8")
-    assert writer_name in html
-    assert f'value="{writer_id}"' in html
-    assert f'value="{process_id}"' not in html
-    assert f'value="{business_id}"' not in html
-    assert process_name not in html
-    assert business_name not in html
+    writer_select = _select_named(html, "business_owner_id")
+    process_select = _select_named(html, "process_owner_id")
+    billing_select = _select_named(html, "billing_owner_id")
+    assert writer_name in writer_select
+    assert f'value="{writer_id}"' in writer_select
+    assert f'value="{process_id}"' not in writer_select
+    assert f'value="{business_id}"' not in writer_select
+    assert process_name in process_select
+    assert f'value="{process_id}"' in process_select
+    assert f'value="{writer_id}"' not in process_select
+    assert f'value="{business_id}"' not in process_select
+    assert business_name in billing_select
+    assert f'value="{business_id}"' in billing_select
+    assert f'value="{writer_id}"' not in billing_select
+    assert f'value="{process_id}"' not in billing_select
 
     title = f"_pool_case_{suffix}"
     created = http.post(
@@ -390,6 +431,34 @@ def test_only_writers_enter_case_assignment_pool():
     assert created.status_code == 302
     assert "仅撰写师可进入案件分配池" in unquote(created.headers.get("Location", ""))
 
+    process_as_writer = http.post(
+        "/admin/case-create",
+        data={
+            "project_id": str(project_id),
+            "title": title,
+            "case_type_code": "other",
+            "process_owner_id": str(writer_id),
+        },
+    )
+    assert process_as_writer.status_code == 302
+    assert "仅在职流程人员可指定为流程负责人" in unquote(
+        process_as_writer.headers.get("Location", "")
+    )
+
+    business_as_billing = http.post(
+        "/admin/case-create",
+        data={
+            "project_id": str(project_id),
+            "title": title,
+            "case_type_code": "other",
+            "billing_owner_id": str(writer_id),
+        },
+    )
+    assert business_as_billing.status_code == 302
+    assert "仅在职业务人员可指定为收账负责人" in unquote(
+        business_as_billing.headers.get("Location", "")
+    )
+
     ok = http.post(
         "/admin/case-create",
         data={
@@ -397,6 +466,7 @@ def test_only_writers_enter_case_assignment_pool():
             "title": title,
             "case_type_code": "other",
             "business_owner_id": str(writer_id),
+            "process_owner_id": str(process_id),
         },
         follow_redirects=True,
     )
@@ -404,4 +474,6 @@ def test_only_writers_enter_case_assignment_pool():
     with app.app_context():
         case = Case.query.filter_by(title=title).one()
         assert case.business_owner_id == writer_id
+        assert case.process_owner_id == process_id
+        assert case.process_owner_label
 

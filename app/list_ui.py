@@ -28,7 +28,7 @@ def task_phase_tone(phase_status: str | None) -> str:
         return "warning"
     if is_overdue_phase(phase_status):
         return "danger"
-    if is_pending_review_phase(phase_status):
+    if is_pending_review_phase(phase_status) or phase_status == TaskPhase.PENDING_FINAL_REVIEW:
         return "warning"
     if phase_status in {TaskPhase.PENDING_SUBMIT, TaskPhase.AUTHORIZED_PENDING_PAYMENT}:
         return "success"
@@ -51,7 +51,7 @@ def task_urgency(task: Task | None, *, due_soon_days: int = _DEFAULT_DUE_SOON_DA
         return ""
     if is_overdue_phase(task.phase_status):
         return "overdue"
-    if is_pending_review_phase(task.phase_status):
+    if is_pending_review_phase(task.phase_status) or task.phase_status == TaskPhase.PENDING_FINAL_REVIEW:
         return ""
     due = effective_task_due_at(task)
     if due is None:

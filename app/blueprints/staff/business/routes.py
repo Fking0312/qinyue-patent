@@ -1,17 +1,29 @@
-"""业务人员视图：下单（建客户/项目/案件）与收账占位。"""
+"""业务人员视图：工作台跟进、下单（建客户/项目/案件）与收账。"""
 
 from datetime import datetime, timezone
 
 from flask import abort, current_app, request, send_from_directory
 from flask_login import current_user, login_required
 
+from app.dashboard_stats import business_dashboard_page_kwargs
 from app.blueprints.staff import staff_bp
-from app.blueprints.staff.common.routes import render_function_workspace
 from app.blueprints.staff.guards import ensure_business
 from app.case_material_upload import case_material_dir
 from app.case_types import CASE_TYPE_UI_CONFIG
 from app.extensions import db
-from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CustomerKind, User
+from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CustomerKind
+from app.collections import (
+    billing_queue_counts,
+    collections_for_cases,
+    delete_collection_proof,
+    get_collection,
+    get_proof,
+    list_billing_cases,
+    list_case_collections,
+    save_collection_proof,
+    submit_collection,
+    user_may_submit_collections,
+)
 from app.order_intake import (
     case_material_counts,
     case_materials_for_cases,
@@ -54,26 +66,14 @@ def _int_or_none(raw: str) -> int | None:
 @staff_bp.route("/business-dashboard")
 @login_required
 def business_dashboard():
-    """业务人员首页：下单已接真实流程，收账仍为占位。"""
-    return render_function_workspace(
-        endpoint="staff.business_dashboard",
-        title="业务工作台",
-        document_title="业务工作台 — 琴岳专利管理系统",
-        page_desc="你的职责是下单与收账。案件归属于项目，项目绑定客户。",
-        cards=[
-            {
-                "title": "下单",
-                "desc": "选择或新建客户与项目，创建案件并提交管理员确认。",
-                "endpoint": "staff.business_orders",
-                "ready": True,
-            },
-            {
-                "title": "收账",
-                "desc": "登记与核对客户款项，跟踪未收款。",
-                "endpoint": "staff.business_collections",
-            },
-        ],
-        allowed=User.STAFF_FUNCTION_BUSINESS,
+    """业务人员首页：跟进自己提交的下单，不展示撰写师负载。"""
+    ensure_business()
+    return render_spa_or_full(
+        full_template="staff/business_dashboard.html",
+        inner_template="staff/snippets/business_dashboard_inner.html",
+        spa_endpoint="staff.business_dashboard",
+        spa_document_title="业务工作台 — 琴岳专利管理系统",
+        **business_dashboard_page_kwargs(current_user),
     )
 
 
@@ -323,17 +323,108 @@ def business_order_material_delete(case_id: int, material_id: int):
 @staff_bp.route("/business-collections")
 @login_required
 def business_collections():
-    """业务人员后续入口：收账（建设中）。"""
-    return render_function_workspace(
-        endpoint="staff.business_collections",
-        title="收账",
-        document_title="收账 — 琴岳专利管理系统",
-        page_desc="后续将在此登记与核对收款，当前仅预留稳定入口。",
-        cards=[
-            {
-                "title": "收账",
-                "desc": "收款登记、未收款跟踪与对账将在此处理。",
-            }
-        ],
-        allowed=User.STAFF_FUNCTION_BUSINESS,
+    """业务人员收账列表：自己被指定为收账负责人的案件。"""
+    ensure_business()
+    cases = list_billing_cases(current_user.id)
+    collections_by_case = collections_for_cases([case.id for case in cases])
+    return render_spa_or_full(
+        full_template="staff/business_collections.html",
+        inner_template="staff/snippets/business_collections_inner.html",
+        spa_endpoint="staff.business_collections",
+        spa_document_title="收账 — 琴岳专利管理系统",
+        page_title="收账",
+        billing_cases=cases,
+        collections_by_case=collections_by_case,
+        queue_counts=billing_queue_counts(current_user.id),
+    )
+
+
+@staff_bp.route("/business-collections/<int:case_id>", methods=["GET", "POST"])
+@login_required
+def business_collection_case(case_id: int):
+    """单案收账：下载缴费通知、上传证明、提交确认。"""
+    ensure_business()
+    case = db.session.get(Case, case_id)
+    if case is None or not user_may_submit_collections(current_user, case):
+        abort(404)
+    if request.method == "POST":
+        form_action = request.form.get("form_action", "").strip()
+        collection_id_raw = request.form.get("collection_id", "").strip()
+        collection = get_collection(int(collection_id_raw)) if collection_id_raw.isdigit() else None
+        if collection is None or collection.case_id != case.id:
+            return redirect_with_qy_toast(
+                "staff.business_collection_case", "找不到这笔收账。", "warning", case_id=case.id
+            )
+        if form_action == "upload_proof":
+            proof, error = save_collection_proof(
+                collection=collection,
+                uploader=current_user,
+                file_storage=request.files.get("proof_file"),
+                note=request.form.get("proof_note", ""),
+            )
+            if proof is None:
+                return redirect_with_qy_toast(
+                    "staff.business_collection_case",
+                    error or "上传失败。",
+                    "warning",
+                    case_id=case.id,
+                )
+            db.session.commit()
+            return redirect_with_qy_toast(
+                "staff.business_collection_case",
+                "收款证明已上传。",
+                "success",
+                case_id=case.id,
+            )
+        if form_action == "submit_collection":
+            ok, message = submit_collection(
+                collection,
+                current_user,
+                amount_raw=request.form.get("amount", ""),
+                note=request.form.get("note", ""),
+            )
+            if ok:
+                db.session.commit()
+            return redirect_with_qy_toast(
+                "staff.business_collection_case",
+                message,
+                "success" if ok else "warning",
+                case_id=case.id,
+            )
+        if form_action == "delete_proof":
+            proof_id_raw = request.form.get("proof_id", "").strip()
+            proof = get_proof(int(proof_id_raw)) if proof_id_raw.isdigit() else None
+            if proof is None or proof.collection_id != collection.id:
+                return redirect_with_qy_toast(
+                    "staff.business_collection_case", "找不到这份证明。", "warning", case_id=case.id
+                )
+            ok, message = delete_collection_proof(proof, current_user)
+            if ok:
+                db.session.commit()
+            return redirect_with_qy_toast(
+                "staff.business_collection_case",
+                message,
+                "success" if ok else "warning",
+                case_id=case.id,
+            )
+        return redirect_with_qy_toast(
+            "staff.business_collection_case", "不支持的操作。", "warning", case_id=case.id
+        )
+
+    from app.official_notices import list_case_notices
+
+    notices = [
+        notice
+        for notice in list_case_notices(case.id)
+        if notice.needs_billing and notice.forwarded_to_id == current_user.id
+    ]
+    return render_spa_or_full(
+        full_template="staff/business_collection_case.html",
+        inner_template="staff/snippets/business_collection_case_inner.html",
+        spa_endpoint="staff.business_collection_case",
+        spa_document_title=f"{case.title} — 收账",
+        page_title="收账",
+        case=case,
+        notices=notices,
+        collections=list_case_collections(case.id),
     )

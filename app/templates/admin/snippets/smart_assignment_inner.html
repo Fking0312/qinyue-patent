@@ -5,6 +5,8 @@
 <div class="staff-page-inner staff-page-inner--admin qy-admin-page qy-smart-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
   {% call page_header(page_title, page_desc, extra_class='qy-admin-page-header') %}
     <a class="btn btn-outline-secondary flex-shrink-0" href="{{ url_for('admin.task_board') }}" data-spa-endpoint="admin.task_board">任务看板</a>
+    <a class="btn btn-outline-secondary flex-shrink-0" href="{{ url_for('admin.process_assignment') }}" data-spa-endpoint="admin.process_assignment">指定流程人员</a>
+    <a class="btn btn-outline-secondary flex-shrink-0" href="{{ url_for('admin.billing_assignment') }}" data-spa-endpoint="admin.billing_assignment">指定收账人员</a>
     <a class="btn btn-outline-secondary flex-shrink-0" href="{{ url_for('admin.cases', assignee='unassigned') }}" data-spa-endpoint="admin.cases">待分配案件列表</a>
   {% endcall %}
 
@@ -21,7 +23,7 @@
           <span class="qy-smart-count">共 {{ pending_total }} 件 · 按截止日升序</span>
         </div>
         <div class="card border-0 shadow-sm qy-smart-panel">
-          <div class="list-group list-group-flush qy-smart-pending-list">
+          <div class="list-group list-group-flush qy-smart-pending-list" data-qy-scroll-key="smart-pending">
             {% for case in pending_cases %}
             {% set is_selected = selected_case and case.id == selected_case.id %}
             <a class="list-group-item list-group-item-action qy-smart-pending-item{% if is_selected %} is-selected{% endif %}"

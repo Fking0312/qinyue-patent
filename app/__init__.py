@@ -44,6 +44,10 @@ def create_app():
             "business_owner_label": "VARCHAR(120)",
             "intake_owner_id": "INTEGER",
             "intake_owner_label": "VARCHAR(120)",
+            "process_owner_id": "INTEGER",
+            "process_owner_label": "VARCHAR(120)",
+            "billing_owner_id": "INTEGER",
+            "billing_owner_label": "VARCHAR(120)",
             "order_at": "DATETIME",
             "expected_return_at": "DATETIME",
             "actual_return_at": "DATETIME",
@@ -77,6 +81,18 @@ def create_app():
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_cases_intake_owner_id "
                     "ON cases (intake_owner_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_cases_process_owner_id "
+                    "ON cases (process_owner_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_cases_billing_owner_id "
+                    "ON cases (billing_owner_id)"
                 )
             )
 
@@ -151,6 +167,10 @@ def create_app():
                 "business_owner_label": "VARCHAR(120)",
                 "intake_owner_id": "INTEGER",
                 "intake_owner_label": "VARCHAR(120)",
+                "process_owner_id": "INTEGER",
+                "process_owner_label": "VARCHAR(120)",
+                "billing_owner_id": "INTEGER",
+                "billing_owner_label": "VARCHAR(120)",
             },
             "tasks": {"assignee_label": "VARCHAR(120)"},
             "case_review_logs": {
@@ -176,6 +196,18 @@ def create_app():
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_cases_intake_owner_id "
                     "ON cases (intake_owner_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_cases_process_owner_id "
+                    "ON cases (process_owner_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_cases_billing_owner_id "
+                    "ON cases (billing_owner_id)"
                 )
             )
 

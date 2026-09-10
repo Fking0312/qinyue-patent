@@ -62,7 +62,7 @@
           <div class="small mb-0">{{ reject_note }}</div>
         </div>
         {% endif %}
-        <form method="post" action="{{ url_for('staff.business_create_case') }}" class="row g-3" id="qyOrderCaseForm" enctype="multipart/form-data">
+        <form method="post" action="{{ url_for('staff.business_create_case') }}" class="row g-3 qy-form-grid" id="qyOrderCaseForm" enctype="multipart/form-data">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           {% if editing_case %}
           <input type="hidden" name="case_id" value="{{ editing_case.id }}">
@@ -125,7 +125,7 @@
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('staff.business_order_material_download', case_id=editing_case.id, material_id=file_item.id) }}" download>下载</a>
                 <form method="post" action="{{ url_for('staff.business_order_material_delete', case_id=editing_case.id, material_id=file_item.id) }}" class="d-inline">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('确认删除该交底材料？')">删除</button>
+                  <button class="btn btn-sm btn-outline-danger" type="submit" data-qy-confirm="删除交底材料" data-qy-confirm-text="删除后无法从本页恢复，请确认这份文件不再需要。" data-qy-confirm-ok="确认删除" data-qy-confirm-variant="danger">删除</button>
                 </form>
               </li>
               {% endfor %}
@@ -221,7 +221,7 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
           </div>
           <div class="modal-body">
-            <div class="row g-3">
+            <div class="row g-3 qy-form-grid">
               <div class="col-12">
                 <label class="form-label mb-1" for="qyNewCustomerName">客户名称</label>
                 <input id="qyNewCustomerName" class="form-control" type="text" name="name" required maxlength="200">
@@ -266,7 +266,7 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
           </div>
           <div class="modal-body">
-            <div class="row g-3">
+            <div class="row g-3 qy-form-grid">
               <div class="col-12">
                 <label class="form-label mb-1" for="qyNewProjectCustomer">绑定客户</label>
                 <select id="qyNewProjectCustomer" class="form-select" name="customer_id" required>

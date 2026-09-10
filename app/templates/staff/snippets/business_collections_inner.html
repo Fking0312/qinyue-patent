@@ -1,0 +1,65 @@
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+{% from "macros/task_phase.html" import task_phase_badge %}
+<div class="staff-page-inner p-3 p-md-4">
+  {% call page_header(page_title) %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('staff.business_dashboard') }}" data-spa-endpoint="staff.business_dashboard">返回工作台</a>
+  {% endcall %}
+
+  <p class="text-muted small mb-3">管理员指定你为收账人员后，流程转交的缴费通知会出现在这里。交证明后等流程确认；被打回可补交。</p>
+  {% if queue_counts and (queue_counts.pending_proof or queue_counts.rejected or queue_counts.pending_confirm) %}
+  <div class="d-flex flex-wrap gap-2 mb-3 small">
+    <span class="badge text-bg-warning-subtle text-warning-emphasis border">待交证明 {{ queue_counts.pending_proof }}</span>
+    <span class="badge text-bg-danger-subtle text-danger-emphasis border">已打回 {{ queue_counts.rejected }}</span>
+    <span class="badge text-bg-primary-subtle text-primary-emphasis border">待流程确认 {{ queue_counts.pending_confirm }}</span>
+  </div>
+  {% endif %}
+
+  {% if billing_cases %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 qy-data-table">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">案件</th>
+              <th scope="col">客户</th>
+              <th scope="col">收账</th>
+              <th scope="col">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for case in billing_cases %}
+            {% set rows = (collections_by_case or {}).get(case.id, []) %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ case.title }}</div>
+                <div class="small text-muted">{{ case.application_no }}</div>
+                {% if case.task %}
+                <div class="mt-1">{{ task_phase_badge(case.task.phase_status) }}</div>
+                {% endif %}
+              </td>
+              <td>{{ case.project.customer.name if case.project and case.project.customer else "—" }}</td>
+              <td class="small">
+                {% if rows %}
+                {% for collection in rows %}
+                <div>{{ collection.notice.type_label if collection.notice else "收账" }} · {{ collection.status_label }}</div>
+                {% endfor %}
+                {% else %}
+                <span class="text-muted">暂无缴费转交</span>
+                {% endif %}
+              </td>
+              <td>
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.business_collection_case', case_id=case.id) }}" data-spa-endpoint="staff.business_collection_case">打开</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  {{ empty_state('还没有需要你收账的案件', '管理员指定你为收账人员后，流程转交的缴费通知会出现在这里。', icon='folder', compact=True) }}
+  {% endif %}
+</div>
