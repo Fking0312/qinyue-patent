@@ -19,13 +19,17 @@ _STAFF_NOTIFICATION_ACTIONS = (
     "intake_reject",
     "official_forward",
     "official_urge",
+    "admin_urge",
     "process_assigned",
     "billing_assigned",
     "submit_for_review",
     "writing_revised",
     "process_accept",
     "process_reject",
+    "writing_approve",
+    "writing_reject",
     "process_filed",
+    "collection_notify",
     "collection_submit",
     "collection_ok",
     "collection_reject",
@@ -40,6 +44,30 @@ class DashboardStatCard:
     endpoint: str
     tone: str
     endpoint_kwargs: dict = field(default_factory=dict)
+    group: str = ""
+    icon: str = "chart"
+
+
+def grouped_stat_cards(cards: list[DashboardStatCard]) -> list[tuple[str, list[DashboardStatCard]]]:
+    """按 group 保序归组；未分组的卡片落在同一空标题组里。"""
+    grouped: list[tuple[str, list[DashboardStatCard]]] = []
+    buckets: dict[str, list[DashboardStatCard]] = {}
+    for card in cards:
+        key = card.group
+        bucket = buckets.get(key)
+        if bucket is None:
+            bucket = []
+            buckets[key] = bucket
+            grouped.append((key, bucket))
+        bucket.append(card)
+    return grouped
+
+
+def dashboard_stat_context(cards: list[DashboardStatCard]) -> dict:
+    return {
+        "dashboard_stat_cards": cards,
+        "dashboard_stat_groups": grouped_stat_cards(cards),
+    }
 
 
 def _current_beijing_year_month() -> tuple[int, int]:
@@ -54,6 +82,12 @@ def _month_bounds_utc(year: int, month: int) -> tuple[datetime, datetime]:
     else:
         end_cn = datetime(year, month + 1, 1, tzinfo=_CN_TZ)
     return start_cn.astimezone(timezone.utc), end_cn.astimezone(timezone.utc)
+
+
+def _pending_writing_review_count() -> int:
+    return Task.query.filter(
+        Task.phase_status.in_((TaskPhase.PENDING_REVIEW, TaskPhase.OVERDUE_PENDING_REVIEW))
+    ).count()
 
 
 def _pending_final_review_count() -> int:
@@ -91,23 +125,71 @@ def _staff_unread_notifications_count(user_id: int) -> int:
 
 
 def admin_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
+    from app.statutory_deadlines import WINDOW_7D, WINDOW_OVERDUE, statutory_deadline_counts
+
     board = task_board_data_for_user(user, status_filter="all", sort_by="deadline")
     counts = board["counts"]
     year, month = _current_beijing_year_month()
+    official_counts = statutory_deadline_counts()
+    official_attention = official_counts[WINDOW_7D]
+    official_overdue = official_counts[WINDOW_OVERDUE]
+    if official_overdue:
+        official_hint = f"已超期 {official_overdue} 件"
+        official_tone = "danger"
+    elif official_attention:
+        official_hint = "7 天内临期"
+        official_tone = "warning"
+    else:
+        official_hint = "暂无临期官文"
+        official_tone = "info"
     return [
+        DashboardStatCard(
+            label="待审核",
+            value=_pending_writing_review_count(),
+            hint="撰写材料待核",
+            endpoint="admin.review_quality",
+            tone="warning",
+            endpoint_kwargs={"kind": "writing"},
+            group="待处理",
+            icon="review",
+        ),
         DashboardStatCard(
             label="待终审",
             value=_pending_final_review_count(),
-            hint="流程已提交，等待办结",
+            hint="流程已提交办结",
             endpoint="admin.review_quality",
             tone="danger",
+            endpoint_kwargs={"kind": "final"},
+            group="待处理",
+            icon="stamp",
         ),
         DashboardStatCard(
             label="下单待确认",
             value=_pending_order_review_count(),
-            hint="业务提交，通过后才能派单",
+            hint="通过后才能派单",
             endpoint="admin.order_intake",
             tone="warning",
+            group="待处理",
+            icon="intake",
+        ),
+        DashboardStatCard(
+            label="已超期",
+            value=counts["overdue"],
+            hint="所内返稿超期",
+            endpoint="admin.task_board",
+            tone="warning",
+            endpoint_kwargs={"status": "overdue"},
+            group="关注",
+            icon="overdue",
+        ),
+        DashboardStatCard(
+            label="官方期限",
+            value=official_attention,
+            hint=official_hint,
+            endpoint="admin.statutory_deadline",
+            tone=official_tone,
+            group="关注",
+            icon="official",
         ),
         DashboardStatCard(
             label="本月新建",
@@ -116,35 +198,35 @@ def admin_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             endpoint="admin.cases",
             tone="primary",
             endpoint_kwargs={"created_year": str(year), "created_month": str(month)},
-        ),
-        DashboardStatCard(
-            label="已超期",
-            value=counts["overdue"],
-            hint="需尽快跟进",
-            endpoint="admin.task_board",
-            tone="warning",
-            endpoint_kwargs={"status": "overdue"},
+            group="关注",
+            icon="month",
         ),
         DashboardStatCard(
             label="待分配",
             value=counts["pending_assignment"],
-            hint="尚未指派撰写师",
+            hint="尚未派撰写师",
             endpoint="admin.smart_assignment",
             tone="info",
+            group="待分派",
+            icon="assign",
         ),
         DashboardStatCard(
             label="待指定流程",
             value=_pending_process_assignment_count(),
-            hint="尚未指定流程人员",
+            hint="尚未指定流程",
             endpoint="admin.process_assignment",
             tone="info",
+            group="待分派",
+            icon="process",
         ),
         DashboardStatCard(
             label="待指定收账",
             value=_pending_billing_assignment_count(),
-            hint="缴费通知待指定业务人员",
+            hint="尚未指定收账",
             endpoint="admin.billing_assignment",
             tone="info",
+            group="待分派",
+            icon="billing",
         ),
     ]
 
@@ -165,6 +247,7 @@ def business_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             hint="管理员打回，改完再提交",
             endpoint="staff.business_orders",
             tone="danger",
+            icon="edit",
         ),
         DashboardStatCard(
             label="待管理员确认",
@@ -172,13 +255,15 @@ def business_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             hint="已提交，等待确认",
             endpoint="staff.business_orders",
             tone="warning",
+            icon="intake",
         ),
         DashboardStatCard(
             label="待交证明",
             value=billing_counts["pending_proof"] + billing_counts["rejected"],
-            hint="缴费通知待交或已打回",
+            hint="向客户收账：待交证明或已打回",
             endpoint="staff.business_collections",
             tone="danger",
+            icon="proof",
         ),
         DashboardStatCard(
             label="未读消息",
@@ -187,6 +272,7 @@ def business_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             endpoint="staff.notifications",
             tone="danger",
             endpoint_kwargs={"status": "unread"},
+            icon="message",
         ),
         DashboardStatCard(
             label="本月已提交",
@@ -194,6 +280,7 @@ def business_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             hint=f"{year} 年 {month} 月",
             endpoint="staff.business_orders",
             tone="primary",
+            icon="month",
         ),
     ]
 
@@ -205,7 +292,7 @@ def business_dashboard_page_kwargs(user: User) -> dict:
 
     return {
         "page_title": "业务工作台",
-        "dashboard_stat_cards": business_dashboard_stat_cards(user),
+        **dashboard_stat_context(business_dashboard_stat_cards(user)),
         "revision_rows": my_order_revision_rows(user.id),
         "attention_collections": list_billing_attention_collections(user.id),
     }
@@ -224,14 +311,16 @@ def staff_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             endpoint="staff.task_board",
             tone="primary",
             endpoint_kwargs={"status": "in_progress"},
+            icon="writing",
         ),
         DashboardStatCard(
-            label="待流程核对",
+            label="待审核",
             value=counts["pending_review"],
-            hint="已提交，等待流程人员核对",
+            hint="已提交，等待管理员审核",
             endpoint="staff.task_board",
             tone="info",
             endpoint_kwargs={"status": "pending_review"},
+            icon="review",
         ),
         DashboardStatCard(
             label="未读消息",
@@ -239,6 +328,7 @@ def staff_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             hint="分配与审核通知",
             endpoint="staff.notifications",
             tone="danger",
+            icon="message",
         ),
         DashboardStatCard(
             label="期限关注",
@@ -246,16 +336,17 @@ def staff_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             hint=f"超期 {len(overdue)} · 临期 {len(due_soon)}",
             endpoint="staff.deadline_reminder",
             tone="warning",
+            icon="clock",
         ),
     ]
 
 
 def process_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
-    """流程工作台：待核对 / 待递交 / 待转交 / 未接收。"""
+    """流程工作台：待递交 / 待转交 / 待缴费 / 未接收。"""
     from app.official_notices import (
         QUEUE_PENDING_COLLECTION,
+        QUEUE_PENDING_FEE,
         QUEUE_PENDING_FORWARD,
-        QUEUE_PENDING_PROCESS,
         QUEUE_PENDING_SUBMIT,
         QUEUE_UNRECEIVED,
         process_queue_counts,
@@ -264,28 +355,31 @@ def process_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
     counts = process_queue_counts(user.id)
     return [
         DashboardStatCard(
-            label="待核对",
-            value=counts[QUEUE_PENDING_PROCESS],
-            hint="撰写师已提交，请核对材料",
-            endpoint="staff.process_followup",
-            tone="danger",
-            endpoint_kwargs={"queue": QUEUE_PENDING_PROCESS},
-        ),
-        DashboardStatCard(
             label="待递交",
             value=counts[QUEUE_PENDING_SUBMIT],
-            hint="材料已确认，等待交局",
+            hint="材料已通过审核，等待交局",
             endpoint="staff.process_followup",
             tone="warning",
             endpoint_kwargs={"queue": QUEUE_PENDING_SUBMIT},
+            icon="send",
         ),
         DashboardStatCard(
             label="待转交",
             value=counts[QUEUE_PENDING_FORWARD],
-            hint="已上传，尚未转交",
+            hint="已上传，尚未转交撰写师",
             endpoint="staff.process_followup",
             tone="info",
             endpoint_kwargs={"queue": QUEUE_PENDING_FORWARD},
+            icon="forward",
+        ),
+        DashboardStatCard(
+            label="待官方缴费",
+            value=counts[QUEUE_PENDING_FEE],
+            hint="缴费通知尚未向专利局缴费",
+            endpoint="staff.process_followup",
+            tone="warning",
+            endpoint_kwargs={"queue": QUEUE_PENDING_FEE},
+            icon="fee",
         ),
         DashboardStatCard(
             label="待确认收款",
@@ -294,6 +388,7 @@ def process_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             endpoint="staff.process_followup",
             tone="primary",
             endpoint_kwargs={"queue": QUEUE_PENDING_COLLECTION},
+            icon="collection",
         ),
         DashboardStatCard(
             label="未接收",
@@ -302,6 +397,7 @@ def process_dashboard_stat_cards(user: User) -> list[DashboardStatCard]:
             endpoint="staff.process_followup",
             tone="primary",
             endpoint_kwargs={"queue": QUEUE_UNRECEIVED},
+            icon="receive",
         ),
     ]
 
@@ -314,7 +410,7 @@ def process_dashboard_page_kwargs(user: User) -> dict:
     attention_cases = list_process_attention_cases(user.id)
     return {
         "page_title": "流程工作台",
-        "dashboard_stat_cards": process_dashboard_stat_cards(user),
+        **dashboard_stat_context(process_dashboard_stat_cards(user)),
         "attention_cases": attention_cases,
         "attention_case_hints": {
             case.id: latest_writing_material_hints(case.id) for case in attention_cases
@@ -344,9 +440,9 @@ def dashboard_page_kwargs(user: User, *, reminder_page_title: str = "") -> dict:
         calendar_nav_endpoint=calendar_nav_endpoint,
     )
     if user.role == "admin":
-        kwargs["dashboard_stat_cards"] = admin_dashboard_stat_cards(user)
+        kwargs.update(dashboard_stat_context(admin_dashboard_stat_cards(user)))
     elif user.role == "staff":
-        kwargs["dashboard_stat_cards"] = staff_dashboard_stat_cards(user)
+        kwargs.update(dashboard_stat_context(staff_dashboard_stat_cards(user)))
     else:
-        kwargs["dashboard_stat_cards"] = []
+        kwargs.update(dashboard_stat_context([]))
     return kwargs

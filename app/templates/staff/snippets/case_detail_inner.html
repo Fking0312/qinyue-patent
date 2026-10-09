@@ -114,9 +114,9 @@
                   {% if open_reply_notice and not open_reply_notice.received_at %}
                   请先下载下方「{{ open_reply_notice.type_label }}」，接收后再上传改正材料。
                   {% elif open_reply_notice %}
-                  已接收「{{ open_reply_notice.type_label }}」。请上传改正后的撰写材料，再提交给流程人员核对并递交官方。
+                  已接收「{{ open_reply_notice.type_label }}」。请上传改正后的撰写材料，再提交给管理员审核；通过后由流程人员递交官方。
                   {% else %}
-                  在此上传撰写文件；确认无误后再点击「提交流程核对」。
+                  在此上传撰写文件；确认无误后再点击「提交审核」。
                   {% endif %}
                 </p>
               </div>
@@ -152,9 +152,9 @@
             {% elif material_changes_locked %}
             <div class="qy-dropzone-hint small fw-semibold mt-2 mb-0">当前案件已进入“{{ task.phase_status|qy_task_phase_label }}”，材料上传已锁定。</div>
             {% elif open_reply_notice %}
-            <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽上传改正稿；上传新文件后才能再次提交流程核对。</div>
+            <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽上传改正稿；上传新文件后才能再次提交审核。</div>
             {% else %}
-            <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽文件到此区域上传；上传后仍可继续修改，确认无误后再提交流程核对。</div>
+            <div class="qy-dropzone-hint small mt-2 mb-0">支持拖拽文件到此区域上传；上传后仍可继续修改，确认无误后再提交审核。</div>
             {% endif %}
           </div>
 
@@ -162,16 +162,16 @@
           <div class="qy-submit-review-panel mb-4">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
               <div>
-                <div class="fw-bold mb-1">{% if open_reply_notice %}提交改正材料{% else %}提交流程核对{% endif %}</div>
+                <div class="fw-bold mb-1">{% if open_reply_notice %}提交改正材料{% else %}提交审核{% endif %}</div>
                 <div class="small text-muted">
                   {% if open_reply_notice and not can_submit_for_review %}
-                  请先上传针对「{{ open_reply_notice.type_label }}」的改正材料，再提交给流程人员核对并递交官方。
+                  请先上传针对「{{ open_reply_notice.type_label }}」的改正材料，再提交给管理员审核。
                   {% elif open_reply_notice %}
-                  改正材料将提交给本案流程人员核对，核对后可向官方递交。
+                  改正材料将提交给管理员审核，通过后由流程人员向官方递交。
                   {% elif has_writing_material %}
-                  材料准备完成后，提交给本案流程人员核对并递交官方。
+                  材料准备完成后，提交给管理员审核；通过后由流程人员递交官方。
                   {% else %}
-                  请先上传至少一份撰写材料，再提交流程核对。
+                  请先上传至少一份撰写材料，再提交审核。
                   {% endif %}
                 </div>
               </div>
@@ -182,11 +182,11 @@
                   class="btn btn-success btn-lg qy-submit-review-btn"
                   type="submit"
                   {% if not can_submit_for_review %}disabled aria-disabled="true"{% endif %}
-                  data-qy-confirm="{% if open_reply_notice %}提交改正材料{% else %}提交流程核对{% endif %}"
-                  data-qy-confirm-text="{% if open_reply_notice %}提交后材料将锁定。流程人员核对后可向官方递交改正材料。{% else %}提交后材料将锁定，需流程人员打回后才能再次修改。{% endif %}"
+                  data-qy-confirm="{% if open_reply_notice %}提交改正材料{% else %}提交审核{% endif %}"
+                  data-qy-confirm-text="{% if open_reply_notice %}提交后材料将锁定。管理员审核通过后，流程人员可向官方递交改正材料。{% else %}提交后材料将锁定，需管理员打回后才能再次修改。{% endif %}"
                   data-qy-confirm-ok="确认提交"
                   data-qy-confirm-variant="success"
-                >{% if open_reply_notice %}提交改正材料{% else %}提交流程核对{% endif %}</button>
+                >{% if open_reply_notice %}提交改正材料{% else %}提交审核{% endif %}</button>
               </form>
             </div>
           </div>
@@ -291,7 +291,7 @@
                   <td colspan="6" class="p-0">
                     <div class="qy-material-empty-state">
                       <div class="fw-semibold mb-1">暂无撰写材料</div>
-                      <div class="text-muted small">请在上方选择文件上传，确认无误后点击「提交流程核对」。</div>
+                      <div class="text-muted small">请在上方选择文件上传，确认无误后点击「提交审核」。</div>
                     </div>
                   </td>
                 </tr>

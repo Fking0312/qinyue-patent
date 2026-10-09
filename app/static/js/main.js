@@ -308,6 +308,31 @@ if (document.body.classList.contains("qy-login-page")) {
     }
   };
 
+  window.qyConsumePageToast = (root = document) => {
+    if (typeof window.qyShowToast !== "function") {
+      return;
+    }
+    const scope = root instanceof Element ? root : document;
+    const el = scope.querySelector("[data-qy-page-toast]");
+    if (!el) {
+      return;
+    }
+    const msg = (el.getAttribute("data-qy-page-toast") || "").trim();
+    if (!msg) {
+      return;
+    }
+    const rawVariant = (el.getAttribute("data-qy-toast-variant") || "warning").toLowerCase();
+    const variant =
+      rawVariant === "danger" || rawVariant === "error"
+        ? "danger"
+        : rawVariant === "success"
+          ? "success"
+          : rawVariant === "info"
+            ? "info"
+            : "warning";
+    window.qyShowToast(msg, variant);
+  };
+
   window.qyCsrfToken = () => {
     const meta = document.querySelector('meta[name="csrf-token"]');
     return meta ? meta.getAttribute("content") || "" : "";
@@ -327,6 +352,40 @@ if (document.body.classList.contains("qy-login-page")) {
         /* ignore */
       }
     });
+  };
+
+  window.qyDisposeBootstrapOverlays = (root) => {
+    const scope = root instanceof Element ? root : document;
+    if (typeof bootstrap !== "undefined") {
+      const disposeAll = (selector, getInstance) => {
+        scope.querySelectorAll(selector).forEach((el) => {
+          try {
+            const inst = getInstance(el);
+            if (inst) {
+              inst.dispose();
+            }
+          } catch {
+            /* ignore */
+          }
+          el.classList.remove("show");
+        });
+      };
+      if (bootstrap.Modal) {
+        disposeAll(".modal", (el) => bootstrap.Modal.getInstance(el));
+      }
+      if (bootstrap.Offcanvas) {
+        disposeAll(".offcanvas", (el) => bootstrap.Offcanvas.getInstance(el));
+      }
+      if (bootstrap.Dropdown) {
+        disposeAll('[data-bs-toggle="dropdown"]', (el) => bootstrap.Dropdown.getInstance(el));
+      }
+    }
+    document.querySelectorAll(".modal-backdrop, .offcanvas-backdrop").forEach((el) => el.remove());
+    document.body.classList.remove("modal-open", "offcanvas-open");
+    document.body.style.removeProperty("overflow");
+    document.body.style.removeProperty("padding-right");
+    document.documentElement.style.removeProperty("overflow");
+    document.documentElement.style.removeProperty("padding-right");
   };
 
   window.qyInitBootstrapTooltips = (root) => {
@@ -1204,6 +1263,65 @@ if (popupNavGroups.length > 0) {
     document.querySelector(".staff-spa-body")?.scrollTo(0, 0);
   };
 
+  const hydrateSpaMain = (spaMainEl) => {
+    if (typeof window.qyRefreshLiveInbox === "function") {
+      window.qyRefreshLiveInbox({ applyOnly: true });
+    } else {
+      if (typeof window.qyRefreshReviewBadge === "function") {
+        window.qyRefreshReviewBadge();
+      }
+      if (typeof window.qyRefreshOrderIntakeBadge === "function") {
+        window.qyRefreshOrderIntakeBadge();
+      }
+      if (typeof window.qyRefreshAssignmentNavBadge === "function") {
+        window.qyRefreshAssignmentNavBadge();
+      }
+      if (typeof window.qyRefreshStaffNotificationBadge === "function") {
+        window.qyRefreshStaffNotificationBadge();
+      }
+    }
+    if (typeof window.qyConsumeUrlToast === "function") {
+      window.qyConsumeUrlToast();
+    }
+    if (typeof window.qyConsumePageToast === "function" && spaMainEl) {
+      window.qyConsumePageToast(spaMainEl);
+    }
+    if (typeof window.qyInitBootstrapTooltips === "function" && spaMainEl) {
+      window.qyInitBootstrapTooltips(spaMainEl);
+    }
+    if (typeof window.qyInitClickableRows === "function" && spaMainEl) {
+      window.qyInitClickableRows(spaMainEl);
+    }
+    if (typeof window.qyInitCaseTypeSelectors === "function" && spaMainEl) {
+      window.qyInitCaseTypeSelectors(spaMainEl);
+    }
+    if (typeof window.qyInitCasesCustomerProjectFilter === "function" && spaMainEl) {
+      window.qyInitCasesCustomerProjectFilter(spaMainEl);
+    }
+    if (typeof window.qyInitBusinessOrderPage === "function" && spaMainEl) {
+      window.qyInitBusinessOrderPage(spaMainEl);
+    }
+    if (typeof window.qyInitCaseEditActualGate === "function" && spaMainEl) {
+      window.qyInitCaseEditActualGate(spaMainEl);
+    }
+    if (typeof window.qyInitAccountCreateRoleFields === "function" && spaMainEl) {
+      window.qyInitAccountCreateRoleFields(spaMainEl);
+    }
+    if (typeof window.qyOpenPageModal === "function" && spaMainEl) {
+      window.qyOpenPageModal(spaMainEl);
+    }
+  };
+
+  const replaceSpaMainEl = (mainEl, nextMain) => {
+    if (typeof window.qyDisposeBootstrapOverlays === "function") {
+      window.qyDisposeBootstrapOverlays(mainEl);
+    }
+    if (typeof window.qyDisposeBootstrapTooltips === "function") {
+      window.qyDisposeBootstrapTooltips(mainEl);
+    }
+    mainEl.replaceWith(nextMain);
+  };
+
   const collectKeyedScroll = (root) => {
     const map = {};
     if (!root) {
@@ -1250,9 +1368,13 @@ if (popupNavGroups.length > 0) {
     });
   };
 
+  let spaGeneration = 0;
+  let spaInFlight = false;
+  window.qySpaBusy = () => spaInFlight;
+
   const spaNavigate = async (
     href,
-    { skipHistory = false, force = false, preserveScroll = false } = {}
+    { skipHistory = false, force = false, preserveScroll = false, silent = false } = {}
   ) => {
     let reqUrl;
     try {
@@ -1272,6 +1394,8 @@ if (popupNavGroups.length > 0) {
       return;
     }
 
+    const gen = ++spaGeneration;
+    spaInFlight = true;
     const spaBody = document.querySelector(".staff-spa-body");
     const savedScroll = {
       windowY: window.scrollY || window.pageYOffset || 0,
@@ -1280,10 +1404,12 @@ if (popupNavGroups.length > 0) {
       endpoint: mainEl.dataset.spaEndpoint || "",
     };
     // 快速 SPA 切换不显示加载提示，避免中间转圈一闪而过；
-    // 仅请求超过短暂阈值时显示轻量进度条。
-    const loadingTimer = window.setTimeout(() => {
-      spaBody?.classList.add("qy-spa-loading");
-    }, 180);
+    // 仅请求超过短暂阈值时显示轻量进度条。静默同步不加进度条。
+    const loadingTimer = silent
+      ? 0
+      : window.setTimeout(() => {
+          spaBody?.classList.add("qy-spa-loading");
+        }, 180);
 
     try {
       const response = await fetch(reqUrl.toString(), {
@@ -1312,6 +1438,9 @@ if (popupNavGroups.length > 0) {
       }
 
       const html = await response.text();
+      if (gen !== spaGeneration) {
+        return;
+      }
       const doc = new DOMParser().parseFromString(html, "text/html");
       const nextMain = doc.getElementById("qy-spa-main");
       if (!nextMain) {
@@ -1319,49 +1448,20 @@ if (popupNavGroups.length > 0) {
         return;
       }
 
-      if (typeof window.qyDisposeBootstrapTooltips === "function") {
-        window.qyDisposeBootstrapTooltips(mainEl);
-      }
-      mainEl.replaceWith(nextMain);
+      replaceSpaMainEl(mainEl, nextMain);
       const docTitle = nextMain.dataset.spaDocumentTitle;
       if (docTitle) {
         document.title = docTitle;
       }
       applySpaSidebarActive(nextMain.dataset.spaEndpoint);
       syncTabsForUrl(pathQuery, nextMain.dataset.spaDocumentTitle || docTitle || document.title);
-      if (typeof window.qyRefreshReviewBadge === "function") {
-        window.qyRefreshReviewBadge();
-      }
-      if (typeof window.qyRefreshOrderIntakeBadge === "function") {
-        window.qyRefreshOrderIntakeBadge();
-      }
-      if (typeof window.qyRefreshStaffNotificationBadge === "function") {
-        window.qyRefreshStaffNotificationBadge();
-      }
 
       if (!skipHistory) {
         history.pushState({ qySpa: true }, "", pathQuery);
       }
 
       const spaMainEl = document.getElementById("qy-spa-main");
-      if (typeof window.qyConsumeUrlToast === "function") {
-        window.qyConsumeUrlToast();
-      }
-      if (typeof window.qyInitBootstrapTooltips === "function" && spaMainEl) {
-        window.qyInitBootstrapTooltips(spaMainEl);
-      }
-      if (typeof window.qyInitClickableRows === "function" && spaMainEl) {
-        window.qyInitClickableRows(spaMainEl);
-      }
-      if (typeof window.qyInitCaseTypeSelectors === "function" && spaMainEl) {
-        window.qyInitCaseTypeSelectors(spaMainEl);
-      }
-      if (typeof window.qyInitCasesCustomerProjectFilter === "function" && spaMainEl) {
-        window.qyInitCasesCustomerProjectFilter(spaMainEl);
-      }
-      if (typeof window.qyInitBusinessOrderPage === "function" && spaMainEl) {
-        window.qyInitBusinessOrderPage(spaMainEl);
-      }
+      hydrateSpaMain(spaMainEl);
 
       const samePage =
         Boolean(savedScroll.endpoint) &&
@@ -1386,8 +1486,13 @@ if (popupNavGroups.length > 0) {
     } catch {
       window.location.assign(href);
     } finally {
-      window.clearTimeout(loadingTimer);
+      if (loadingTimer) {
+        window.clearTimeout(loadingTimer);
+      }
       spaBody?.classList.remove("qy-spa-loading");
+      if (gen === spaGeneration) {
+        spaInFlight = false;
+      }
     }
   };
 
@@ -1652,11 +1757,21 @@ if (popupNavGroups.length > 0) {
       }
     }
 
-    if (typeof window.qyRefreshReviewBadge === "function") {
-      window.qyRefreshReviewBadge();
+    if (typeof window.qyRefreshLiveInbox === "function") {
+      window.qyRefreshLiveInbox({ applyOnly: true });
+    } else {
+      if (typeof window.qyRefreshReviewBadge === "function") {
+        window.qyRefreshReviewBadge();
+      }
+      if (typeof window.qyRefreshOrderIntakeBadge === "function") {
+        window.qyRefreshOrderIntakeBadge();
+      }
+      if (typeof window.qyRefreshAssignmentNavBadge === "function") {
+        window.qyRefreshAssignmentNavBadge();
+      }
     }
-    if (typeof window.qyRefreshOrderIntakeBadge === "function") {
-      window.qyRefreshOrderIntakeBadge();
+    if (typeof window.qyNotifyInboxChanged === "function") {
+      window.qyNotifyInboxChanged();
     }
 
     await spaNavigate(window.location.href, {
@@ -1758,6 +1873,9 @@ if (popupNavGroups.length > 0) {
       if (xhr.status >= 200 && xhr.status < 400) {
         progressWrap?.remove();
         const target = xhr.responseURL || window.location.href;
+        if (typeof window.qyNotifyInboxChanged === "function") {
+          window.qyNotifyInboxChanged();
+        }
         await spaNavigate(target, { skipHistory: true, force: true });
         requestAnimationFrame(() => {
           window.scrollTo(0, scrollY);
@@ -1793,12 +1911,107 @@ if (popupNavGroups.length > 0) {
     xhr.send(formData);
   };
 
+  const submitSpaKeepForm = async (form) => {
+    const typeInput = form.querySelector('input[name="case_type_code"]');
+    if (typeInput instanceof HTMLInputElement && !(typeInput.value || "").trim()) {
+      if (typeof window.qyShowToast === "function") {
+        window.qyShowToast("请选择完整、有效的案件类型。", "warning");
+      }
+      return;
+    }
+    if (typeof form.checkValidity === "function" && !form.checkValidity()) {
+      if (typeof form.reportValidity === "function") {
+        form.reportValidity();
+      }
+      return;
+    }
+
+    const submitBtn =
+      form.querySelector('button[type="submit"]') || form.querySelector("button");
+    const prevDisabled = submitBtn ? submitBtn.disabled : false;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+    }
+
+    spaInFlight = true;
+    try {
+      const postUrl = form.getAttribute("action") || window.location.href;
+      const formData = new FormData(form);
+      const headers = { [SPA_HEADER]: "1" };
+      const csrfToken =
+        formData.get("csrf_token") ||
+        (typeof window.qyCsrfToken === "function" ? window.qyCsrfToken() : "");
+      if (csrfToken) {
+        headers["X-CSRFToken"] = csrfToken;
+      }
+      const res = await fetch(postUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: formData,
+      });
+      if (res.redirected) {
+        await spaNavigate(res.url, { force: true });
+        return;
+      }
+      if (res.status === 403) {
+        if (typeof window.qyShowToast === "function") {
+          window.qyShowToast("你没有访问该页面的权限。", "warning");
+        }
+        return;
+      }
+      if (res.status === 413) {
+        if (typeof window.qyShowToast === "function") {
+          window.qyShowToast("上传内容过大，请压缩或拆分后重试。", "danger");
+        }
+        return;
+      }
+      if (!res.ok) {
+        if (typeof window.qyShowToast === "function") {
+          window.qyShowToast("提交失败，请重试。", "danger");
+        }
+        return;
+      }
+
+      const html = await res.text();
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const nextMain = doc.getElementById("qy-spa-main");
+      const mainEl = document.getElementById("qy-spa-main");
+      if (!nextMain || !mainEl) {
+        window.location.assign(postUrl);
+        return;
+      }
+      replaceSpaMainEl(mainEl, nextMain);
+      const spaMainEl = document.getElementById("qy-spa-main");
+      const docTitle = spaMainEl?.dataset.spaDocumentTitle;
+      if (docTitle) {
+        document.title = docTitle;
+      }
+      applySpaSidebarActive(spaMainEl?.dataset.spaEndpoint);
+      hydrateSpaMain(spaMainEl);
+    } catch {
+      if (typeof window.qyShowToast === "function") {
+        window.qyShowToast("网络异常，请重试。", "danger");
+      }
+    } finally {
+      spaInFlight = false;
+      if (submitBtn && document.body.contains(submitBtn)) {
+        submitBtn.disabled = prevDisabled;
+      }
+    }
+  };
+
   spaLayout.addEventListener("submit", (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) {
       return;
     }
     if (form.method.toLowerCase() !== "post" || event.defaultPrevented) {
+      return;
+    }
+    if (form.hasAttribute("data-qy-spa-form")) {
+      event.preventDefault();
+      submitSpaKeepForm(form);
       return;
     }
     if (isCaseDetailUploadForm(form)) {
@@ -2004,8 +2217,6 @@ if (popupNavGroups.length > 0) {
   };
 
   window.qyRefreshReviewBadge = refreshBadge;
-  refreshBadge();
-  window.setInterval(refreshBadge, 30000);
 })();
 
 /* ---------- 管理端下单待确认红点：确认后立即更新，并定时检查新提交 ---------- */
@@ -2037,8 +2248,48 @@ if (popupNavGroups.length > 0) {
   };
 
   window.qyRefreshOrderIntakeBadge = refreshBadge;
-  refreshBadge();
-  window.setInterval(refreshBadge, 30000);
+})();
+
+/* ---------- 管理端派单红点：待分配、待指定流程/收账；处理后立即更新 ---------- */
+(() => {
+  const applyCount = (badges, count, label) => {
+    const unread = Number(count || 0);
+    badges.forEach((badge) => {
+      badge.textContent = String(unread);
+      badge.classList.toggle("d-none", unread <= 0);
+      badge.setAttribute("aria-label", `${label} ${unread} 件`);
+    });
+  };
+
+  const refreshBadge = async () => {
+    const assignmentBadges = Array.from(document.querySelectorAll("[data-smart-assignment-badge]"));
+    const processBadges = Array.from(document.querySelectorAll("[data-process-assignment-badge]"));
+    const billingBadges = Array.from(document.querySelectorAll("[data-billing-assignment-badge]"));
+    const dispatchBadges = Array.from(document.querySelectorAll("[data-dispatch-nav-badge]"));
+    const badges = assignmentBadges.concat(processBadges, billingBadges, dispatchBadges);
+    const statusUrl = badges.find((badge) => badge.dataset.statusUrl)?.dataset.statusUrl;
+    if (!badges.length || !statusUrl) {
+      return;
+    }
+    try {
+      const response = await fetch(statusUrl, {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) {
+        return;
+      }
+      const payload = await response.json();
+      applyCount(assignmentBadges, payload.pending_assignment, "待分配案件");
+      applyCount(processBadges, payload.pending_process, "待指定流程");
+      applyCount(billingBadges, payload.pending_billing, "待指定收账");
+      applyCount(dispatchBadges, payload.unread, "待处理分派");
+    } catch {
+      // 网络短暂异常时保留上一次红点状态。
+    }
+  };
+
+  window.qyRefreshAssignmentNavBadge = refreshBadge;
 })();
 
 /* ---------- 员工端消息红点：定时检查新的案件审核结果 ---------- */
@@ -2068,8 +2319,266 @@ if (popupNavGroups.length > 0) {
   };
 
   window.qyRefreshStaffNotificationBadge = refreshBadge;
-  refreshBadge();
-  window.setInterval(refreshBadge, 30000);
+})();
+
+/* ---------- 跨端收件箱：可见时短轮询，cursor 变化则静默刷新当前列表 ---------- */
+(() => {
+  const POLL_MS = 5000;
+  const LIVE_PAGES = new Set([
+    "admin.dashboard",
+    "admin.order_intake",
+    "admin.review_quality",
+    "admin.smart_assignment",
+    "admin.process_assignment",
+    "admin.billing_assignment",
+    "admin.task_board",
+    "staff.dashboard",
+    "staff.task_board",
+    "staff.notifications",
+    "staff.process_dashboard",
+    "staff.process_followup",
+    "staff.business_dashboard",
+    "staff.business_orders",
+    "staff.business_collections",
+    "staff.deadline_reminder",
+    "client.dashboard",
+    "client.cases",
+  ]);
+
+  const applyCount = (badges, count, label, unit) => {
+    const unread = Number(count || 0);
+    badges.forEach((badge) => {
+      badge.textContent = String(unread);
+      badge.classList.toggle("d-none", unread <= 0);
+      badge.setAttribute("aria-label", `${label} ${unread} ${unit}`);
+    });
+  };
+
+  const isEditableField = (el) => {
+    if (!(el instanceof HTMLElement)) {
+      return false;
+    }
+    if (el.isContentEditable) {
+      return true;
+    }
+    const tag = el.tagName;
+    if (tag === "TEXTAREA" || tag === "SELECT") {
+      return true;
+    }
+    if (tag !== "INPUT") {
+      return false;
+    }
+    const type = (el.type || "text").toLowerCase();
+    return !["checkbox", "radio", "button", "submit", "reset", "hidden", "file"].includes(type);
+  };
+
+  const formHasEdits = (form) => {
+    if (form.dataset.qyUploading === "1") {
+      return true;
+    }
+    for (const el of Array.from(form.elements)) {
+      if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) {
+        continue;
+      }
+      const type = (el.type || "").toLowerCase();
+      if (type === "hidden" || type === "submit" || type === "button" || type === "reset") {
+        continue;
+      }
+      if (type === "file") {
+        if (el.files && el.files.length) {
+          return true;
+        }
+        continue;
+      }
+      if (type === "checkbox" || type === "radio") {
+        if (el.checked !== el.defaultChecked) {
+          return true;
+        }
+        continue;
+      }
+      if (el instanceof HTMLSelectElement) {
+        const options = Array.from(el.options);
+        if (options.some((opt) => opt.selected !== opt.defaultSelected)) {
+          return true;
+        }
+        continue;
+      }
+      if (el.value !== el.defaultValue) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const pageBlocked = () => {
+    if (document.body.classList.contains("qy-dialog-open")) {
+      return true;
+    }
+    if (document.querySelector(".modal.show, dialog[open]")) {
+      return true;
+    }
+    if (typeof window.qySpaBusy === "function" && window.qySpaBusy()) {
+      return true;
+    }
+    const main = document.getElementById("qy-spa-main");
+    if (!main) {
+      return true;
+    }
+    if (main.querySelector("[data-qy-page-toast]")) {
+      return true;
+    }
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && main.contains(active) && isEditableField(active)) {
+      return true;
+    }
+    return Array.from(main.querySelectorAll("form")).some((form) => formHasEdits(form));
+  };
+
+  const currentEndpoint = () =>
+    document.getElementById("qy-spa-main")?.dataset.spaEndpoint || "";
+
+  let lastCursor = null;
+  let pollTimer = 0;
+  let inFlight = false;
+  let channel = null;
+  const statusUrl = document.getElementById("qy-spa-layout")?.dataset.qyLiveStatus;
+  if (!statusUrl) {
+    return;
+  }
+  try {
+    channel = new BroadcastChannel("qy-live-inbox");
+  } catch {
+    channel = null;
+  }
+
+  const applyPayload = (payload) => {
+    if (payload.pending_assignment !== undefined) {
+      applyCount(
+        Array.from(document.querySelectorAll("[data-review-unread-badge]")),
+        payload.review_unread,
+        "待终审案件",
+        "件"
+      );
+      applyCount(
+        Array.from(document.querySelectorAll("[data-order-intake-badge]")),
+        payload.pending_order_intake,
+        "待确认下单",
+        "件"
+      );
+      applyCount(
+        Array.from(document.querySelectorAll("[data-smart-assignment-badge]")),
+        payload.pending_assignment,
+        "待分配案件",
+        "件"
+      );
+      applyCount(
+        Array.from(document.querySelectorAll("[data-process-assignment-badge]")),
+        payload.pending_process,
+        "待指定流程",
+        "件"
+      );
+      applyCount(
+        Array.from(document.querySelectorAll("[data-billing-assignment-badge]")),
+        payload.pending_billing,
+        "待指定收账",
+        "件"
+      );
+      applyCount(
+        Array.from(document.querySelectorAll("[data-dispatch-nav-badge]")),
+        payload.unread,
+        "待处理分派",
+        "件"
+      );
+    }
+    if (payload.latest_id !== undefined || document.getElementById("qyStaffNotificationBadge")) {
+      applyCount(
+        Array.from(document.querySelectorAll("#qyStaffNotificationBadge, [data-staff-notification-badge]")),
+        payload.unread,
+        "未读消息",
+        "条"
+      );
+    }
+  };
+
+  const poll = async ({ applyOnly = false } = {}) => {
+    if (inFlight) {
+      return;
+    }
+    if (document.visibilityState !== "visible" && !applyOnly) {
+      return;
+    }
+    inFlight = true;
+    try {
+      const response = await fetch(statusUrl, {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        return;
+      }
+      const payload = await response.json();
+      applyPayload(payload);
+      const cursor = String(payload.cursor || "");
+      const changed = lastCursor !== null && cursor !== lastCursor;
+      if (cursor) {
+        lastCursor = cursor;
+      }
+      if (
+        !applyOnly &&
+        changed &&
+        LIVE_PAGES.has(currentEndpoint()) &&
+        !pageBlocked() &&
+        typeof window.qySpaNavigate === "function"
+      ) {
+        await window.qySpaNavigate(window.location.href, {
+          skipHistory: true,
+          force: true,
+          preserveScroll: true,
+          silent: true,
+        });
+      }
+    } catch {
+      // 网络短暂异常时保留上一次红点与页面。
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  window.qyRefreshLiveInbox = poll;
+  window.qyNotifyInboxChanged = () => {
+    try {
+      channel?.postMessage({ type: "changed" });
+    } catch {
+      // 个别浏览器无 BroadcastChannel 时只靠轮询。
+    }
+  };
+
+  const armTimer = () => {
+    window.clearInterval(pollTimer);
+    pollTimer = window.setInterval(() => {
+      poll();
+    }, POLL_MS);
+  };
+
+  channel?.addEventListener("message", () => {
+    poll();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      poll();
+      armTimer();
+    } else {
+      window.clearInterval(pollTimer);
+    }
+  });
+  window.addEventListener("focus", () => {
+    poll();
+  });
+  poll();
+  if (document.visibilityState === "visible") {
+    armTimer();
+  }
 })();
 
 const passwordInput = document.getElementById("password");
@@ -3299,11 +3808,70 @@ qyInstallAdminListUi({
   });
 })();
 
+window.qyInitCaseEditActualGate = (scope = document) => {
+  const root = scope instanceof Element ? scope : document;
+  const phase = root.querySelector("#caseEditPhaseInput");
+  const actual = root.querySelector("#caseEditActualReturnAtInput");
+  if (!(phase instanceof HTMLSelectElement) || !(actual instanceof HTMLInputElement)) {
+    return;
+  }
+  if (phase.dataset.qyActualGate === "1") {
+    return;
+  }
+  const sync = () => {
+    actual.required = phase.value === "completed" && !actual.value;
+  };
+  phase.addEventListener("change", sync);
+  actual.addEventListener("input", sync);
+  phase.dataset.qyActualGate = "1";
+  sync();
+};
+
+window.qyInitAccountCreateRoleFields = (scope = document) => {
+  const root = scope instanceof Element ? scope : document;
+  const roleEl = root.querySelector("#accountRoleInput");
+  const kindWrap = root.querySelector("#qy-account-staff-kind-wrap");
+  const functionWrap = root.querySelector("#qy-account-staff-function-wrap");
+  const custWrap = root.querySelector("#qy-account-customer-wrap");
+  if (!(roleEl instanceof HTMLSelectElement)) {
+    return;
+  }
+  if (roleEl.dataset.qyRoleSync === "1") {
+    return;
+  }
+  const sync = () => {
+    const isStaff = roleEl.value === "staff";
+    if (kindWrap) kindWrap.hidden = !isStaff;
+    if (functionWrap) functionWrap.hidden = !isStaff;
+    if (custWrap) custWrap.hidden = isStaff;
+  };
+  roleEl.addEventListener("change", sync);
+  roleEl.dataset.qyRoleSync = "1";
+  sync();
+};
+
+window.qyOpenPageModal = (scope = document) => {
+  const root = scope instanceof Element ? scope : document;
+  const holder = root.querySelector("[data-qy-open-modal]");
+  const id = (holder?.getAttribute("data-qy-open-modal") || "").trim();
+  if (!id || typeof bootstrap === "undefined" || !bootstrap.Modal) {
+    return;
+  }
+  const el = document.getElementById(id);
+  if (!(el instanceof HTMLElement)) {
+    return;
+  }
+  bootstrap.Modal.getOrCreateInstance(el).show();
+};
+
 /* ---------- 首屏：URL 提示、工作区内 Tooltip ---------- */
 (() => {
   const bootStaffUi = () => {
     if (typeof window.qyConsumeUrlToast === "function") {
       window.qyConsumeUrlToast();
+    }
+    if (typeof window.qyConsumePageToast === "function") {
+      window.qyConsumePageToast(document.getElementById("qy-spa-main") || document);
     }
     const mainEl = document.getElementById("qy-spa-main");
     if (mainEl && typeof window.qyInitBootstrapTooltips === "function") {
@@ -3317,6 +3885,15 @@ qyInstallAdminListUi({
     }
     if (mainEl && typeof window.qyInitBusinessOrderPage === "function") {
       window.qyInitBusinessOrderPage(mainEl);
+    }
+    if (mainEl && typeof window.qyInitCaseEditActualGate === "function") {
+      window.qyInitCaseEditActualGate(mainEl);
+    }
+    if (mainEl && typeof window.qyInitAccountCreateRoleFields === "function") {
+      window.qyInitAccountCreateRoleFields(mainEl);
+    }
+    if (mainEl && typeof window.qyOpenPageModal === "function") {
+      window.qyOpenPageModal(mainEl);
     }
   };
   if (document.readyState === "loading") {

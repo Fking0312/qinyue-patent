@@ -1,15 +1,29 @@
-{% if dashboard_stat_cards %}
-<section class="qy-dash-stats mb-4" aria-label="工作台概览">
-  {% for card in dashboard_stat_cards %}
-  <a
-    class="qy-dash-stat-card qy-dash-stat-card--{{ card.tone }}"
-    href="{{ url_for(card.endpoint, **card.endpoint_kwargs) }}"
-    data-spa-endpoint="{{ card.endpoint }}"
-  >
-    <div class="qy-dash-stat-label">{{ card.label }}</div>
-    <div class="qy-dash-stat-value">{{ card.value }}</div>
-    <div class="qy-dash-stat-hint">{{ card.hint }}</div>
-  </a>
+{% from "macros/dashboard_stat_icon.html" import dashboard_stat_icon %}
+{% if dashboard_stat_groups %}
+{% set group_count = dashboard_stat_groups|length %}
+<div class="qy-dash-stat-groups qy-dash-stat-groups--{{ 'stacked' if group_count > 1 else 'single' }} mb-4" aria-label="工作台概览">
+  {% for group_label, cards in dashboard_stat_groups %}
+  <section class="qy-dash-stat-group" {% if group_label %}aria-labelledby="dash-stat-group-{{ loop.index }}"{% endif %}>
+    {% if group_label %}
+    <h2 id="dash-stat-group-{{ loop.index }}" class="qy-dash-stat-group-title">{{ group_label }}</h2>
+    {% endif %}
+    <div class="qy-dash-stats">
+      {% for card in cards %}
+      <a
+        class="qy-dash-stat-card qy-dash-stat-card--{{ card.tone }}{% if card.value %} is-active{% else %} is-zero{% endif %}"
+        href="{{ url_for(card.endpoint, **card.endpoint_kwargs) }}"
+        data-spa-endpoint="{{ card.endpoint }}"
+      >
+        {{ dashboard_stat_icon(card.icon) }}
+        <span class="qy-dash-stat-copy">
+          <span class="qy-dash-stat-label">{{ card.label }}</span>
+          <span class="qy-dash-stat-hint">{{ card.hint }}</span>
+        </span>
+        <span class="qy-dash-stat-value">{{ card.value }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
   {% endfor %}
-</section>
+</div>
 {% endif %}

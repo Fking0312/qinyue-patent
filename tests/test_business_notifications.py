@@ -157,7 +157,7 @@ def test_process_opens_message_center():
     assert page.status_code == 200
     text = page.data.decode("utf-8")
     assert "消息中心" in text
-    assert "撰写师提交材料或管理员指定你跟进后" in text
+    assert "管理员通过材料或指定你跟进后" in text
     assert "去跟进案件" in text
     assert "指定跟进" in text
     assert "去案件列表" not in text

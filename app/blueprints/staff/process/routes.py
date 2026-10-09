@@ -6,7 +6,6 @@ from flask_login import current_user, login_required
 from app.blueprints.staff import staff_bp
 from app.blueprints.staff.guards import ensure_process
 from app.case_material_upload import fetch_case_materials_grouped
-from app.case_trace import pending_revised_writing_hints, review_package_writing_materials
 from app.dashboard_stats import process_dashboard_page_kwargs
 from app.extensions import db
 from app.models import Case, OfficialNotice
@@ -21,6 +20,7 @@ from app.official_notices import (
     get_notice,
     list_case_notices,
     list_followup_cases,
+    mark_fee_paid,
     notice_is_unreceived,
     notice_queue,
     official_notices_dir,
@@ -28,6 +28,7 @@ from app.official_notices import (
     save_official_notice,
     stamp_notice_received,
     urge_notice,
+    user_may_download_fee_proof,
     user_may_download_notice,
     user_may_manage_case_notices,
 )
@@ -39,6 +40,7 @@ from app.collections import (
     get_collection,
     get_proof,
     list_case_collections,
+    notify_business_collection,
     reject_collection,
     user_may_download_proof,
 )
@@ -101,7 +103,7 @@ def process_followup():
 @staff_bp.route("/process-cases/<int:case_id>", methods=["GET", "POST"])
 @login_required
 def process_case(case_id: int):
-    """本案：核对撰写材料、递交官方、官文跟进。"""
+    """本案：下载撰写材料、递交官方、官文跟进。"""
     case = _ensure_process_case(case_id)
     if request.method == "POST":
         form_action = request.form.get("form_action", "").strip()
@@ -151,7 +153,13 @@ def process_case(case_id: int):
                 "success",
                 case_id=case.id,
             )
-        if form_action in {"forward_notice", "urge_notice", "delete_notice"}:
+        if form_action in {
+            "forward_notice",
+            "urge_notice",
+            "delete_notice",
+            "mark_fee_paid",
+            "notify_collection",
+        }:
             notice_id_raw = request.form.get("notice_id", "").strip()
             notice = get_notice(int(notice_id_raw)) if notice_id_raw.isdigit() else None
             if notice is None or notice.case_id != case.id:
@@ -164,6 +172,14 @@ def process_case(case_id: int):
                 )
             elif form_action == "urge_notice":
                 ok, message = urge_notice(notice, current_user)
+            elif form_action == "mark_fee_paid":
+                ok, message = mark_fee_paid(
+                    notice,
+                    current_user,
+                    file_storage=request.files.get("fee_proof_file"),
+                )
+            elif form_action == "notify_collection":
+                ok, message = notify_business_collection(notice, current_user)
             else:
                 ok, message = delete_unforwarded_notice(notice, current_user)
             if ok:
@@ -200,14 +216,11 @@ def process_case(case_id: int):
     disclosure_material_files, writing_material_files = fetch_case_materials_grouped(case.id, "all")
     task = case.task
     base_phase = phase_for_workflow(task.phase_status) if task is not None else ""
-    revised_writing_hints = (
-        pending_revised_writing_hints(case.id) if base_phase == TaskPhase.IN_PROGRESS else []
-    )
-    can_process_accept = task is not None and is_pending_review_phase(task.phase_status)
-    review_hint_files = review_package_writing_materials(case.id) if can_process_accept else []
+    awaiting_admin_review = task is not None and is_pending_review_phase(task.phase_status)
     can_mark_filed = base_phase == TaskPhase.PENDING_SUBMIT
     can_submit_final = base_phase in {TaskPhase.OFFICE_ACTION, TaskPhase.AUTHORIZED_PENDING_PAYMENT}
     collections = list_case_collections(case.id)
+    fee_notices = [item for item in notices if item.needs_billing]
     collection_block = final_review_block_reason(case) if can_submit_final else None
     billing_owner = case_billing_owner(case)
     return render_spa_or_full(
@@ -221,6 +234,7 @@ def process_case(case_id: int):
         writer=writer,
         billing_owner=billing_owner,
         notices=notices,
+        fee_notices=fee_notices,
         collections=collections,
         collection_block=collection_block,
         notice_types=OfficialNotice.TYPES,
@@ -229,9 +243,7 @@ def process_case(case_id: int):
         date_input_value=date_input_value,
         disclosure_material_files=disclosure_material_files,
         writing_material_files=writing_material_files,
-        review_hint_files=review_hint_files,
-        revised_writing_hints=revised_writing_hints,
-        can_process_accept=can_process_accept,
+        awaiting_admin_review=awaiting_admin_review,
         can_mark_filed=can_mark_filed,
         can_submit_final=can_submit_final,
     )
@@ -240,7 +252,7 @@ def process_case(case_id: int):
 @staff_bp.route("/official-notices/<int:notice_id>")
 @login_required
 def official_notice_download(notice_id: int):
-    """流程人员或已转交的撰写师下载官文；撰写师首次下载记为已接收。"""
+    """流程人员、已转交的撰写师或已通知收账的业务人员下载官文；撰写师首次下载记为已接收。"""
     notice = get_notice(notice_id)
     if notice is None or not user_may_download_notice(current_user, notice):
         abort(404)
@@ -252,6 +264,21 @@ def official_notice_download(notice_id: int):
         notice.stored_name,
         as_attachment=True,
         download_name=notice.original_name,
+    )
+
+
+@staff_bp.route("/official-notices/<int:notice_id>/fee-proof")
+@login_required
+def official_fee_proof_download(notice_id: int):
+    """流程人员下载官方缴费证明；撰写师与业务人员不可见。"""
+    notice = get_notice(notice_id)
+    if notice is None or not user_may_download_fee_proof(current_user, notice):
+        abort(404)
+    return send_from_directory(
+        official_notices_dir(),
+        notice.fee_paid_proof_stored_name,
+        as_attachment=True,
+        download_name=notice.fee_paid_proof_original_name or notice.fee_paid_proof_stored_name,
     )
 
 

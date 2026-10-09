@@ -294,7 +294,7 @@
                   <th>种类</th>
                   <th>文件</th>
                   <th>官方期限</th>
-                  <th>转交 / 接收</th>
+                  <th>处理进度</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -308,7 +308,19 @@
                   </td>
                   <td class="text-nowrap small">{{ notice.official_due_at|qy_format_dt if notice.official_due_at else "—" }}</td>
                   <td class="small">
-                    {% if notice.forwarded_at %}
+                    {% if notice.needs_billing %}
+                    {% if notice.fee_paid_complete %}
+                    <div class="text-success">已官方缴费 {{ notice.fee_paid_at|qy_format_dt }}</div>
+                    <div>
+                      缴费证明
+                      <a href="{{ url_for('admin.official_fee_proof_download', notice_id=notice.id) }}" download="{{ notice.fee_paid_proof_original_name }}">{{ notice.fee_paid_proof_original_name }}</a>
+                    </div>
+                    {% elif notice.fee_paid_at %}
+                    <div class="text-warning">已标记缴费，尚未附证明</div>
+                    {% else %}
+                    <div class="text-danger">待官方缴费</div>
+                    {% endif %}
+                    {% elif notice.forwarded_at %}
                     <div>转交 {{ notice.forwarded_to_display }}</div>
                     <div class="text-muted">{{ notice.forwarded_at|qy_format_dt }}</div>
                     {% if notice.received_at %}
@@ -339,7 +351,7 @@
           </div>
 
           <div class="fw-semibold mb-2 mt-4">收账记录</div>
-          <p class="text-muted small mb-2">缴费通知转交业务人员后，收款证明在这里查看。撰写师看不到这些文件。</p>
+          <p class="text-muted small mb-2">向客户收账的证明在这里查看。撰写师看不到这些文件。官方缴费由流程人员办理，不经过业务。</p>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
               <thead>
@@ -392,7 +404,7 @@
                   <td colspan="4" class="p-0">
                     <div class="qy-material-empty-state">
                       <div class="fw-semibold mb-1">暂无收账记录</div>
-                      <div class="text-muted small">流程人员转交缴费通知后，业务交证明会显示在这里。</div>
+                      <div class="text-muted small">业务向客户收款并交证明后，会显示在这里。</div>
                     </div>
                   </td>
                 </tr>
@@ -567,7 +579,25 @@
           </div>
           {% elif task.phase_status == 'pending_review' or task.phase_status == 'overdue_pending_review' %}
           <hr>
-          <div class="alert alert-info mb-0 py-2 small">撰写材料正在由流程人员核对，终审在官方往来完成之后进行。</div>
+          <p class="small text-muted mb-2">撰写师已提交材料。通过后交给流程人员递交官网；打回则解锁撰写师继续修改。此处通过不会办结案件。</p>
+          <div class="row g-2 align-items-end">
+            <div class="col-md-8">
+              <label class="form-label mb-1" for="adminWritingRejectNoteInput">打回原因（必填）</label>
+              <form method="post" class="d-flex gap-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input id="adminWritingRejectNoteInput" class="form-control" type="text" name="reject_note" maxlength="500" placeholder="请输入打回原因">
+                <input type="hidden" name="review_action" value="reject">
+                <button class="btn btn-outline-danger" type="submit">打回撰写师</button>
+              </form>
+            </div>
+            <div class="col-md-4 d-flex justify-content-md-end">
+              <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="review_action" value="approve">
+                <button class="btn btn-primary" type="submit" data-qy-confirm="通过并交流程递交" data-qy-confirm-text="通过后本案进入待递交官方，由流程人员向专利局递交。不会办结案件。" data-qy-confirm-ok="确认通过" data-qy-confirm-variant="primary">通过，交流程递交</button>
+              </form>
+            </div>
+          </div>
           {% endif %}
           {% if latest_reject_log and latest_reject_log.note %}
           <hr>

@@ -10,7 +10,7 @@
 
   {% if attention_cases %}
   <section class="mb-4" aria-labelledby="process-check-title">
-    <h2 id="process-check-title" class="h6 text-secondary mb-3">待核对材料</h2>
+    <h2 id="process-check-title" class="h6 text-secondary mb-3">待递交官方</h2>
     <div class="card border-0 shadow-sm">
       <div class="card-body p-0">
         <div class="table-responsive">
@@ -36,7 +36,7 @@
                 <td class="small">{{ case.task.assignee_display if case.task else "—" }}</td>
                 <td>{{ task_phase_badge(case.task.phase_status if case.task else '') }}</td>
                 <td>
-                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.process_case', case_id=case.id) }}" data-spa-endpoint="staff.process_case">核对</a>
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('staff.process_case', case_id=case.id) }}" data-spa-endpoint="staff.process_case">去递交</a>
                 </td>
               </tr>
               {% endfor %}
@@ -77,7 +77,9 @@
                 <td>{{ notice.type_label }}</td>
                 <td class="text-nowrap small">{{ notice.official_due_at|qy_format_dt if notice.official_due_at else "—" }}</td>
                 <td>
-                  {% if notice.forwarded_at and not notice.received_at %}
+                  {% if notice.needs_billing %}
+                  <span class="badge text-bg-warning-subtle text-warning-emphasis border">待官方缴费</span>
+                  {% elif notice.forwarded_at and not notice.received_at %}
                   <span class="badge text-bg-danger-subtle text-danger-emphasis border">未接收</span>
                   {% else %}
                   <span class="badge text-bg-warning-subtle text-warning-emphasis border">待转交</span>
@@ -94,7 +96,7 @@
       </div>
     </div>
     {% else %}
-    {{ empty_state('暂时没有要马上处理的官文', '上传需要转交的来文后，待转交和超过一天未下载的会显示在这里。', icon='review', compact=True) }}
+    {{ empty_state('暂时没有要马上处理的官文', '上传需要转交撰写师的来文、待官方缴费的通知，或超过一天未下载的，会显示在这里。', icon='review', compact=True) }}
     {% endif %}
   </section>
 

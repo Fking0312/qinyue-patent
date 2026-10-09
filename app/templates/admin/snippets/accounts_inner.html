@@ -8,15 +8,20 @@
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
       <h2 class="h6 mb-3">新建账号</h2>
-      <form method="post" class="row g-3 qy-form-grid" id="qy-account-create-form">
+      <form method="post" class="row g-3 qy-form-grid" id="qy-account-create-form" data-qy-spa-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if form_error %}
+        <div class="col-12">
+          <div class="alert alert-warning py-2 px-3 mb-0" role="alert" data-qy-page-toast="{{ form_error }}" data-qy-toast-variant="warning">{{ form_error }}</div>
+        </div>
+        {% endif %}
         <div class="col-md-4">
           <label class="form-label" for="accountUsernameInput">账号名</label>
-          <input id="accountUsernameInput" class="form-control" type="text" name="username" required maxlength="50" placeholder="登录用账号名">
+          <input id="accountUsernameInput" class="form-control" type="text" name="username" required maxlength="50" placeholder="登录用账号名" value="{{ form_username }}">
         </div>
         <div class="col-md-4">
           <label class="form-label" for="accountPhoneInput">手机号</label>
-          <input id="accountPhoneInput" class="form-control" type="tel" name="phone" maxlength="20" inputmode="numeric" placeholder="11 位手机号，选填">
+          <input id="accountPhoneInput" class="form-control" type="tel" name="phone" maxlength="20" inputmode="numeric" placeholder="11 位手机号，选填" value="{{ form_phone }}">
         </div>
         <div class="col-md-4">
           <label class="form-label" for="accountPasswordInput">初始密码</label>
@@ -25,31 +30,31 @@
         <div class="col-md-4">
           <label class="form-label" for="accountRoleInput">账号类型</label>
           <select id="accountRoleInput" class="form-select" name="role">
-            <option value="staff">员工</option>
-            <option value="client" selected>客户</option>
+            <option value="staff" {% if form_role == "staff" %}selected{% endif %}>员工</option>
+            <option value="client" {% if form_role != "staff" %}selected{% endif %}>客户</option>
           </select>
         </div>
-        <div class="col-md-4" id="qy-account-staff-kind-wrap" hidden>
+        <div class="col-md-4" id="qy-account-staff-kind-wrap" {% if form_role != "staff" %}hidden{% endif %}>
           <label class="form-label" for="accountStaffKindInput">员工编制</label>
           <select id="accountStaffKindInput" class="form-select" name="staff_kind">
-            <option value="formal" selected>正式</option>
-            <option value="outsource">外包</option>
+            <option value="formal" {% if form_staff_kind != "outsource" %}selected{% endif %}>正式</option>
+            <option value="outsource" {% if form_staff_kind == "outsource" %}selected{% endif %}>外包</option>
           </select>
         </div>
-        <div class="col-md-4" id="qy-account-staff-function-wrap" hidden>
+        <div class="col-md-4" id="qy-account-staff-function-wrap" {% if form_role != "staff" %}hidden{% endif %}>
           <label class="form-label" for="accountStaffFunctionInput">员工职能</label>
           <select id="accountStaffFunctionInput" class="form-select" name="staff_function">
-            <option value="writer" selected>撰写师</option>
-            <option value="process">流程人员</option>
-            <option value="business">业务人员</option>
+            <option value="writer" {% if form_staff_function == "writer" %}selected{% endif %}>撰写师</option>
+            <option value="process" {% if form_staff_function == "process" %}selected{% endif %}>流程人员</option>
+            <option value="business" {% if form_staff_function == "business" %}selected{% endif %}>业务人员</option>
           </select>
         </div>
-        <div class="col-md-4" id="qy-account-customer-wrap">
+        <div class="col-md-4" id="qy-account-customer-wrap" {% if form_role == "staff" %}hidden{% endif %}>
           <label class="form-label" for="accountCustomerInput">绑定客户</label>
           <select id="accountCustomerInput" class="form-select" name="customer_id">
             <option value="">客户账号必选</option>
             {% for customer in customers %}
-            <option value="{{ customer.id }}">{{ customer.name }}</option>
+            <option value="{{ customer.id }}" {% if form_customer_id == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
             {% endfor %}
           </select>
         </div>
@@ -57,24 +62,6 @@
           <button class="btn btn-primary" type="submit">创建账号</button>
         </div>
       </form>
-      <script>
-        (() => {
-          const roleEl = document.getElementById("accountRoleInput");
-          const kindWrap = document.getElementById("qy-account-staff-kind-wrap");
-          const functionWrap = document.getElementById("qy-account-staff-function-wrap");
-          const custWrap = document.getElementById("qy-account-customer-wrap");
-          const sync = () => {
-            const isStaff = roleEl && roleEl.value === "staff";
-            if (kindWrap) kindWrap.hidden = !isStaff;
-            if (functionWrap) functionWrap.hidden = !isStaff;
-            if (custWrap) custWrap.hidden = isStaff;
-          };
-          if (roleEl) {
-            roleEl.addEventListener("change", sync);
-            sync();
-          }
-        })();
-      </script>
     </div>
   </div>
 

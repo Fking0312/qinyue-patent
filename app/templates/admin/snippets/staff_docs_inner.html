@@ -8,22 +8,27 @@
   <section class="card border-0 shadow-sm mb-4" aria-labelledby="staff-docs-upload-title">
     <div class="card-body p-3 p-md-4">
       <h2 id="staff-docs-upload-title" class="h6 mb-3">上传资料</h2>
-      <form method="post" action="{{ url_for('admin.staff_docs') }}" enctype="multipart/form-data" class="row g-3 qy-form-grid">
+      <form method="post" action="{{ url_for('admin.staff_docs') }}" enctype="multipart/form-data" class="row g-3 qy-form-grid" data-qy-spa-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if form_error %}
+        <div class="col-12">
+          <div class="alert alert-warning py-2 px-3 mb-0" role="alert" data-qy-page-toast="{{ form_error }}" data-qy-toast-variant="warning">{{ form_error }}</div>
+        </div>
+        {% endif %}
         <div class="col-md-6">
           <label class="form-label mb-1" for="staffDocTitleInput">标题</label>
-          <input id="staffDocTitleInput" class="form-control" type="text" name="title" required maxlength="200" placeholder="例如：撰写规范、流程操作手册">
+          <input id="staffDocTitleInput" class="form-control" type="text" name="title" required maxlength="200" placeholder="例如：撰写规范、流程操作手册" value="{{ form_title }}">
         </div>
         <div class="col-md-6">
           <label class="form-label mb-1" for="staffDocNoteInput">说明（选填）</label>
-          <input id="staffDocNoteInput" class="form-control" type="text" name="note" maxlength="500" placeholder="一句话说明这份资料做什么用">
+          <input id="staffDocNoteInput" class="form-control" type="text" name="note" maxlength="500" placeholder="一句话说明这份资料做什么用" value="{{ form_note }}">
         </div>
         <div class="col-12">
           <span class="form-label mb-2 d-block">可见范围</span>
           <div class="qy-staff-docs-audience" role="radiogroup" aria-label="可见范围">
             {% for value, label in audience_choices %}
             <label class="qy-staff-docs-audience-option">
-              <input type="radio" name="audience" value="{{ value }}" {% if value == 'all' %}checked{% endif %} required>
+              <input type="radio" name="audience" value="{{ value }}" {% if value == form_audience %}checked{% endif %} required>
               <span>{{ label }}</span>
             </label>
             {% endfor %}
@@ -41,7 +46,7 @@
               </span>
               <div>
                 <label class="form-label fw-semibold mb-0 qy-material-upload-title" for="staffDocFileInput">选择文件</label>
-                <div class="form-text mb-0">支持 Word、Excel、PPT、PDF、图片、压缩包等常见格式，与案件材料相同。</div>
+                <div class="form-text mb-0">支持 Word、Excel、PPT、PDF、图片、压缩包等常见格式，与案件材料相同。{% if form_error %} 校验未通过时需重新选择本地文件。{% endif %}</div>
               </div>
             </div>
             <input id="staffDocFileInput" class="form-control" type="file" name="file" required>

@@ -6,7 +6,7 @@
     <a class="btn btn-outline-secondary" href="{{ url_for('staff.business_dashboard') }}" data-spa-endpoint="staff.business_dashboard">返回工作台</a>
   {% endcall %}
 
-  <p class="text-muted small mb-3">管理员指定你为收账人员后，流程转交的缴费通知会出现在这里。交证明后等流程确认；被打回可补交。</p>
+  <p class="text-muted small mb-3">管理员指定你为收账人员后，向客户收款的案件会出现在这里。交证明后等流程确认；被打回可补交。官方缴费由流程人员办理，与收账分开。</p>
   {% if queue_counts and (queue_counts.pending_proof or queue_counts.rejected or queue_counts.pending_confirm) %}
   <div class="d-flex flex-wrap gap-2 mb-3 small">
     <span class="badge text-bg-warning-subtle text-warning-emphasis border">待交证明 {{ queue_counts.pending_proof }}</span>
@@ -46,7 +46,7 @@
                 <div>{{ collection.notice.type_label if collection.notice else "收账" }} · {{ collection.status_label }}</div>
                 {% endfor %}
                 {% else %}
-                <span class="text-muted">暂无缴费转交</span>
+                <span class="text-muted">暂无收账记录</span>
                 {% endif %}
               </td>
               <td>
@@ -60,6 +60,6 @@
     </div>
   </div>
   {% else %}
-  {{ empty_state('还没有需要你收账的案件', '管理员指定你为收账人员后，流程转交的缴费通知会出现在这里。', icon='folder', compact=True) }}
+  {{ empty_state('还没有需要你收账的案件', '管理员指定你为收账人员后，向客户收款的案件会出现在这里。', icon='folder', compact=True) }}
   {% endif %}
 </div>

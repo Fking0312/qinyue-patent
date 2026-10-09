@@ -170,6 +170,27 @@ def test_admin_accounts_can_create_staff_and_client():
         assert created_client.staff_function is None
         assert created_client.staff_function_normalized == ""
 
+    taken = client.post(
+        "/admin/accounts",
+        data={
+            "username": staff_name,
+            "password": "secret123",
+            "role": "staff",
+            "staff_kind": "outsource",
+            "staff_function": "process",
+            "phone": "13800138000",
+        },
+        follow_redirects=False,
+    )
+    assert taken.status_code == 200
+    taken_html = taken.get_data(as_text=True)
+    assert "账号名已存在，请更换后重试。" in taken_html
+    assert f'value="{staff_name}"' in taken_html
+    assert 'value="13800138000"' in taken_html
+    assert 'id="qy-account-staff-kind-wrap"' in taken_html
+    with app.app_context():
+        assert User.query.filter_by(username=staff_name).count() == 1
+
 
 def test_admin_accounts_can_reset_password():
     app = create_app()
@@ -621,10 +642,11 @@ def test_admin_project_edit_rejects_future_initiated_at():
         },
         follow_redirects=False,
     )
-    assert r.status_code == 302
-    from urllib.parse import unquote
-
-    assert "立项时间不能晚于当前时间" in unquote(r.headers.get("Location", ""))
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "立项时间不能晚于当前时间" in html
+    assert 'value="_project_future_init"' in html
+    assert 'value="2099-01-01T00:00"' in html
 
 
 def test_admin_project_detail_shows_case_and_recent_tasks():
@@ -728,6 +750,18 @@ def test_admin_customer_edit_can_update_fields():
     r = client.get(f"/admin/customer-edit/{customer_id}")
     assert r.status_code == 200
     assert "编辑客户".encode("utf-8") in r.data
+
+    blank = client.post(
+        f"/admin/customer-edit/{customer_id}",
+        data={"name": "   ", "kind": CustomerKind.INDIVIDUAL, "note": "keep this note"},
+        follow_redirects=False,
+    )
+    assert blank.status_code == 200
+    blank_html = blank.get_data(as_text=True)
+    assert "客户名称不能为空" in blank_html
+    assert "keep this note" in blank_html
+    with app.app_context():
+        assert db.session.get(Customer, customer_id).name == "_customer_to_edit"
 
     r2 = client.post(
         f"/admin/customer-edit/{customer_id}",
@@ -848,8 +882,11 @@ def test_same_project_rejects_duplicate_case_title():
         },
         follow_redirects=False,
     )
-    assert duplicate.status_code in (302, 303)
-    assert Case.DUPLICATE_TITLE_IN_PROJECT_MSG in unquote(duplicate.headers.get("Location", ""))
+    assert duplicate.status_code == 200
+    duplicate_html = duplicate.get_data(as_text=True)
+    assert Case.DUPLICATE_TITLE_IN_PROJECT_MSG in duplicate_html
+    assert f'value="  同一发明名称   {suffix}  "' in duplicate_html
+    assert f'value="{project_a_id}"' in duplicate_html
 
     other_ok = client.post(
         "/admin/case-create",
@@ -886,12 +923,59 @@ def test_same_project_rejects_duplicate_case_title():
         },
         follow_redirects=False,
     )
-    assert clash_edit.status_code in (302, 303)
-    assert Case.DUPLICATE_TITLE_IN_PROJECT_MSG in unquote(clash_edit.headers.get("Location", ""))
+    assert clash_edit.status_code == 200
+    clash_html = clash_edit.get_data(as_text=True)
+    assert Case.DUPLICATE_TITLE_IN_PROJECT_MSG in clash_html
+    assert f'value="同一发明名称 {suffix}"' in clash_html
 
     with app.app_context():
         assert Case.query.filter_by(project_id=project_a_id, title=f"同一发明名称 {suffix}").count() == 1
         assert db.session.get(Case, sibling_id).title == f"可改名案件 {suffix}"
+
+
+def test_admin_case_create_keeps_draft_on_validation_error():
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        admin = User(username=f"_keep_draft_admin_{suffix}", role="admin")
+        admin.set_password("secret")
+        customer = Customer(kind=CustomerKind.COMPANY, name=f"_keep_draft_customer_{suffix}")
+        db.session.add_all([admin, customer])
+        db.session.flush()
+        project = Project(customer_id=customer.id, name=f"_keep_draft_project_{suffix}")
+        db.session.add(project)
+        db.session.commit()
+        admin_name = admin.username
+        project_id = project.id
+
+    client = app.test_client()
+    client.post("/auth/login", data={"username": admin_name, "password": "secret"})
+    title = f"_keep_draft_title_{suffix}"
+    note = f"预填备注 {suffix}"
+    missing_type = client.post(
+        "/admin/case-create",
+        data={
+            "project_id": str(project_id),
+            "title": title,
+            "case_note": note,
+            "patent_application_no": "CN202410999999.1",
+            "formal_status": "已受理",
+            "material_upload_port": "https://example.com/keep-draft",
+            "phase_status": TaskPhase.IN_PROGRESS,
+        },
+        follow_redirects=False,
+    )
+    assert missing_type.status_code == 200
+    html = missing_type.get_data(as_text=True)
+    assert "请选择完整、有效的案件类型。" in html
+    assert f'value="{title}"' in html
+    assert note in html
+    assert "CN202410999999.1" in html
+    assert "https://example.com/keep-draft" in html
+    assert f'value="{project_id}"' in html
+    assert "校验未通过时需重新选择本地文件" in html
+    with app.app_context():
+        assert Case.query.filter_by(title=title).first() is None
 
 
 def test_unassigned_case_uses_pending_assignment_and_assignee_clears_it():
@@ -1032,7 +1116,7 @@ def test_admin_case_edit_can_update_case_and_task_phase():
     )
     assert r2.status_code == 200
     assert f"_case_edited_{suffix}".encode("utf-8") in r2.data
-    assert "待流程核对".encode("utf-8") in r2.data
+    assert "待审核".encode("utf-8") in r2.data
     with app.app_context():
         edited_case = db.session.get(Case, case_id)
         assert edited_case.patent_application_no == "CN202499887766.1"
@@ -1443,7 +1527,7 @@ def test_staff_upload_then_submit_for_review():
     unlocked_page = client.get(f"/staff/case-detail/{case_id}")
     assert b'data-upload-locked="true"' not in unlocked_page.data
     assert b'form_action" value="submit_for_review"' in unlocked_page.data
-    assert 'data-qy-confirm="提交流程核对"'.encode("utf-8") in unlocked_page.data
+    assert 'data-qy-confirm="提交审核"'.encode("utf-8") in unlocked_page.data
     assert b"return confirm(" not in unlocked_page.data
 
     submitted = client.post(

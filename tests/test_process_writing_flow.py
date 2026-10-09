@@ -1,4 +1,4 @@
-"""撰写 → 流程核对 → 交局 → 终审办结。"""
+"""撰写 → 管理审核 → 流程交局 → 终审办结。"""
 
 from io import BytesIO
 from uuid import uuid4
@@ -62,7 +62,15 @@ def _login(app, username: str):
     return client
 
 
-def test_writer_submit_process_file_and_admin_complete():
+def _approve_writing(client, case_id: int):
+    return client.post(
+        f"/admin/case-detail/{case_id}",
+        data={"review_action": "approve"},
+        follow_redirects=False,
+    )
+
+
+def test_writer_submit_admin_review_process_file_and_complete():
     app = create_app()
     suffix = uuid4().hex[:8]
     with app.app_context():
@@ -97,33 +105,46 @@ def test_writer_submit_process_file_and_admin_complete():
         assert CaseReviewLog.query.filter_by(case_id=case_id, action="writing_revised").count() == 0
         assert db.session.get(Task, task_id).phase_status == TaskPhase.PENDING_REVIEW
         log = CaseReviewLog.query.filter_by(case_id=case_id, action="submit_for_review").one()
-        assert log.recipient_id == seeded["process_id"]
+        assert log.recipient_id is None
 
-    inbox = process.get("/staff/notifications")
-    inbox_text = inbox.data.decode("utf-8")
-    assert "撰写材料已提交" in inbox_text
-    assert "说明书" in inbox_text
+    process_inbox = process.get("/staff/notifications").data.decode("utf-8")
+    assert "撰写材料已提交" not in process_inbox
     case_page = process.get(f"/staff/process-cases/{case_id}")
     assert case_page.status_code == 200
     case_text = case_page.data.decode("utf-8")
     assert f"spec_{suffix}.txt" in case_text
     assert "说明书" in case_text
-    assert "请查看文件备注后核对" in case_text
-    assert b'form_action" value="process_accept"' in case_page.data
-
-    dash = process.get("/staff/process-dashboard")
-    dash_text = dash.data.decode("utf-8")
-    assert f"_pw_case_{suffix}" in dash_text
-    assert "说明书" in dash_text
-
-    rejected = process.post(
+    assert "待管理员审核" in case_text
+    assert b'form_action" value="process_accept"' not in case_page.data
+    leftover = process.post(
         f"/staff/process-cases/{case_id}",
-        data={"form_action": "process_reject", "reject_note": "请补权利要求"},
+        data={"form_action": "process_accept"},
+        follow_redirects=False,
+    )
+    assert leftover.status_code in (302, 303)
+    with app.app_context():
+        assert db.session.get(Task, task_id).phase_status == TaskPhase.PENDING_REVIEW
+
+    writing_inbox = admin.get("/admin/review-quality?kind=writing")
+    writing_html = writing_inbox.data.decode("utf-8")
+    assert f"_pw_case_{suffix}" in writing_html
+    assert f"spec_{suffix}.txt" in writing_html
+    assert "通过，交流程递交" in writing_html
+    assert "终审通过并办结" not in writing_html
+
+    rejected = admin.post(
+        f"/admin/case-detail/{case_id}",
+        data={"review_action": "reject", "reject_note": "请补权利要求"},
         follow_redirects=False,
     )
     assert rejected.status_code in (302, 303)
     with app.app_context():
         assert db.session.get(Task, task_id).phase_status == TaskPhase.IN_PROGRESS
+        assert CaseReviewLog.query.filter_by(case_id=case_id, action="writing_reject").count() == 1
+
+    writer_note = writer.get("/staff/notifications").data.decode("utf-8")
+    assert "材料被打回" in writer_note
+    assert "请补权利要求" in writer_note
 
     revised = writer.post(
         f"/staff/case-detail/{case_id}",
@@ -138,10 +159,9 @@ def test_writer_submit_process_file_and_admin_complete():
     )
     assert revised.status_code in (302, 303)
     revised_inbox = process.get("/staff/notifications").data.decode("utf-8")
-    assert "撰写师已上传改正材料" in revised_inbox
-    assert "已补权利要求" in revised_inbox
+    assert "撰写师已上传改正材料" not in revised_inbox
     pending_page = process.get(f"/staff/process-cases/{case_id}").data.decode("utf-8")
-    assert "尚未提交核对" in pending_page
+    assert "待管理员审核" not in pending_page or "撰写师处理中" in pending_page
     assert "已补权利要求" in pending_page
 
     writer.post(
@@ -164,21 +184,22 @@ def test_writer_submit_process_file_and_admin_complete():
         assert "已补权利要求" in latest_note
         assert f"spec_{suffix}.txt" not in latest_note
         assert "说明书" not in latest_note
-    submitted_inbox = process.get("/staff/notifications").data.decode("utf-8")
-    assert "改正材料已提交" in submitted_inbox
-    assert "提交改正材料" in submitted_inbox
-    assert "本次新上传" in process.get(f"/staff/process-cases/{case_id}").data.decode("utf-8")
-    dash_after = process.get("/staff/process-dashboard").data.decode("utf-8")
-    assert "已补权利要求" in dash_after
-    assert f"spec_{suffix}.txt" not in dash_after
-    accepted = process.post(
-        f"/staff/process-cases/{case_id}",
-        data={"form_action": "process_accept"},
-        follow_redirects=False,
-    )
+
+    accepted = _approve_writing(admin, case_id)
     assert accepted.status_code in (302, 303)
     with app.app_context():
         assert db.session.get(Task, task_id).phase_status == TaskPhase.PENDING_SUBMIT
+        approve_log = CaseReviewLog.query.filter_by(case_id=case_id, action="writing_approve").one()
+        assert approve_log.recipient_id == seeded["process_id"]
+
+    process_ready = process.get("/staff/notifications").data.decode("utf-8")
+    assert "材料已通过，请递交官方" in process_ready
+    dash = process.get("/staff/process-dashboard")
+    dash_text = dash.data.decode("utf-8")
+    assert f"_pw_case_{suffix}" in dash_text
+    assert "待递交官方" in dash_text
+    filed_page = process.get(f"/staff/process-cases/{case_id}").data.decode("utf-8")
+    assert "标记已递交官方" in filed_page
 
     filed = process.post(
         f"/staff/process-cases/{case_id}",
@@ -207,12 +228,13 @@ def test_writer_submit_process_file_and_admin_complete():
     with app.app_context():
         assert db.session.get(Task, task_id).phase_status == TaskPhase.PENDING_FINAL_REVIEW
 
-    inbox_admin = admin.get("/admin/review-quality")
+    inbox_admin = admin.get("/admin/review-quality?kind=final")
     assert f"_pw_case_{suffix}".encode("utf-8") in inbox_admin.data
+    assert "终审通过并办结".encode("utf-8") in inbox_admin.data
 
     completed = admin.post(
         f"/admin/review-quality/{case_id}/action",
-        data={"review_action": "approve"},
+        data={"review_action": "approve", "kind": "final"},
         follow_redirects=False,
     )
     assert completed.status_code in (302, 303)
@@ -222,6 +244,6 @@ def test_writer_submit_process_file_and_admin_complete():
         case = db.session.get(Case, case_id)
         assert case.actual_return_at is not None
 
-    writer_note = writer.get("/staff/notifications")
-    assert "终审已通过".encode("utf-8") in writer_note.data
-    assert "已办结".encode("utf-8") in writer_note.data
+    writer_done = writer.get("/staff/notifications")
+    assert "终审已通过".encode("utf-8") in writer_done.data
+    assert "已办结".encode("utf-8") in writer_done.data

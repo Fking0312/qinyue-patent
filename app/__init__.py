@@ -211,6 +211,38 @@ def create_app():
                 )
             )
 
+    def _ensure_official_notice_columns_sqlite() -> None:
+        """开发兜底：补 official_notices.fee_paid_at 与缴费证明列。生产请跑 Alembic z4c5d6e7f8a9、z5d6e7f8a9b0。"""
+        if not app.config.get("SQLALCHEMY_DATABASE_URI", "").startswith("sqlite"):
+            return
+        with db.engine.begin() as conn:
+            rows = conn.execute(text("PRAGMA table_info(official_notices)")).fetchall()
+            existing = {row[1] for row in rows}
+            if not existing:
+                return
+            if "fee_paid_at" not in existing:
+                conn.execute(text("ALTER TABLE official_notices ADD COLUMN fee_paid_at DATETIME"))
+            if "fee_paid_proof_original_name" not in existing:
+                conn.execute(
+                    text("ALTER TABLE official_notices ADD COLUMN fee_paid_proof_original_name VARCHAR(255)")
+                )
+            if "fee_paid_proof_stored_name" not in existing:
+                conn.execute(
+                    text("ALTER TABLE official_notices ADD COLUMN fee_paid_proof_stored_name VARCHAR(255)")
+                )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_official_notices_fee_paid_at "
+                    "ON official_notices (fee_paid_at)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_official_notices_fee_paid_proof_stored_name "
+                    "ON official_notices (fee_paid_proof_stored_name)"
+                )
+            )
+
     configured_instance_path = os.getenv("QY_INSTANCE_PATH", "").strip()
     if configured_instance_path:
         app = Flask(
@@ -387,6 +419,7 @@ def create_app():
             _ensure_user_columns_sqlite()
             _ensure_review_log_columns_sqlite()
             _ensure_trace_label_columns_sqlite()
+            _ensure_official_notice_columns_sqlite()
         if app.debug or app.config.get("DEBUG"):
             _ensure_case_columns_sqlite()
             _ensure_customer_columns_sqlite()

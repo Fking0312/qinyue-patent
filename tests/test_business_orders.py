@@ -1,5 +1,5 @@
 from io import BytesIO
-from re import search
+from re import DOTALL, escape, search
 from uuid import uuid4
 
 from app import create_app
@@ -130,6 +130,20 @@ def test_business_can_create_customer_project_and_submit_case():
         follow_redirects=False,
     )
     assert created_customer.status_code in (302, 303)
+    customer_page = client.get(created_customer.headers["Location"])
+    customer_html = customer_page.get_data(as_text=True)
+    assert new_customer_name in customer_html
+    assert "data-qy-open-modal" not in customer_html
+
+    empty_customer = client.post(
+        "/staff/business-orders/customers",
+        data={"name": "   ", "kind": CustomerKind.COMPANY},
+        follow_redirects=False,
+    )
+    assert empty_customer.status_code == 200
+    empty_html = empty_customer.get_data(as_text=True)
+    assert "客户名称不能为空" in empty_html
+    assert 'data-qy-open-modal="qyOrderNewCustomerModal"' in empty_html
 
     with app.app_context():
         new_customer = Customer.query.filter_by(name=new_customer_name).one()
@@ -145,6 +159,8 @@ def test_business_can_create_customer_project_and_submit_case():
         follow_redirects=False,
     )
     assert created_project.status_code in (302, 303)
+    project_page = client.get(created_project.headers["Location"])
+    assert "data-qy-open-modal" not in project_page.get_data(as_text=True)
     with app.app_context():
         new_project = Project.query.filter_by(name=new_project_name).one()
         assert new_project.customer_id == new_customer_id
@@ -155,7 +171,11 @@ def test_business_can_create_customer_project_and_submit_case():
         data={"name": f"_bo_orphan_{suffix}"},
         follow_redirects=False,
     )
-    assert missing_project.status_code in (302, 303)
+    assert missing_project.status_code == 200
+    orphan_html = missing_project.get_data(as_text=True)
+    assert "请选择归属客户" in orphan_html
+    assert f'value="_bo_orphan_{suffix}"' in orphan_html
+    assert 'data-qy-open-modal="qyOrderNewProjectModal"' in orphan_html
     with app.app_context():
         assert Project.query.filter_by(name=f"_bo_orphan_{suffix}").count() == 0
 
@@ -169,7 +189,10 @@ def test_business_can_create_customer_project_and_submit_case():
         },
         follow_redirects=False,
     )
-    assert mismatch.status_code in (302, 303)
+    assert mismatch.status_code == 200
+    mismatch_html = mismatch.get_data(as_text=True)
+    assert "项目必须归属所选客户" in mismatch_html
+    assert f"_bo_mismatch_{suffix}" in mismatch_html
 
     order_title = f"_bo_submitted_{suffix}"
     submitted = client.post(
@@ -218,8 +241,6 @@ def test_business_can_create_customer_project_and_submit_case():
 
 
 def test_business_order_rejects_duplicate_title_in_same_project():
-    from urllib.parse import unquote
-
     app = create_app()
     suffix = uuid4().hex[:8]
     with app.app_context():
@@ -241,8 +262,10 @@ def test_business_order_rejects_duplicate_title_in_same_project():
         },
         follow_redirects=False,
     )
-    assert taken.status_code in (302, 303)
-    assert Case.DUPLICATE_TITLE_IN_PROJECT_MSG in unquote(taken.headers.get("Location", ""))
+    assert taken.status_code == 200
+    taken_html = taken.get_data(as_text=True)
+    assert Case.DUPLICATE_TITLE_IN_PROJECT_MSG in taken_html
+    assert f'value="  {hidden_title}  "' in taken_html
     with app.app_context():
         assert Case.query.filter_by(project_id=project_id, title=hidden_title).count() == 1
         assert Case.query.filter_by(title=f"  {hidden_title}  ").count() == 0
@@ -419,7 +442,8 @@ def test_business_can_resubmit_order_revision_on_same_case():
         },
         follow_redirects=False,
     )
-    assert blocked.status_code in (302, 303)
+    assert blocked.status_code == 200
+    assert "只能修改自己被打回的下单。" in blocked.get_data(as_text=True)
     with app.app_context():
         assert db.session.get(Case, case_id).task.phase_status == TaskPhase.PENDING_ORDER_REVIEW
         assert CaseReviewLog.query.filter_by(case_id=case_id, action="intake_submit").count() == 2
@@ -487,8 +511,9 @@ def test_business_order_can_upload_disclosure_material():
 
 def _dashboard_stat(html: str, label: str) -> int:
     match = search(
-        rf'{label}</div>\s*<div class="qy-dash-stat-value">(\d+)</div>',
+        rf'qy-dash-stat-label">{escape(label)}</span>.*?qy-dash-stat-value">(\d+)</span>',
         html,
+        DOTALL,
     )
     assert match, f"missing dashboard stat {label}"
     return int(match.group(1))

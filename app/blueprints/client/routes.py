@@ -1,6 +1,6 @@
 """客户端视图：登录后查看自家案件、下载材料、提交留言（部分占位）。"""
 
-from flask import abort, request, send_from_directory
+from flask import abort, jsonify, request, send_from_directory
 from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
 
@@ -16,6 +16,16 @@ def _ensure_client():
     """权限闸：仅允许角色为 client 的用户访问后续视图，否则 403。"""
     if current_user.role != "client":
         abort(403)
+
+
+@client_bp.route("/live-status")
+@login_required
+def live_status():
+    """跨端同步：自家案件任务/材料变化时刷新列表。"""
+    _ensure_client()
+    from app.live_inbox import client_live_payload
+
+    return jsonify(client_live_payload(current_user))
 
 
 def _client_case_query():

@@ -110,7 +110,7 @@ def test_order_intake_page_lists_cases_and_excludes_writer_review():
     assert b'name="process_owner_id"' in page.data
     assert review_title.encode() not in page.data
 
-    review_page = client.get("/admin/review-quality")
+    review_page = client.get("/admin/review-quality?kind=final")
     assert review_page.status_code == 200
     assert review_title.encode() in review_page.data
     assert intake_title.encode() not in review_page.data
@@ -119,8 +119,12 @@ def test_order_intake_page_lists_cases_and_excludes_writer_review():
     assert dashboard.status_code == 200
     assert "下单待确认".encode() in dashboard.data
     assert b'data-spa-endpoint="admin.order_intake"' in dashboard.data
-    assert dashboard.data.count(b"data-order-intake-badge") == 2
+    assert dashboard.data.count(b"data-order-intake-badge") == 1
+    assert dashboard.data.count(b"data-dispatch-nav-badge") == 1
     assert b"/admin/order-intake/status" in dashboard.data
+    assert b"/admin/assignment-nav/status" in dashboard.data
+    assert b"/admin/live-status" in dashboard.data
+    assert b"data-qy-live-status" in dashboard.data
     assert 'data-tooltip="任务分派与监控"'.encode() in dashboard.data
     status = client.get("/admin/order-intake/status").get_json()
     assert status["ok"] is True
@@ -232,7 +236,8 @@ def test_order_intake_approve_assigns_writer_and_process():
     assert after_status["unread"] == unread_before - 1
     after = client.get("/admin/order-intake")
     assert title.encode() not in after.data
-    assert after.data.count(b"data-order-intake-badge") == 2
+    assert after.data.count(b"data-order-intake-badge") == 1
+    assert after.data.count(b"data-dispatch-nav-badge") == 1
 
     writer_client = app.test_client()
     writer_client.post(

@@ -59,7 +59,7 @@ def test_admin_review_inbox_unread_filters_and_actions():
     pending_before = before["unread"]
 
     page = client.get(
-        f"/admin/review-quality?q=_review_inbox_case_{suffix}"
+        f"/admin/review-quality?kind=final&q=_review_inbox_case_{suffix}"
         f"&case_type_primary=invention&assignee_id={staff_id}"
     )
     assert page.status_code == 200
@@ -73,7 +73,7 @@ def test_admin_review_inbox_unread_filters_and_actions():
 
     approved = client.post(
         f"/admin/review-quality/{case_id}/action",
-        data={"review_action": "approve"},
+        data={"review_action": "approve", "kind": "final"},
         follow_redirects=False,
     )
     assert approved.status_code in (302, 303)
@@ -109,7 +109,7 @@ def test_admin_review_inbox_unread_filters_and_actions():
 
     rejected = client.post(
         f"/admin/review-quality/{second_case_id}/action",
-        data={"review_action": "reject", "reject_note": "请补充技术效果说明"},
+        data={"review_action": "reject", "reject_note": "请补充技术效果说明", "kind": "final"},
         follow_redirects=False,
     )
     assert rejected.status_code in (302, 303)
@@ -305,3 +305,89 @@ def test_staff_gets_notified_when_assigned_new_case():
     detail = client.get(f"/staff/case-detail/{case_id}")
     assert detail.status_code == 200
     assert "新案件已分配".encode() not in detail.data
+
+
+def test_same_case_notifications_mark_read_together():
+    from app.case_trace import add_review_log, stamp_assignee
+
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        admin = User(username=f"_nread_admin_{suffix}", role="admin")
+        admin.set_password("secret")
+        writer = User(
+            username=f"_nread_writer_{suffix}",
+            role="staff",
+            staff_function=User.STAFF_FUNCTION_WRITER,
+        )
+        writer.set_password("secret")
+        customer = Customer(kind=CustomerKind.COMPANY, name=f"_nread_cust_{suffix}")
+        db.session.add_all([admin, writer, customer])
+        db.session.flush()
+        project = Project(customer_id=customer.id, name=f"_nread_proj_{suffix}")
+        db.session.add(project)
+        db.session.flush()
+        case_a = Case(
+            project_id=project.id,
+            title=f"_nread_a_{suffix}",
+            application_no=f"NA{suffix}",
+        )
+        case_b = Case(
+            project_id=project.id,
+            title=f"_nread_b_{suffix}",
+            application_no=f"NB{suffix}",
+        )
+        db.session.add_all([case_a, case_b])
+        db.session.flush()
+        task_a = Task(case_id=case_a.id, phase_status=TaskPhase.IN_PROGRESS)
+        task_b = Task(case_id=case_b.id, phase_status=TaskPhase.IN_PROGRESS)
+        stamp_assignee(task_a, writer)
+        stamp_assignee(task_b, writer)
+        db.session.add_all([task_a, task_b])
+        db.session.flush()
+        log_a1 = add_review_log(
+            case_id=case_a.id, action="assigned", operator=admin, recipient=writer
+        )
+        log_a2 = add_review_log(
+            case_id=case_a.id,
+            action="writing_reject",
+            operator=admin,
+            recipient=writer,
+            note="请补充实施例",
+        )
+        log_b = add_review_log(
+            case_id=case_b.id, action="assigned", operator=admin, recipient=writer
+        )
+        db.session.commit()
+        writer_name = writer.username
+        a1_id = log_a1.id
+        a2_id = log_a2.id
+        b_id = log_b.id
+
+    client = app.test_client()
+    client.post("/auth/login", data={"username": writer_name, "password": "secret"})
+    inbox = client.get("/staff/notifications")
+    html = inbox.get_data(as_text=True)
+    assert inbox.status_code == 200
+    assert "一键已读" in html
+    assert "标为已读" in html
+    assert client.get("/staff/notifications/status").get_json()["unread"] == 3
+
+    opened = client.get(f"/staff/notifications/{a1_id}/read", follow_redirects=False)
+    assert opened.status_code in (302, 303)
+    assert client.get("/staff/notifications/status").get_json()["unread"] == 1
+    with app.app_context():
+        assert db.session.get(CaseReviewLog, a1_id).read_at is not None
+        assert db.session.get(CaseReviewLog, a2_id).read_at is not None
+        assert db.session.get(CaseReviewLog, b_id).read_at is None
+
+    acked = client.post(
+        f"/staff/notifications/{b_id}/ack",
+        data={"status": "all", "type": "all"},
+        follow_redirects=False,
+    )
+    assert acked.status_code in (302, 303)
+    assert "/staff/notifications" in acked.headers["Location"]
+    assert client.get("/staff/notifications/status").get_json()["unread"] == 0
+    with app.app_context():
+        assert db.session.get(CaseReviewLog, b_id).read_at is not None

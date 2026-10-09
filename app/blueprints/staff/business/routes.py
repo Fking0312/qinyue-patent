@@ -43,17 +43,6 @@ from app.order_intake import (
 from app.spa_helpers import redirect_with_qy_toast, render_spa_or_full
 
 
-def _order_redirect_kwargs(customer_id, project_id, case_id=None) -> dict:
-    kwargs = {}
-    if customer_id:
-        kwargs["customer_id"] = customer_id
-    if project_id:
-        kwargs["project_id"] = project_id
-    if case_id:
-        kwargs["edit"] = case_id
-    return kwargs
-
-
 def _int_or_none(raw: str) -> int | None:
     value = (raw or "").strip()
     if value.isdigit():
@@ -77,21 +66,41 @@ def business_dashboard():
     )
 
 
-@staff_bp.route("/business-orders")
-@login_required
-def business_orders():
-    """业务下单：看客户/项目名称、创建案件；看不到项目下的案件。"""
-    ensure_business()
-    selected_customer_id = (request.args.get("customer_id") or "").strip()
-    selected_project_id = (request.args.get("project_id") or "").strip()
+def _business_orders_posted_form() -> dict:
+    """校验失败时把已填字段带回下单表，避免重定向后清空。"""
+    return {
+        "selected_customer_id": (request.form.get("customer_id") or "").strip(),
+        "selected_project_id": (request.form.get("project_id") or "").strip(),
+        "form_title": request.form.get("title", ""),
+        "case_type_selected": (request.form.get("case_type_code") or "").strip(),
+        "form_patent_application_no": request.form.get("patent_application_no", ""),
+        "form_case_note": request.form.get("case_note", ""),
+        "form_material_upload_port": request.form.get("material_upload_port", ""),
+        "order_at_input": request.form.get("order_at", ""),
+        "expected_return_at_input": request.form.get("expected_return_at", ""),
+        "editing_case_id": _int_or_none(request.form.get("case_id", "")),
+    }
+
+
+def _render_business_orders(*, form_error: str = "", **form_values):
+    """渲染业务下单页；GET 与校验失败共用，失败时保留已填内容。"""
+    selected_customer_id = str(form_values.get("selected_customer_id") or "").strip()
+    selected_project_id = str(form_values.get("selected_project_id") or "").strip()
+    if not selected_customer_id:
+        selected_customer_id = (request.args.get("customer_id") or "").strip()
+    if not selected_project_id:
+        selected_project_id = (request.args.get("project_id") or "").strip()
     editing_case = None
     reject_note = ""
-    edit_id = _int_or_none(request.args.get("edit", ""))
+    edit_id = form_values.get("editing_case_id")
+    if edit_id is None:
+        edit_id = _int_or_none(request.args.get("edit", ""))
     if edit_id:
         editing_case = order_revision_for_owner(current_user.id, edit_id)
-        if editing_case is not None:
+        if editing_case is not None and not form_error:
             selected_customer_id = str(editing_case.project.customer_id)
             selected_project_id = str(editing_case.project_id)
+        if editing_case is not None:
             reject_note = latest_intake_reject_note(editing_case.id)
     catalog = customer_project_catalog()
     my_orders = my_submitted_orders(current_user.id)
@@ -100,6 +109,36 @@ def business_orders():
         if editing_case is not None
         else []
     )
+    form_title = form_values.get("form_title")
+    if form_title is None:
+        form_title = editing_case.title if editing_case else ""
+    case_type_selected = form_values.get("case_type_selected")
+    if case_type_selected is None:
+        case_type_selected = editing_case.case_type_code if editing_case else ""
+    form_patent_application_no = form_values.get("form_patent_application_no")
+    if form_patent_application_no is None:
+        form_patent_application_no = (
+            editing_case.patent_application_no or "" if editing_case else ""
+        )
+    form_case_note = form_values.get("form_case_note")
+    if form_case_note is None:
+        form_case_note = editing_case.case_note or "" if editing_case else ""
+    form_material_upload_port = form_values.get("form_material_upload_port")
+    if form_material_upload_port is None:
+        form_material_upload_port = (
+            editing_case.material_upload_port or "" if editing_case else ""
+        )
+    order_at_input = form_values.get("order_at_input")
+    if order_at_input is None:
+        order_at_input = datetime_local_value(
+            editing_case.order_at if editing_case else datetime.now(timezone.utc)
+        )
+    expected_return_at_input = form_values.get("expected_return_at_input")
+    if expected_return_at_input is None:
+        expected_return_at_input = datetime_local_value(
+            editing_case.expected_return_at if editing_case else None
+        )
+    posted_case_id = edit_id if form_error else None
     return render_spa_or_full(
         full_template="staff/business_orders.html",
         inner_template="staff/snippets/business_orders_inner.html",
@@ -115,19 +154,44 @@ def business_orders():
         my_orders=my_orders,
         order_file_counts=case_material_counts([task.case_id for task in my_orders]),
         case_type_config=CASE_TYPE_UI_CONFIG,
-        case_type_selected=editing_case.case_type_code if editing_case else "",
+        case_type_selected=case_type_selected or "",
         customer_kind_company=CustomerKind.COMPANY,
         customer_kind_individual=CustomerKind.INDIVIDUAL,
-        order_at_input=datetime_local_value(
-            editing_case.order_at if editing_case else datetime.now(timezone.utc)
-        ),
-        expected_return_at_input=datetime_local_value(
-            editing_case.expected_return_at if editing_case else None
-        ),
+        order_at_input=order_at_input or "",
+        expected_return_at_input=expected_return_at_input or "",
         editing_case=editing_case,
         editing_files=editing_files,
         reject_note=reject_note,
+        form_title=form_title or "",
+        form_patent_application_no=form_patent_application_no or "",
+        form_case_note=form_case_note or "",
+        form_material_upload_port=form_material_upload_port or "",
+        posted_case_id=posted_case_id,
+        form_error=form_error,
+        open_modal=form_values.get("open_modal") or "",
+        modal_error=form_values.get("modal_error") or "",
+        modal_customer_name=form_values.get("modal_customer_name") or "",
+        modal_customer_kind=form_values.get("modal_customer_kind") or CustomerKind.COMPANY,
+        modal_contact_name=form_values.get("modal_contact_name") or "",
+        modal_contact_phone=form_values.get("modal_contact_phone") or "",
+        modal_customer_note=form_values.get("modal_customer_note") or "",
+        modal_project_customer_id=form_values.get("modal_project_customer_id") or "",
+        modal_project_name=form_values.get("modal_project_name") or "",
+        modal_project_due=form_values.get("modal_project_due") or "",
+        modal_project_desc=form_values.get("modal_project_desc") or "",
     )
+
+
+def _business_order_invalid(message: str):
+    return _render_business_orders(form_error=message, **_business_orders_posted_form())
+
+
+@staff_bp.route("/business-orders")
+@login_required
+def business_orders():
+    """业务下单：看客户/项目名称、创建案件；看不到项目下的案件。"""
+    ensure_business()
+    return _render_business_orders()
 
 
 @staff_bp.route("/business-orders/customers", methods=["POST"])
@@ -144,7 +208,15 @@ def business_create_customer():
         note=request.form.get("note", ""),
     )
     if err:
-        return redirect_with_qy_toast("staff.business_orders", err, "warning")
+        return _render_business_orders(
+            open_modal="qyOrderNewCustomerModal",
+            modal_error=err,
+            modal_customer_name=request.form.get("name", ""),
+            modal_customer_kind=request.form.get("kind", CustomerKind.COMPANY),
+            modal_contact_name=request.form.get("contact_name", ""),
+            modal_contact_phone=request.form.get("contact_phone", ""),
+            modal_customer_note=request.form.get("note", ""),
+        )
     db.session.commit()
     return redirect_with_qy_toast(
         "staff.business_orders",
@@ -163,7 +235,14 @@ def business_create_project():
     try:
         due_at = parse_beijing_datetime(due_raw)
     except ValueError:
-        return redirect_with_qy_toast("staff.business_orders", "项目截止时间格式不正确。", "warning")
+        return _render_business_orders(
+            open_modal="qyOrderNewProjectModal",
+            modal_error="项目截止时间格式不正确。",
+            modal_project_customer_id=(request.form.get("customer_id") or "").strip(),
+            modal_project_name=request.form.get("name", ""),
+            modal_project_due=due_raw,
+            modal_project_desc=request.form.get("description", ""),
+        )
     customer_id = _int_or_none(request.form.get("customer_id", ""))
     project, err = create_intake_project(
         current_user,
@@ -173,8 +252,14 @@ def business_create_project():
         due_at=due_at,
     )
     if err:
-        kwargs = {"customer_id": customer_id} if customer_id else {}
-        return redirect_with_qy_toast("staff.business_orders", err, "warning", **kwargs)
+        return _render_business_orders(
+            open_modal="qyOrderNewProjectModal",
+            modal_error=err,
+            modal_project_customer_id=(request.form.get("customer_id") or "").strip(),
+            modal_project_name=request.form.get("name", ""),
+            modal_project_due=due_raw,
+            modal_project_desc=request.form.get("description", ""),
+        )
     db.session.commit()
     return redirect_with_qy_toast(
         "staff.business_orders",
@@ -197,12 +282,7 @@ def business_create_case():
         expected_return_at = parse_beijing_datetime(request.form.get("expected_return_at", ""))
         order_at = parse_beijing_datetime(request.form.get("order_at", ""))
     except ValueError:
-        return redirect_with_qy_toast(
-            "staff.business_orders",
-            "下单或应返稿时间格式不正确。",
-            "warning",
-            **_order_redirect_kwargs(customer_id, project_id, case_id),
-        )
+        return _business_order_invalid("下单或应返稿时间格式不正确。")
     order_kwargs = dict(
         customer_id=customer_id,
         project_id=project_id,
@@ -221,12 +301,7 @@ def business_create_case():
         case, err = submit_business_order(current_user, **order_kwargs)
         success_msg = "案件已提交，等待管理员确认下单。"
     if err:
-        return redirect_with_qy_toast(
-            "staff.business_orders",
-            err,
-            "warning",
-            **_order_redirect_kwargs(customer_id, project_id, case_id),
-        )
+        return _business_order_invalid(err)
     db.session.commit()
     customer_id_out = case.project.customer_id
     project_id_out = case.project_id
@@ -342,7 +417,7 @@ def business_collections():
 @staff_bp.route("/business-collections/<int:case_id>", methods=["GET", "POST"])
 @login_required
 def business_collection_case(case_id: int):
-    """单案收账：下载缴费通知、上传证明、提交确认。"""
+    """单案收账：参考缴费通知金额、上传向客户收款的证明、提交确认。"""
     ensure_business()
     case = db.session.get(Case, case_id)
     if case is None or not user_may_submit_collections(current_user, case):
@@ -411,13 +486,8 @@ def business_collection_case(case_id: int):
             "staff.business_collection_case", "不支持的操作。", "warning", case_id=case.id
         )
 
-    from app.official_notices import list_case_notices
-
-    notices = [
-        notice
-        for notice in list_case_notices(case.id)
-        if notice.needs_billing and notice.forwarded_to_id == current_user.id
-    ]
+    collections = list_case_collections(case.id)
+    notices = [item.notice for item in collections if item.notice is not None]
     return render_spa_or_full(
         full_template="staff/business_collection_case.html",
         inner_template="staff/snippets/business_collection_case_inner.html",
@@ -426,5 +496,5 @@ def business_collection_case(case_id: int):
         page_title="收账",
         case=case,
         notices=notices,
-        collections=list_case_collections(case.id),
+        collections=collections,
     )

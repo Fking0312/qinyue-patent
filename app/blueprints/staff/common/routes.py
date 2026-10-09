@@ -6,7 +6,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from flask import abort, send_from_directory
+from flask import abort, jsonify, send_from_directory
 from flask_login import current_user, login_required
 
 from app.blueprints.staff import staff_bp
@@ -25,13 +25,17 @@ STAFF_NOTIFICATION_ACTIONS = (
     "intake_reject",
     "official_forward",
     "official_urge",
+    "admin_urge",
     "process_assigned",
     "billing_assigned",
     "submit_for_review",
     "writing_revised",
     "process_accept",
     "process_reject",
+    "writing_approve",
+    "writing_reject",
     "process_filed",
+    "collection_notify",
     "collection_submit",
     "collection_ok",
     "collection_reject",
@@ -42,24 +46,31 @@ STAFF_NOTIFICATION_ACTIONABLE = (
     "intake_reject",
     "official_forward",
     "official_urge",
+    "admin_urge",
     "process_assigned",
     "billing_assigned",
     "submit_for_review",
     "writing_revised",
     "process_reject",
+    "writing_reject",
+    "writing_approve",
+    "collection_notify",
     "collection_submit",
     "collection_reject",
 )
 STAFF_NOTIFICATION_TYPE_GROUPS = {
     "assigned": ("assigned",),
-    "approve": ("approve", "intake_approve", "process_accept", "collection_ok"),
-    "reject": ("reject", "intake_reject", "process_reject", "collection_reject"),
+    "approve": ("approve", "intake_approve", "process_accept", "writing_approve", "collection_ok"),
+    "reject": ("reject", "intake_reject", "process_reject", "writing_reject", "collection_reject"),
     "intake_approve": ("intake_approve",),
     "intake_reject": ("intake_reject",),
-    "official": ("official_forward", "official_urge"),
+    "official": ("official_forward", "official_urge", "admin_urge"),
+    "admin_urge": ("admin_urge",),
     "process_assigned": ("process_assigned",),
     "billing_assigned": ("billing_assigned",),
     "submit_for_review": ("submit_for_review", "writing_revised"),
+    "writing_approve": ("writing_approve",),
+    "collection_notify": ("collection_notify",),
     "collection": ("collection_submit", "collection_reject"),
 }
 
@@ -73,17 +84,32 @@ def staff_review_notifications_query(user_id: int):
 
 
 def mark_staff_notification_read(log_id: int) -> CaseReviewLog | None:
-    """将指定通知标记为已读；仅本人收件且尚未已读时生效。"""
+    """点开通知：同一案件发给本人的未读消息一并已读。"""
+    log, _updated = mark_staff_case_notifications_read(log_id)
+    return log
+
+
+def mark_staff_case_notifications_read(log_id: int) -> tuple[CaseReviewLog | None, int]:
+    """将指定通知所属案件、发给当前员工的未读通知全部标为已读。"""
     log = (
         staff_review_notifications_query(current_user.id)
         .filter_by(id=log_id)
         .first()
     )
-    if log is None or log.read_at is not None:
-        return log
-    log.read_at = datetime.now(timezone.utc)
+    if log is None:
+        return None, 0
+    now = datetime.now(timezone.utc)
+    query = staff_review_notifications_query(current_user.id).filter(
+        CaseReviewLog.read_at.is_(None),
+    )
+    if log.case_id is not None:
+        query = query.filter(CaseReviewLog.case_id == log.case_id)
+    else:
+        query = query.filter(CaseReviewLog.id == log.id)
+    updated = query.update({CaseReviewLog.read_at: now}, synchronize_session=False)
     db.session.commit()
-    return log
+    db.session.refresh(log)
+    return log, int(updated or 0)
 
 
 def notification_group_label(value: datetime | None, today) -> str:
@@ -109,6 +135,16 @@ def _staff_notification_nav_context():
         CaseReviewLog.read_at.is_(None)
     ).count()
     return {"staff_notification_unread": unread}
+
+
+@staff_bp.route("/live-status")
+@login_required
+def live_status():
+    """跨端同步：未读消息与 cursor，工作台/消息列表据此跟上其他端动作。"""
+    ensure_staff()
+    from app.live_inbox import staff_live_payload
+
+    return jsonify(staff_live_payload(current_user.id))
 
 
 def render_function_workspace(

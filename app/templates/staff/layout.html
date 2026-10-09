@@ -3,7 +3,8 @@
 {% block content %}
 <div class="staff-layout d-flex align-items-stretch" id="qy-spa-layout" data-spa-area="/staff/"
   data-spa-home="{{ url_for(current_user.home_endpoint) if current_user.is_authenticated else '' }}"
-  data-spa-scope="{{ current_user.id if current_user.is_authenticated else '' }}">
+  data-spa-scope="{{ current_user.id if current_user.is_authenticated else '' }}"
+  data-qy-live-status="{{ url_for('staff.live_status') }}">
   {% include "staff/_sidebar.html" %}
   <div class="staff-content flex-grow-1 min-w-0 d-flex flex-column">
     {% include "partials/spa_tabs_bar.html" %}

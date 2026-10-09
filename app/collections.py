@@ -1,6 +1,6 @@
-"""收账：缴费通知转交业务人员，业务交证明，流程按笔确认。
+"""收账：业务向客户收款并交证明，流程按笔确认。
 
-与撰写材料分开存盘。未指定收账负责人时禁止转交缴费通知；全部确认后流程才能交终审。
+官方缴费由流程人员办理，缴费通知不转交、不通知业务。未缴官方费或未确认的收账会挡住终审。
 """
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ def collection_for_notice(notice_id: int) -> CaseCollection | None:
 
 
 def ensure_collection_for_notice(notice: OfficialNotice) -> CaseCollection:
-    """缴费通知转交时生成或复用收账记录。调用方负责 commit。"""
+    """生成或复用与缴费通知关联的收账记录。调用方负责 commit。"""
     existing = collection_for_notice(notice.id)
     if existing is not None:
         return existing
@@ -204,20 +204,25 @@ def list_billing_attention_collections(user_id: int, *, limit: int = 8) -> list[
     return ranked[:limit]
 
 
-def unforwarded_fee_notices(case_id: int) -> list[OfficialNotice]:
+def notify_business_collection(notice: OfficialNotice, operator: User) -> tuple[bool, str]:
+    """缴费通知只办官方缴费，不再通知业务收账。"""
+    return False, "缴费通知是向专利局缴费，不需要通知业务收账。"
+
+
+def unpaid_fee_notices(case_id: int) -> list[OfficialNotice]:
     return [
         notice
         for notice in OfficialNotice.query.filter_by(case_id=case_id).all()
-        if notice.needs_billing and notice.forwarded_at is None
+        if notice.needs_billing and not notice.fee_paid_complete
     ]
 
 
 def final_review_block_reason(case: Case | None) -> str | None:
-    """流程交终审前：未转交的缴费通知、未确认的收账都挡住。"""
+    """流程交终审前：未官方缴费、未确认的收账都挡住。"""
     if case is None:
         return None
-    if unforwarded_fee_notices(case.id):
-        return "还有未转交的缴费通知，请先转交业务收账并完成确认。"
+    if unpaid_fee_notices(case.id):
+        return "还有未完成官方缴费的通知，请先上传缴费证明并标记已缴费。"
     open_rows = [
         row
         for row in CaseCollection.query.filter_by(case_id=case.id).all()

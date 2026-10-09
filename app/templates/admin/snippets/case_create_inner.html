@@ -10,8 +10,13 @@
 
   <div class="card border-0 shadow-sm">
     <div class="card-body">
-      <form method="post" enctype="multipart/form-data" class="row g-3 qy-form-grid">
+      <form method="post" enctype="multipart/form-data" class="row g-3 qy-form-grid" data-qy-spa-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if form_error %}
+        <div class="col-12">
+          <div class="alert alert-warning py-2 px-3 mb-0" role="alert" data-qy-page-toast="{{ form_error }}" data-qy-toast-variant="warning">{{ form_error }}</div>
+        </div>
+        {% endif %}
         <div class="col-md-4">
           <label class="form-label" for="caseProjectInput">所属项目</label>
           <select id="caseProjectInput" class="form-select" name="project_id" required>
@@ -23,7 +28,7 @@
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseTitleInput">案件标题</label>
-          <input id="caseTitleInput" class="form-control" type="text" name="title" required maxlength="200" placeholder="请输入案件标题">
+          <input id="caseTitleInput" class="form-control" type="text" name="title" required maxlength="200" placeholder="请输入案件标题" value="{{ form_title }}">
           <div class="form-text">同一项目下不能重复</div>
         </div>
         <div class="col-md-4">
@@ -32,11 +37,11 @@
         </div>
         <div class="col-md-4">
           <label class="form-label" for="casePatentApplicationNoInput">申请号</label>
-          <input id="casePatentApplicationNoInput" class="form-control" type="text" name="patent_application_no" maxlength="100" placeholder="选填，如：CN202410123456.7">
+          <input id="casePatentApplicationNoInput" class="form-control" type="text" name="patent_application_no" maxlength="100" placeholder="选填，如：CN202410123456.7" value="{{ form_patent_application_no }}">
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseFormalStatusInput">形式状态</label>
-          <input id="caseFormalStatusInput" class="form-control" type="text" name="formal_status" maxlength="80" placeholder="选填，如：已受理">
+          <input id="caseFormalStatusInput" class="form-control" type="text" name="formal_status" maxlength="80" placeholder="选填，如：已受理" value="{{ form_formal_status }}">
         </div>
         <div class="col-md-4">
           <label class="form-label" for="casePhaseInput">初始任务状态</label>
@@ -53,19 +58,19 @@
         <div class="col-md-4">
           <label class="form-label" for="caseBusinessOwnerInput">指派员工</label>
           <select id="caseBusinessOwnerInput" class="form-select" name="business_owner_id">
-            {{ staff_kind_optgroups(staff_users_formal, staff_users_outsource, selected_id=None, empty_label="未分配（待派单）") }}
+            {{ staff_kind_optgroups(staff_users_formal, staff_users_outsource, selected_id=selected_business_owner_id, empty_label="未分配（待派单）") }}
           </select>
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseProcessOwnerInput">流程人员</label>
           <select id="caseProcessOwnerInput" class="form-select" name="process_owner_id">
-            {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=None, empty_label="未指定") }}
+            {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=selected_process_owner_id, empty_label="未指定") }}
           </select>
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseBillingOwnerInput">收账人员</label>
           <select id="caseBillingOwnerInput" class="form-select" name="billing_owner_id">
-            {{ staff_kind_optgroups(billing_staff_formal, billing_staff_outsource, selected_id=None, empty_label="未指定") }}
+            {{ staff_kind_optgroups(billing_staff_formal, billing_staff_outsource, selected_id=selected_billing_owner_id, empty_label="未指定") }}
           </select>
         </div>
         <div class="col-md-4">
@@ -83,11 +88,11 @@
         </div>
         <div class="col-md-6">
           <label class="form-label" for="caseNoteInput">备注</label>
-          <textarea id="caseNoteInput" class="form-control" name="case_note" rows="2" placeholder="可自由填写补充说明、注意事项等"></textarea>
+          <textarea id="caseNoteInput" class="form-control" name="case_note" rows="2" placeholder="可自由填写补充说明、注意事项等">{{ form_case_note }}</textarea>
         </div>
         <div class="col-md-6">
           <label class="form-label" for="caseMaterialUploadPortInput">案件交底材料上传端口</label>
-          <input id="caseMaterialUploadPortInput" class="form-control" type="url" name="material_upload_port" maxlength="255" placeholder="选填，外部网盘/收集表链接">
+          <input id="caseMaterialUploadPortInput" class="form-control" type="url" name="material_upload_port" maxlength="255" placeholder="选填，外部网盘/收集表链接" value="{{ form_material_upload_port }}">
         </div>
         <div class="col-12">
           <div class="form-text mb-0">填写「案件交底材料上传端口」后，案件详情可一键打开外部材料收集入口（不会自动同步到本系统）。</div>
@@ -103,7 +108,7 @@
               </span>
               <div>
                 <label class="form-label fw-semibold mb-0 qy-material-upload-title" for="caseAttachmentsInput">上传附件</label>
-                <div class="form-text mb-0">可一次选择多个文件，支持 Word、Excel、PPT、PDF、图片、音视频、压缩包等格式。</div>
+                <div class="form-text mb-0">可一次选择多个文件，支持 Word、Excel、PPT、PDF、图片、音视频、压缩包等格式。{% if form_error %} 校验未通过时需重新选择本地文件。{% endif %}</div>
               </div>
             </div>
             <input id="caseAttachmentsInput" class="form-control" type="file" name="attachments" multiple>

@@ -10,19 +10,24 @@
 
   <div class="card border-0 shadow-sm">
     <div class="card-body">
-      <form method="post" enctype="multipart/form-data" class="row g-3 qy-form-grid">
+      <form method="post" enctype="multipart/form-data" class="row g-3 qy-form-grid" data-qy-spa-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if form_error %}
+        <div class="col-12">
+          <div class="alert alert-warning py-2 px-3 mb-0" role="alert" data-qy-page-toast="{{ form_error }}" data-qy-toast-variant="warning">{{ form_error }}</div>
+        </div>
+        {% endif %}
         <div class="col-md-4">
           <label class="form-label" for="caseEditProjectInput">所属项目</label>
           <select id="caseEditProjectInput" class="form-select" name="project_id" required>
             {% for project in projects %}
-            <option value="{{ project.id }}" {% if case.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
+            <option value="{{ project.id }}" {% if form_project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseEditTitleInput">案件标题</label>
-          <input id="caseEditTitleInput" class="form-control" type="text" name="title" required maxlength="200" value="{{ case.title }}">
+          <input id="caseEditTitleInput" class="form-control" type="text" name="title" required maxlength="200" value="{{ form_title }}">
           <div class="form-text">同一项目下不能重复</div>
         </div>
         <div class="col-md-4">
@@ -31,11 +36,11 @@
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseEditPatentApplicationNoInput">申请号</label>
-          <input id="caseEditPatentApplicationNoInput" class="form-control" type="text" name="patent_application_no" maxlength="100" value="{{ case.patent_application_no or '' }}" placeholder="选填，可后续补填">
+          <input id="caseEditPatentApplicationNoInput" class="form-control" type="text" name="patent_application_no" maxlength="100" value="{{ form_patent_application_no }}" placeholder="选填，可后续补填">
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseEditFormalStatusInput">形式状态</label>
-          <input id="caseEditFormalStatusInput" class="form-control" type="text" name="formal_status" maxlength="80" value="{{ case.formal_status or '' }}">
+          <input id="caseEditFormalStatusInput" class="form-control" type="text" name="formal_status" maxlength="80" value="{{ form_formal_status }}">
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseEditPhaseInput">任务状态</label>
@@ -52,19 +57,19 @@
         <div class="col-md-4">
           <label class="form-label" for="caseEditBusinessOwnerInput">指派员工</label>
           <select id="caseEditBusinessOwnerInput" class="form-select" name="business_owner_id">
-            {{ staff_kind_optgroups(staff_users_formal, staff_users_outsource, selected_id=case.business_owner_id, empty_label="未分配（待派单）") }}
+            {{ staff_kind_optgroups(staff_users_formal, staff_users_outsource, selected_id=selected_business_owner_id, empty_label="未分配（待派单）") }}
           </select>
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseEditProcessOwnerInput">流程人员</label>
           <select id="caseEditProcessOwnerInput" class="form-select" name="process_owner_id">
-            {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=case.process_owner_id, empty_label="未指定") }}
+            {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=selected_process_owner_id, empty_label="未指定") }}
           </select>
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseEditBillingOwnerInput">收账人员</label>
           <select id="caseEditBillingOwnerInput" class="form-select" name="billing_owner_id">
-            {{ staff_kind_optgroups(billing_staff_formal, billing_staff_outsource, selected_id=case.billing_owner_id, empty_label="未指定") }}
+            {{ staff_kind_optgroups(billing_staff_formal, billing_staff_outsource, selected_id=selected_billing_owner_id, empty_label="未指定") }}
           </select>
         </div>
         <div class="col-md-4">
@@ -82,11 +87,11 @@
         </div>
         <div class="col-md-6">
           <label class="form-label" for="caseEditNoteInput">备注</label>
-          <textarea id="caseEditNoteInput" class="form-control" name="case_note" rows="2" placeholder="可自由填写补充说明、注意事项等">{{ case.case_note or '' }}</textarea>
+          <textarea id="caseEditNoteInput" class="form-control" name="case_note" rows="2" placeholder="可自由填写补充说明、注意事项等">{{ form_case_note }}</textarea>
         </div>
         <div class="col-md-6">
           <label class="form-label" for="caseEditMaterialUploadPortInput">案件交底材料上传端口</label>
-          <input id="caseEditMaterialUploadPortInput" class="form-control" type="url" name="material_upload_port" maxlength="255" value="{{ case.material_upload_port or '' }}" placeholder="选填，外部网盘/收集表链接">
+          <input id="caseEditMaterialUploadPortInput" class="form-control" type="url" name="material_upload_port" maxlength="255" value="{{ form_material_upload_port }}" placeholder="选填，外部网盘/收集表链接">
         </div>
         <div class="col-12">
           <div class="form-text mb-0">填写「案件交底材料上传端口」后，案件详情可一键打开外部材料收集入口（不会自动同步到本系统）。</div>
@@ -102,7 +107,7 @@
               </span>
               <div>
                 <label class="form-label fw-semibold mb-0 qy-material-upload-title" for="caseEditAttachmentsInput">上传附件</label>
-                <div class="form-text mb-0">可一次选择多个文件；新增附件会追加到案件材料中，不影响已有材料。</div>
+                <div class="form-text mb-0">可一次选择多个文件；新增附件会追加到案件材料中，不影响已有材料。{% if form_error %} 校验未通过时需重新选择本地文件。{% endif %}</div>
               </div>
             </div>
             <input id="caseEditAttachmentsInput" class="form-control" type="file" name="attachments" multiple>
@@ -113,19 +118,6 @@
           <button class="btn btn-primary" type="submit">保存修改</button>
         </div>
       </form>
-      <script>
-      (function () {
-        var phase = document.getElementById("caseEditPhaseInput");
-        var actual = document.getElementById("caseEditActualReturnAtInput");
-        if (!phase || !actual) return;
-        function sync() {
-          actual.required = phase.value === "completed" && !actual.value;
-        }
-        phase.addEventListener("change", sync);
-        actual.addEventListener("input", sync);
-        sync();
-      })();
-      </script>
     </div>
   </div>
 </div>

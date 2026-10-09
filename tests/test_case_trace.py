@@ -112,7 +112,7 @@ def test_submit_for_review_snapshots_files_and_name_survives_departure():
     client.get("/auth/logout")
     client.post("/auth/login", data={"username": admin_name, "password": "secret"}, follow_redirects=True)
     page = client.get(f"/admin/case-detail/{case_id}").data.decode("utf-8")
-    assert "提交流程核对" in page
+    assert "提交审核" in page
     assert "退稿重做说明书.pdf" in page
     assert writer_label in page
     assert "已离职" in page

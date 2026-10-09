@@ -44,6 +44,7 @@ from app.case_types import (
 from app.case_trace import (
     add_review_log,
     paginate_case_trace_logs,
+    review_package_writing_materials,
     stamp_assignee,
     stamp_billing_owner,
     stamp_business_owner,
@@ -70,10 +71,29 @@ from app.assignment_advisor import (
     window_days,
     writer_load_rows,
 )
+from app.live_inbox import admin_live_payload, assignment_nav_counts
 from app.blueprints.admin import admin_bp
 from app.extensions import db
-from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CaseReviewLog, Customer, CustomerKind, Project, StaffDocument, Task, User
-from app.official_notices import get_notice, list_case_notices, official_notices_dir
+from app.models import Case, CaseMaterial, CaseMaterialDownloadLog, CaseReviewLog, Customer, CustomerKind, OfficialNotice, Project, StaffDocument, Task, User
+from app.official_notices import (
+    get_notice,
+    list_case_notices,
+    official_notices_dir,
+    user_may_download_fee_proof,
+)
+from app.staff_performance import staff_performance_data, staff_performance_function
+from app.statutory_deadlines import (
+    KIND_LABELS,
+    OWNER_ROLE_LABELS,
+    WINDOW_LABELS,
+    WINDOW_7D,
+    admin_urge_deadline,
+    board_filter_url_kwargs,
+    filter_deadline_items,
+    list_open_deadline_items,
+    normalize_board_filters,
+    window_counts,
+)
 from app.collections import collections_dir, collections_for_cases, get_proof, list_case_collections, user_may_download_proof
 from app.staff_docs import (
     delete_staff_document,
@@ -96,9 +116,12 @@ from app.workflow import (
     TaskPhase,
     ADMIN_CASE_PHASE_OPTIONS,
     apply_task_overdue_status,
+    admin_approve_writing,
+    admin_reject_writing,
     is_order_intake_phase,
     is_pending_final_review_phase,
     is_pending_order_review_phase,
+    is_pending_review_phase,
     is_terminal_phase,
     phase_for_workflow,
     resolve_case_task_phase,
@@ -117,6 +140,20 @@ def _exclude_order_revision(query):
     return query.filter(~Case.task.has(Task.phase_status == TaskPhase.ORDER_REVISION))
 
 
+_REVIEW_KIND_WRITING = "writing"
+_REVIEW_KIND_FINAL = "final"
+_REVIEW_KINDS = frozenset({_REVIEW_KIND_WRITING, _REVIEW_KIND_FINAL})
+_WRITING_REVIEW_PHASES = (
+    TaskPhase.PENDING_REVIEW,
+    TaskPhase.OVERDUE_PENDING_REVIEW,
+)
+
+
+def _writing_review_query():
+    """待材料审核任务。"""
+    return Task.query.join(Task.case).filter(Task.phase_status.in_(_WRITING_REVIEW_PHASES))
+
+
 def _review_inbox_query():
     """全部待终审任务。"""
     return (
@@ -126,30 +163,29 @@ def _review_inbox_query():
 
 
 def _review_inbox_counts(_user: User | None = None) -> tuple[int, int]:
-    """返回（待终审总数，待处理数）；仅终审通过/打回后待处理数才会减少。"""
-    total = _review_inbox_query().count()
+    """返回（待审核+待终审总数，待处理数）；材料通过/打回或终审办结后红点减少。"""
+    total = _writing_review_query().count() + _review_inbox_query().count()
     return total, total
 
 
-@admin_bp.app_context_processor
-def _admin_review_nav_context():
-    """给管理端侧边栏注入待终审总数与待处理数。"""
-    if not current_user.is_authenticated or current_user.role != "admin":
-        return {}
-    total, unread = _review_inbox_counts(current_user)
-    return {
-        "review_nav_total": total,
-        "review_nav_unread": unread,
-        "order_intake_nav_total": pending_order_review_count(),
-    }
-
-
 def _apply_admin_review(case: Case, task: Task | None, action: str, reject_note: str) -> tuple[bool, str, str]:
-    """统一执行审核通过/打回，供案件详情与审核中心复用。"""
+    """统一执行材料审核或终审，供案件详情与审核中心复用。"""
     if task is None:
         return False, "该案件暂无任务，无法审核。", "warning"
+    if is_pending_review_phase(task.phase_status):
+        if action == "approve":
+            ok, message = admin_approve_writing(task, current_user)
+            if ok:
+                db.session.commit()
+            return ok, message, "success" if ok else "warning"
+        if action == "reject":
+            ok, message = admin_reject_writing(task, current_user, note=reject_note)
+            if ok:
+                db.session.commit()
+            return ok, message, "info" if ok else "warning"
+        return False, "审核动作无效。", "warning"
     if not is_pending_final_review_phase(task.phase_status):
-        return False, "当前状态不是待终审，无法执行审核动作。", "warning"
+        return False, "当前状态不是待审核或待终审，无法执行审核动作。", "warning"
     if action == "approve":
         ok, err = _resolve_actual_return_for_completed(
             case, previous_actual_return_at=case.actual_return_at
@@ -179,6 +215,24 @@ def _apply_admin_review(case: Case, task: Task | None, action: str, reject_note:
         db.session.commit()
         return True, "已打回，案件状态改为撰写中。", "info"
     return False, "审核动作无效。", "warning"
+
+
+@admin_bp.app_context_processor
+def _admin_review_nav_context():
+    """给管理端侧边栏注入待审核、待分派与下单待确认件数。"""
+    if not current_user.is_authenticated or current_user.role != "admin":
+        return {}
+    total, unread = _review_inbox_counts(current_user)
+    assignment_nav = assignment_nav_counts()
+    return {
+        "review_nav_total": total,
+        "review_nav_unread": unread,
+        "order_intake_nav_total": assignment_nav["pending_order_intake"],
+        "smart_assignment_nav_total": assignment_nav["pending_assignment"],
+        "process_assignment_nav_total": assignment_nav["pending_process"],
+        "billing_assignment_nav_total": assignment_nav["pending_billing"],
+        "dispatch_nav_total": assignment_nav["unread"],
+    }
 
 
 def _notify_case_assigned(case: Case, old_assignee_id, new_assignee_id) -> None:
@@ -717,12 +771,13 @@ def task_board():
         spa_endpoint="admin.task_board",
         spa_document_title="任务看板 — 琴岳专利管理系统",
         page_title="任务看板",
-        page_desc="查看进行中、待终审与超期任务，并支持统一筛选与排序。",
+        page_desc="查看进行中、待审核、待终审与超期任务，并支持统一筛选与排序。",
         task_rows=board["rows"],
         status_filter=status_filter,
         sort_by=sort_by,
         count_in_progress=board["counts"]["in_progress"],
-        count_pending_review=board["counts"]["pending_final_review"],
+        count_pending_review=board["counts"]["pending_review"],
+        count_pending_final_review=board["counts"]["pending_final_review"],
         count_pending_assignment=board["counts"]["pending_assignment"],
         count_overdue=board["counts"]["overdue"],
         case_detail_endpoint="admin.case_detail",
@@ -1202,28 +1257,28 @@ def accounts():
         customer_id_raw = request.form.get("customer_id", "").strip()
         phone, phone_err = _normalize_user_phone(request.form.get("phone", ""))
         if phone_err:
-            return redirect_with_qy_toast("admin.accounts", phone_err, "warning")
+            return _accounts_create_invalid(phone_err)
 
         if not username:
-            return redirect_with_qy_toast("admin.accounts", "账号名不能为空。", "warning")
+            return _accounts_create_invalid("账号名不能为空。")
         if len(password) < 6:
-            return redirect_with_qy_toast("admin.accounts", "密码长度不能少于 6 位。", "warning")
+            return _accounts_create_invalid("密码长度不能少于 6 位。")
         if role not in {"staff", "client"}:
-            return redirect_with_qy_toast("admin.accounts", "账号类型不合法。", "warning")
+            return _accounts_create_invalid("账号类型不合法。")
         if User.query.filter_by(username=username).first() is not None:
-            return redirect_with_qy_toast("admin.accounts", "账号名已存在，请更换后重试。", "danger")
+            return _accounts_create_invalid("账号名已存在，请更换后重试。")
         if phone and _phone_taken(phone):
-            return redirect_with_qy_toast("admin.accounts", "该手机号已被其他账号使用。", "danger")
+            return _accounts_create_invalid("该手机号已被其他账号使用。")
 
         customer_id = None
         staff_kind = None
         staff_function = None
         if role == "client":
             if not customer_id_raw.isdigit():
-                return redirect_with_qy_toast("admin.accounts", "客户账号必须绑定客户。", "warning")
+                return _accounts_create_invalid("客户账号必须绑定客户。")
             customer = db.session.get(Customer, int(customer_id_raw))
             if customer is None:
-                return redirect_with_qy_toast("admin.accounts", "绑定客户不存在，请刷新后重试。", "danger")
+                return _accounts_create_invalid("绑定客户不存在，请刷新后重试。")
             customer_id = customer.id
         else:
             staff_kind = User.normalize_staff_kind(request.form.get("staff_kind", ""))
@@ -1242,6 +1297,20 @@ def accounts():
         db.session.commit()
         return redirect_with_qy_toast("admin.accounts", "账号已创建。", "success")
 
+    return _render_accounts()
+
+
+def _render_accounts(
+    *,
+    form_error: str = "",
+    form_username: str = "",
+    form_phone: str = "",
+    form_role: str = "client",
+    form_customer_id: str = "",
+    form_staff_kind: str = "formal",
+    form_staff_function: str = "writer",
+):
+    """渲染账号分发页；新建失败时保留已填内容（不回填密码）。"""
     keyword = request.args.get("q", "").strip()
     role_filter = request.args.get("role", "all").strip()
     staff_kind_filter = request.args.get("staff_kind", "all").strip()
@@ -1286,7 +1355,6 @@ def accounts():
     if per_page not in (10, 20, 50):
         per_page = 20
 
-    # 分区排序：正式员工 → 外包员工 → 客户；同组内新账号在前。
     kind_rank = db.case(
         (User.role == "client", 2),
         (
@@ -1316,6 +1384,12 @@ def accounts():
     if per_page != 20:
         filter_url_kwargs["per_page"] = str(per_page)
 
+    if form_role not in {"staff", "client"}:
+        form_role = "client"
+    if form_staff_kind not in User.STAFF_KINDS:
+        form_staff_kind = User.STAFF_KIND_FORMAL
+    if form_staff_function not in User.STAFF_FUNCTIONS:
+        form_staff_function = User.STAFF_FUNCTION_WRITER
     return render_spa_or_full(
         full_template="admin/accounts.html",
         inner_template="admin/snippets/accounts_inner.html",
@@ -1334,6 +1408,25 @@ def accounts():
         ),
         per_page=per_page,
         filter_url_kwargs=filter_url_kwargs,
+        form_error=form_error,
+        form_username=form_username,
+        form_phone=form_phone,
+        form_role=form_role,
+        form_customer_id=form_customer_id,
+        form_staff_kind=form_staff_kind,
+        form_staff_function=form_staff_function,
+    )
+
+
+def _accounts_create_invalid(message: str):
+    return _render_accounts(
+        form_error=message,
+        form_username=request.form.get("username", ""),
+        form_phone=request.form.get("phone", ""),
+        form_role=request.form.get("role", "client").strip(),
+        form_customer_id=request.form.get("customer_id", "").strip(),
+        form_staff_kind=request.form.get("staff_kind", "formal"),
+        form_staff_function=request.form.get("staff_function", "writer"),
     )
 
 
@@ -1804,6 +1897,31 @@ def customer_detail(customer_id: int):
     )
 
 
+def _render_customer_edit(customer, *, form_error: str = "", form_name=None, form_kind=None, form_note=None):
+    """渲染编辑客户表单；校验失败时保留已填内容。"""
+    if form_name is None:
+        form_name = customer.name
+    if form_kind is None:
+        form_kind = customer.kind
+    if form_note is None:
+        form_note = customer.note or ""
+    return render_spa_or_full(
+        full_template="admin/customer_edit.html",
+        inner_template="admin/snippets/customer_edit_inner.html",
+        spa_endpoint="admin.customer_edit",
+        spa_document_title="编辑客户 — 琴岳专利管理系统",
+        page_title="编辑客户",
+        page_desc="维护客户名称、类型和备注。",
+        customer=customer,
+        customer_kind_company=CustomerKind.COMPANY,
+        customer_kind_individual=CustomerKind.INDIVIDUAL,
+        form_name=form_name,
+        form_kind=form_kind,
+        form_note=form_note,
+        form_error=form_error,
+    )
+
+
 @admin_bp.route("/customer-edit/<int:customer_id>", methods=["GET", "POST"])
 @login_required
 def customer_edit(customer_id: int):
@@ -1818,13 +1936,12 @@ def customer_edit(customer_id: int):
         kind = request.form.get("kind", CustomerKind.COMPANY)
         note = request.form.get("note", "").strip()
         if not name:
-            return redirect(
-                url_for(
-                    "admin.customer_edit",
-                    customer_id=customer.id,
-                    qy_toast="客户名称不能为空。",
-                    qy_toast_variant="warning",
-                )
+            return _render_customer_edit(
+                customer,
+                form_error="客户名称不能为空。",
+                form_name=request.form.get("name", ""),
+                form_kind=kind,
+                form_note=request.form.get("note", ""),
             )
         if kind not in {CustomerKind.COMPANY, CustomerKind.INDIVIDUAL}:
             kind = CustomerKind.COMPANY
@@ -1841,16 +1958,55 @@ def customer_edit(customer_id: int):
             )
         )
 
+    return _render_customer_edit(customer)
+
+
+def _render_project_edit(project, *, form_error: str = "", **form_values):
+    """渲染编辑项目表单；校验失败时保留已填内容。"""
+    form_name = form_values.get("form_name")
+    if form_name is None:
+        form_name = project.name
+    form_description = form_values.get("form_description")
+    if form_description is None:
+        form_description = project.description or ""
+    form_customer_id = form_values.get("form_customer_id")
+    if form_customer_id is None:
+        raw_customer = str(form_values.get("customer_id_raw") or "").strip()
+        form_customer_id = int(raw_customer) if raw_customer.isdigit() else project.customer_id
+    due_at_input = form_values.get("due_at_input")
+    if due_at_input is None:
+        due_at_input = _dt_input_value(project.due_at)
+    initiated_at_input = form_values.get("initiated_at_input")
+    if initiated_at_input is None:
+        initiated_at_input = _dt_input_value(_project_initiated_at(project))
     return render_spa_or_full(
-        full_template="admin/customer_edit.html",
-        inner_template="admin/snippets/customer_edit_inner.html",
-        spa_endpoint="admin.customer_edit",
-        spa_document_title="编辑客户 — 琴岳专利管理系统",
-        page_title="编辑客户",
-        page_desc="维护客户名称、类型和备注。",
-        customer=customer,
-        customer_kind_company=CustomerKind.COMPANY,
-        customer_kind_individual=CustomerKind.INDIVIDUAL,
+        full_template="admin/project_edit.html",
+        inner_template="admin/snippets/project_edit_inner.html",
+        spa_endpoint="admin.project_edit",
+        spa_document_title="编辑项目 — 琴岳专利管理系统",
+        page_title="编辑项目",
+        page_desc="维护项目基础信息、归属客户和时间节点。",
+        project=project,
+        customers=Customer.query.order_by(Customer.name.asc(), Customer.id.asc()).all(),
+        due_at_input=due_at_input or "",
+        initiated_at_input=initiated_at_input or "",
+        initiated_at_max_input=_dt_input_value(datetime.now(timezone.utc)),
+        form_name=form_name,
+        form_description=form_description,
+        form_customer_id=form_customer_id,
+        form_error=form_error,
+    )
+
+
+def _project_edit_invalid(project, message: str):
+    return _render_project_edit(
+        project,
+        form_error=message,
+        form_name=request.form.get("name", ""),
+        form_description=request.form.get("description", ""),
+        customer_id_raw=request.form.get("customer_id", ""),
+        due_at_input=request.form.get("due_at", ""),
+        initiated_at_input=request.form.get("initiated_at", ""),
     )
 
 
@@ -1871,34 +2027,26 @@ def project_edit(project_id: int):
         due_at_raw = request.form.get("due_at", "")
 
         if not name:
-            return redirect_with_qy_toast("admin.project_edit", "项目名称不能为空。", "warning", project_id=project.id)
+            return _project_edit_invalid(project, "项目名称不能为空。")
         if len(name) > 200:
-            return redirect_with_qy_toast(
-                "admin.project_edit", "项目名称不能超过 200 个字符", "warning", project_id=project.id
-            )
+            return _project_edit_invalid(project, "项目名称不能超过 200 个字符")
         if description and len(description) > 1000:
-            return redirect_with_qy_toast(
-                "admin.project_edit", "项目说明不能超过 1000 字", "warning", project_id=project.id
-            )
+            return _project_edit_invalid(project, "项目说明不能超过 1000 字")
         if not customer_id_raw.isdigit():
-            return redirect_with_qy_toast("admin.project_edit", "请选择归属客户。", "warning", project_id=project.id)
+            return _project_edit_invalid(project, "请选择归属客户。")
         customer = db.session.get(Customer, int(customer_id_raw))
         if customer is None:
-            return redirect_with_qy_toast(
-                "admin.project_edit", "客户不存在，请刷新后重试。", "danger", project_id=project.id
-            )
+            return _project_edit_invalid(project, "客户不存在，请刷新后重试。")
         try:
             due_at = _parse_due_at(due_at_raw)
         except ValueError:
-            return redirect_with_qy_toast("admin.project_edit", "截止时间格式不正确。", "warning", project_id=project.id)
+            return _project_edit_invalid(project, "截止时间格式不正确。")
         try:
             initiated_at = _parse_initiated_at(initiated_at_raw)
         except ValueError as exc:
             if str(exc) == "future":
-                return redirect_with_qy_toast(
-                    "admin.project_edit", "立项时间不能晚于当前时间。", "warning", project_id=project.id
-                )
-            return redirect_with_qy_toast("admin.project_edit", "立项时间格式不正确。", "warning", project_id=project.id)
+                return _project_edit_invalid(project, "立项时间不能晚于当前时间。")
+            return _project_edit_invalid(project, "立项时间格式不正确。")
 
         project.customer_id = customer.id
         project.name = name
@@ -1908,23 +2056,7 @@ def project_edit(project_id: int):
         db.session.commit()
         return redirect_with_qy_toast("admin.project_initiation", "项目已更新。", "success")
 
-    due_at_input = _dt_input_value(project.due_at)
-    initiated_at_input = _dt_input_value(_project_initiated_at(project))
-    initiated_at_max_input = _dt_input_value(datetime.now(timezone.utc))
-    customer_options = Customer.query.order_by(Customer.name.asc(), Customer.id.asc()).all()
-    return render_spa_or_full(
-        full_template="admin/project_edit.html",
-        inner_template="admin/snippets/project_edit_inner.html",
-        spa_endpoint="admin.project_edit",
-        spa_document_title="编辑项目 — 琴岳专利管理系统",
-        page_title="编辑项目",
-        page_desc="维护项目基础信息、归属客户和时间节点。",
-        project=project,
-        customers=customer_options,
-        due_at_input=due_at_input,
-        initiated_at_input=initiated_at_input,
-        initiated_at_max_input=initiated_at_max_input,
-    )
+    return _render_project_edit(project)
 
 
 @admin_bp.route("/project-detail/<int:project_id>")
@@ -2249,6 +2381,82 @@ def cases_bulk_delete():
     return jsonify(ok=True, deleted=deleted, skipped=skipped, message=f"已删除 {len(deleted)} 条。")
 
 
+def _optional_int_id(raw: str | None) -> int | None:
+    value = (raw or "").strip()
+    return int(value) if value.isdigit() else None
+
+
+def _case_create_posted_form() -> dict:
+    """校验失败时把已填字段带回表单，避免整页重定向后清空。"""
+    phase = request.form.get("phase_status", TaskPhase.PENDING_ASSIGNMENT)
+    return {
+        "initial_project_id": request.form.get("project_id", "").strip(),
+        "form_title": request.form.get("title", ""),
+        "form_patent_application_no": request.form.get("patent_application_no", ""),
+        "form_formal_status": request.form.get("formal_status", ""),
+        "form_case_note": request.form.get("case_note", ""),
+        "form_material_upload_port": request.form.get("material_upload_port", ""),
+        "case_type_selected": request.form.get("case_type_code", "").strip(),
+        "default_phase": phase,
+        "order_at_input": request.form.get("order_at", ""),
+        "expected_return_at_input": request.form.get("expected_return_at", ""),
+        "actual_return_at_input": request.form.get("actual_return_at", ""),
+        "selected_business_owner_id": _optional_int_id(request.form.get("business_owner_id")),
+        "selected_process_owner_id": _optional_int_id(request.form.get("process_owner_id")),
+        "selected_billing_owner_id": _optional_int_id(request.form.get("billing_owner_id")),
+    }
+
+
+def _render_case_create(*, form_error: str = "", **form_values):
+    """渲染新建案件表单；GET 与校验失败共用，失败时保留已填内容。"""
+    project_id_raw = str(form_values.get("initial_project_id") or "").strip()
+    if not project_id_raw:
+        project_id_raw = request.args.get("project_id", "").strip()
+    phase = form_values.get("default_phase") or TaskPhase.PENDING_ASSIGNMENT
+    if phase not in ADMIN_CASE_PHASE_OPTIONS:
+        phase = TaskPhase.PENDING_ASSIGNMENT
+    staff_formal, staff_outsource = _staff_users_partitioned()
+    process_formal, process_outsource = _process_staff_users_partitioned()
+    billing_formal, billing_outsource = _billing_staff_users_partitioned()
+    return render_spa_or_full(
+        full_template="admin/case_create.html",
+        inner_template="admin/snippets/case_create_inner.html",
+        spa_endpoint="admin.case_create",
+        spa_document_title="新建案件 — 琴岳专利管理系统",
+        page_title="新建案件",
+        page_desc="选择项目并录入案件基础信息，系统自动创建任务。",
+        projects=Project.query.order_by(Project.name.asc(), Project.id.asc()).all(),
+        staff_users=staff_formal + staff_outsource,
+        staff_users_formal=staff_formal,
+        staff_users_outsource=staff_outsource,
+        process_staff_formal=process_formal,
+        process_staff_outsource=process_outsource,
+        billing_staff_formal=billing_formal,
+        billing_staff_outsource=billing_outsource,
+        initial_project_id=project_id_raw if project_id_raw.isdigit() else "",
+        form_title=form_values.get("form_title", ""),
+        form_patent_application_no=form_values.get("form_patent_application_no", ""),
+        form_formal_status=form_values.get("form_formal_status", ""),
+        form_case_note=form_values.get("form_case_note", ""),
+        form_material_upload_port=form_values.get("form_material_upload_port", ""),
+        phase_options=list(ADMIN_CASE_PHASE_OPTIONS),
+        case_type_config=CASE_TYPE_UI_CONFIG,
+        case_type_selected=form_values.get("case_type_selected", ""),
+        default_phase=phase,
+        order_at_input=form_values.get("order_at_input", ""),
+        expected_return_at_input=form_values.get("expected_return_at_input", ""),
+        actual_return_at_input=form_values.get("actual_return_at_input", ""),
+        selected_business_owner_id=form_values.get("selected_business_owner_id"),
+        selected_process_owner_id=form_values.get("selected_process_owner_id"),
+        selected_billing_owner_id=form_values.get("selected_billing_owner_id"),
+        form_error=form_error,
+    )
+
+
+def _case_create_invalid(message: str):
+    return _render_case_create(form_error=message, **_case_create_posted_form())
+
+
 @admin_bp.route("/case-create", methods=["GET", "POST"])
 @login_required
 def case_create():
@@ -2272,50 +2480,41 @@ def case_create():
         phase_status = request.form.get("phase_status", TaskPhase.IN_PROGRESS)
 
         if not project_id_raw.isdigit():
-            return redirect_with_qy_toast("admin.case_create", "请选择所属项目。", "warning")
+            return _case_create_invalid("请选择所属项目。")
         project = db.session.get(Project, int(project_id_raw))
         if project is None:
-            return redirect_with_qy_toast("admin.case_create", "项目不存在，请刷新后重试。", "danger")
+            return _case_create_invalid("项目不存在，请刷新后重试。")
         if not title:
-            return redirect_with_qy_toast("admin.case_create", "案件标题不能为空。", "warning", project_id=project.id)
+            return _case_create_invalid("案件标题不能为空。")
         title = Case.normalize_title(title)
         if Case.title_taken_in_project(project.id, title):
-            return redirect_with_qy_toast(
-                "admin.case_create",
-                Case.DUPLICATE_TITLE_IN_PROJECT_MSG,
-                "warning",
-                project_id=project.id,
-            )
+            return _case_create_invalid(Case.DUPLICATE_TITLE_IN_PROJECT_MSG)
         case_type_leaf, case_type_err = validate_case_type_code(case_type_code)
         if case_type_err:
-            return redirect_with_qy_toast(
-                "admin.case_create", case_type_err, "warning", project_id=project.id
-            )
+            return _case_create_invalid(case_type_err)
         bo_err: str | None
         business_owner_id, bo_err = _business_owner_id_from_form(business_owner_id_raw)
         if bo_err:
-            return redirect_with_qy_toast("admin.case_create", bo_err, "warning", project_id=project.id)
+            return _case_create_invalid(bo_err)
         process_owner_id, po_err = _process_owner_id_from_form(process_owner_id_raw)
         if po_err:
-            return redirect_with_qy_toast("admin.case_create", po_err, "warning", project_id=project.id)
+            return _case_create_invalid(po_err)
         billing_owner_id, bill_err = _billing_owner_id_from_form(billing_owner_id_raw)
         if bill_err:
-            return redirect_with_qy_toast("admin.case_create", bill_err, "warning", project_id=project.id)
+            return _case_create_invalid(bill_err)
         phase_status = resolve_case_task_phase(business_owner_id, phase_status)
         try:
             order_at = _parse_due_at(order_at_raw)
             expected_return_at = _parse_due_at(expected_return_at_raw)
             actual_return_at = _parse_due_at(actual_return_at_raw)
         except ValueError:
-            return redirect_with_qy_toast(
-                "admin.case_create", "下单/返稿时间格式不正确。", "warning", project_id=project.id
-            )
+            return _case_create_invalid("下单/返稿时间格式不正确。")
 
         created_at = datetime.now(timezone.utc)
         try:
             application_no = next_case_serial(created_at)
         except ValueError as exc:
-            return redirect_with_qy_toast("admin.case_create", str(exc), "warning", project_id=project.id)
+            return _case_create_invalid(str(exc))
         case = Case(
             project_id=project.id,
             title=title,
@@ -2347,9 +2546,7 @@ def case_create():
             )
             if not ok:
                 db.session.rollback()
-                return redirect_with_qy_toast(
-                    "admin.case_create", err, "warning", project_id=project.id
-                )
+                return _case_create_invalid(err)
         apply_task_overdue_status(task)
         db.session.add(task)
         _notify_case_assigned(case, None, business_owner_id)
@@ -2377,38 +2574,7 @@ def case_create():
             variant = "secondary"
         return redirect_with_qy_toast("admin.case_detail", msg, variant, case_id=case.id)
 
-    project_options = Project.query.order_by(Project.name.asc(), Project.id.asc()).all()
-    initial_project_id = ""
-    if project_id_raw.isdigit():
-        initial_project_id = project_id_raw
-    phase_options = list(ADMIN_CASE_PHASE_OPTIONS)
-    staff_formal, staff_outsource = _staff_users_partitioned()
-    process_formal, process_outsource = _process_staff_users_partitioned()
-    billing_formal, billing_outsource = _billing_staff_users_partitioned()
-    return render_spa_or_full(
-        full_template="admin/case_create.html",
-        inner_template="admin/snippets/case_create_inner.html",
-        spa_endpoint="admin.case_create",
-        spa_document_title="新建案件 — 琴岳专利管理系统",
-        page_title="新建案件",
-        page_desc="选择项目并录入案件基础信息，系统自动创建任务。",
-        projects=project_options,
-        staff_users=staff_formal + staff_outsource,
-        staff_users_formal=staff_formal,
-        staff_users_outsource=staff_outsource,
-        process_staff_formal=process_formal,
-        process_staff_outsource=process_outsource,
-        billing_staff_formal=billing_formal,
-        billing_staff_outsource=billing_outsource,
-        initial_project_id=initial_project_id,
-        phase_options=phase_options,
-        case_type_config=CASE_TYPE_UI_CONFIG,
-        case_type_selected="",
-        default_phase=TaskPhase.PENDING_ASSIGNMENT,
-        order_at_input="",
-        expected_return_at_input="",
-        actual_return_at_input="",
-    )
+    return _render_case_create()
 
 
 @admin_bp.route("/case-detail/<int:case_id>", methods=["GET", "POST"])
@@ -2428,7 +2594,7 @@ def case_detail(case_id: int):
     latest_reject_log = (
         CaseReviewLog.query.filter(
             CaseReviewLog.case_id == case.id,
-            CaseReviewLog.action.in_(("reject", "process_reject", "intake_reject")),
+            CaseReviewLog.action.in_(("reject", "process_reject", "writing_reject", "intake_reject")),
         )
         .order_by(CaseReviewLog.created_at.desc(), CaseReviewLog.id.desc())
         .first()
@@ -2669,6 +2835,22 @@ def official_notice_download(notice_id: int):
     )
 
 
+@admin_bp.route("/official-notices/<int:notice_id>/fee-proof")
+@login_required
+def official_fee_proof_download(notice_id: int):
+    """管理员下载官方缴费证明。"""
+    _ensure_admin()
+    notice = get_notice(notice_id)
+    if notice is None or not user_may_download_fee_proof(current_user, notice):
+        abort(404)
+    return send_from_directory(
+        official_notices_dir(),
+        notice.fee_paid_proof_stored_name,
+        as_attachment=True,
+        download_name=notice.fee_paid_proof_original_name or notice.fee_paid_proof_stored_name,
+    )
+
+
 @admin_bp.route("/collection-proofs/<int:proof_id>")
 @login_required
 def collection_proof_download(proof_id: int):
@@ -2718,6 +2900,109 @@ def case_material_download_logs_export(case_id: int):
     )
 
 
+def _render_case_edit(case: Case, task, *, form_error: str = "", **form_values):
+    """渲染编辑案件表单；GET 与校验失败共用，失败时保留已填内容。"""
+    form_project_id = form_values.get("form_project_id")
+    if form_project_id is None:
+        raw_project = str(form_values.get("initial_project_id") or "").strip()
+        form_project_id = int(raw_project) if raw_project.isdigit() else case.project_id
+    form_title = form_values.get("form_title")
+    if form_title is None:
+        form_title = case.title
+    form_patent = form_values.get("form_patent_application_no")
+    if form_patent is None:
+        form_patent = case.patent_application_no or ""
+    form_formal_status = form_values.get("form_formal_status")
+    if form_formal_status is None:
+        form_formal_status = case.formal_status or ""
+    form_case_note = form_values.get("form_case_note")
+    if form_case_note is None:
+        form_case_note = case.case_note or ""
+    form_material_upload_port = form_values.get("form_material_upload_port")
+    if form_material_upload_port is None:
+        form_material_upload_port = case.material_upload_port or ""
+    case_type_selected = form_values.get("case_type_selected")
+    if case_type_selected is None:
+        case_type_selected = normalize_case_type_code(
+            case.case_type_code or legacy_case_type_code(case.project_type) or ""
+        )
+    phase = form_values.get("default_phase")
+    if not phase:
+        phase = task.phase_status if task else TaskPhase.PENDING_ASSIGNMENT
+    if phase not in ADMIN_CASE_PHASE_OPTIONS:
+        phase = task.phase_status if task and task.phase_status in ADMIN_CASE_PHASE_OPTIONS else TaskPhase.PENDING_ASSIGNMENT
+    selected_business_owner_id = (
+        form_values["selected_business_owner_id"]
+        if "selected_business_owner_id" in form_values
+        else case.business_owner_id
+    )
+    selected_process_owner_id = (
+        form_values["selected_process_owner_id"]
+        if "selected_process_owner_id" in form_values
+        else case.process_owner_id
+    )
+    selected_billing_owner_id = (
+        form_values["selected_billing_owner_id"]
+        if "selected_billing_owner_id" in form_values
+        else case.billing_owner_id
+    )
+    order_at_input = form_values.get("order_at_input")
+    if order_at_input is None:
+        order_at_input = _dt_input_value(case.order_at)
+    expected_return_at_input = form_values.get("expected_return_at_input")
+    if expected_return_at_input is None:
+        expected_return_at_input = _dt_input_value(case.expected_return_at)
+    actual_return_at_input = form_values.get("actual_return_at_input")
+    if actual_return_at_input is None:
+        actual_return_at_input = _dt_input_value(case.actual_return_at)
+    staff_formal, staff_outsource = _staff_users_partitioned()
+    process_formal, process_outsource = _process_staff_users_partitioned(
+        include_id=selected_process_owner_id or case.process_owner_id
+    )
+    billing_formal, billing_outsource = _billing_staff_users_partitioned(
+        include_id=selected_billing_owner_id or case.billing_owner_id
+    )
+    return render_spa_or_full(
+        full_template="admin/case_edit.html",
+        inner_template="admin/snippets/case_edit_inner.html",
+        spa_endpoint="admin.case_edit",
+        spa_document_title="编辑案件 — 琴岳专利管理系统",
+        page_title="编辑案件",
+        page_desc="维护案件基础信息并同步任务状态。",
+        case=case,
+        task=task,
+        projects=Project.query.order_by(Project.name.asc(), Project.id.asc()).all(),
+        staff_users=staff_formal + staff_outsource,
+        staff_users_formal=staff_formal,
+        staff_users_outsource=staff_outsource,
+        process_staff_formal=process_formal,
+        process_staff_outsource=process_outsource,
+        billing_staff_formal=billing_formal,
+        billing_staff_outsource=billing_outsource,
+        phase_options=list(ADMIN_CASE_PHASE_OPTIONS),
+        case_type_config=CASE_TYPE_UI_CONFIG,
+        case_type_selected=case_type_selected or "",
+        current_phase=phase,
+        form_project_id=form_project_id,
+        form_title=form_title,
+        form_patent_application_no=form_patent,
+        form_formal_status=form_formal_status,
+        form_case_note=form_case_note,
+        form_material_upload_port=form_material_upload_port,
+        selected_business_owner_id=selected_business_owner_id,
+        selected_process_owner_id=selected_process_owner_id,
+        selected_billing_owner_id=selected_billing_owner_id,
+        order_at_input=order_at_input or "",
+        expected_return_at_input=expected_return_at_input or "",
+        actual_return_at_input=actual_return_at_input or "",
+        form_error=form_error,
+    )
+
+
+def _case_edit_invalid(case: Case, task, message: str):
+    return _render_case_edit(case, task, form_error=message, **_case_create_posted_form())
+
+
 @admin_bp.route("/case-edit/<int:case_id>", methods=["GET", "POST"])
 @login_required
 def case_edit(case_id: int):
@@ -2745,45 +3030,38 @@ def case_edit(case_id: int):
         phase_status = request.form.get("phase_status", TaskPhase.IN_PROGRESS)
 
         if not project_id_raw.isdigit():
-            return redirect_with_qy_toast("admin.case_edit", "请选择所属项目。", "warning", case_id=case.id)
+            return _case_edit_invalid(case, task, "请选择所属项目。")
         project = db.session.get(Project, int(project_id_raw))
         if project is None:
-            return redirect_with_qy_toast("admin.case_edit", "所属项目不存在，请刷新后重试。", "danger", case_id=case.id)
+            return _case_edit_invalid(case, task, "所属项目不存在，请刷新后重试。")
         if not title:
-            return redirect_with_qy_toast("admin.case_edit", "案件标题不能为空。", "warning", case_id=case.id)
+            return _case_edit_invalid(case, task, "案件标题不能为空。")
         title = Case.normalize_title(title)
         if Case.title_taken_in_project(project.id, title, exclude_id=case.id):
-            return redirect_with_qy_toast(
-                "admin.case_edit",
-                Case.DUPLICATE_TITLE_IN_PROJECT_MSG,
-                "warning",
-                case_id=case.id,
-            )
+            return _case_edit_invalid(case, task, Case.DUPLICATE_TITLE_IN_PROJECT_MSG)
         case_type_leaf, case_type_err = validate_case_type_code(case_type_code)
         if case_type_err:
-            return redirect_with_qy_toast(
-                "admin.case_edit", case_type_err, "warning", case_id=case.id
-            )
+            return _case_edit_invalid(case, task, case_type_err)
         business_owner_id, bo_err = _business_owner_id_from_form(business_owner_id_raw)
         if bo_err:
-            return redirect_with_qy_toast("admin.case_edit", bo_err, "warning", case_id=case.id)
+            return _case_edit_invalid(case, task, bo_err)
         process_owner_id, po_err = _process_owner_id_from_form(
             process_owner_id_raw, allow_id=case.process_owner_id
         )
         if po_err:
-            return redirect_with_qy_toast("admin.case_edit", po_err, "warning", case_id=case.id)
+            return _case_edit_invalid(case, task, po_err)
         billing_owner_id, bill_err = _billing_owner_id_from_form(
             billing_owner_id_raw, allow_id=case.billing_owner_id
         )
         if bill_err:
-            return redirect_with_qy_toast("admin.case_edit", bill_err, "warning", case_id=case.id)
+            return _case_edit_invalid(case, task, bill_err)
         phase_status = resolve_case_task_phase(business_owner_id, phase_status)
         try:
             order_at = _parse_due_at(order_at_raw)
             expected_return_at = _parse_due_at(expected_return_at_raw)
             actual_return_at = _parse_due_at(actual_return_at_raw)
         except ValueError:
-            return redirect_with_qy_toast("admin.case_edit", "下单/返稿时间格式不正确。", "warning", case_id=case.id)
+            return _case_edit_invalid(case, task, "下单/返稿时间格式不正确。")
 
         previous_actual = case.actual_return_at
         case.project_id = project.id
@@ -2821,7 +3099,7 @@ def case_edit(case_id: int):
             )
             if not ok:
                 db.session.rollback()
-                return redirect_with_qy_toast("admin.case_edit", err, "warning", case_id=case.id)
+                return _case_edit_invalid(case, task, err)
         apply_task_overdue_status(task)
         _notify_case_assigned(case, old_assignee_id, business_owner_id)
         _notify_process_assigned(case, old_process_id, process_owner_id)
@@ -2848,43 +3126,7 @@ def case_edit(case_id: int):
             variant = "secondary"
         return redirect_with_qy_toast("admin.case_detail", msg, variant, case_id=case.id)
 
-    project_options = Project.query.order_by(Project.name.asc(), Project.id.asc()).all()
-    phase_options = list(ADMIN_CASE_PHASE_OPTIONS)
-    current_phase = task.phase_status if task else TaskPhase.PENDING_ASSIGNMENT
-    staff_formal, staff_outsource = _staff_users_partitioned()
-    process_formal, process_outsource = _process_staff_users_partitioned(
-        include_id=case.process_owner_id
-    )
-    billing_formal, billing_outsource = _billing_staff_users_partitioned(
-        include_id=case.billing_owner_id
-    )
-    return render_spa_or_full(
-        full_template="admin/case_edit.html",
-        inner_template="admin/snippets/case_edit_inner.html",
-        spa_endpoint="admin.case_edit",
-        spa_document_title="编辑案件 — 琴岳专利管理系统",
-        page_title="编辑案件",
-        page_desc="维护案件基础信息并同步任务状态。",
-        case=case,
-        task=task,
-        projects=project_options,
-        staff_users=staff_formal + staff_outsource,
-        staff_users_formal=staff_formal,
-        staff_users_outsource=staff_outsource,
-        process_staff_formal=process_formal,
-        process_staff_outsource=process_outsource,
-        billing_staff_formal=billing_formal,
-        billing_staff_outsource=billing_outsource,
-        phase_options=phase_options,
-        case_type_config=CASE_TYPE_UI_CONFIG,
-        case_type_selected=normalize_case_type_code(
-            case.case_type_code or legacy_case_type_code(case.project_type) or ""
-        ),
-        current_phase=current_phase,
-        order_at_input=_dt_input_value(case.order_at),
-        expected_return_at_input=_dt_input_value(case.expected_return_at),
-        actual_return_at_input=_dt_input_value(case.actual_return_at),
-    )
+    return _render_case_edit(case, task)
 
 
 @admin_bp.route("/case-reassign/<int:case_id>", methods=["POST"])
@@ -3157,7 +3399,7 @@ def process_assignment_assign():
 @admin_bp.route("/billing-assignment")
 @login_required
 def billing_assignment():
-    """指定收账人员：选中未指定（或原收账已不在岗）且已有缴费/收账的案件。"""
+    """指定收账人员：选中未指定（或原收账已不在岗）的案件，按收账负载给出建议顺序。"""
     _ensure_admin()
     pending_cases = pending_billing_assignment_cases()
     raw_case_id = request.args.get("case_id", "").strip()
@@ -3191,7 +3433,7 @@ def billing_assignment():
         spa_endpoint="admin.billing_assignment",
         spa_document_title="指定收账人员 — 琴岳专利管理系统",
         page_title="指定收账人员",
-        page_desc="列出已有缴费通知或收账记录、但尚未指定在职业务人员的案件；右侧按收账负载排序，指定仍由人工确认。",
+        page_desc="列出尚未指定收账人员、或原收账人员已离职/转岗的案件；右侧按收账负载排序，指定仍由人工确认。",
         pending_cases=pending_cases,
         pending_total=len(pending_cases),
         selected_case=selected_case,
@@ -3356,13 +3598,18 @@ def overtime_warning():
 @admin_bp.route("/review-quality")
 @login_required
 def review_quality():
-    """待终审案件中心：流程提交后由管理员办结或打回。"""
+    """审核中心：撰写材料审核与官方往来后的终审。"""
     _ensure_admin()
     keyword = request.args.get("q", "").strip()
     case_type_primary = request.args.get("case_type_primary", "").strip()
     assignee_raw = request.args.get("assignee_id", "").strip()
     waiting_filter = request.args.get("waiting", "all").strip()
     urgency_filter = request.args.get("urgency", "all").strip()
+    writing_count = _writing_review_query().count()
+    final_count = _review_inbox_query().count()
+    review_kind = request.args.get("kind", "").strip()
+    if review_kind not in _REVIEW_KINDS:
+        review_kind = _REVIEW_KIND_WRITING if writing_count else _REVIEW_KIND_FINAL
 
     valid_primary_codes = {value for value, _label in CASE_TYPE_PRIMARY_OPTIONS}
     if case_type_primary not in valid_primary_codes:
@@ -3373,7 +3620,7 @@ def review_quality():
         urgency_filter = "all"
 
     query = (
-        _review_inbox_query()
+        (_writing_review_query() if review_kind == _REVIEW_KIND_WRITING else _review_inbox_query())
         .join(Case.project)
         .options(
             joinedload(Task.case).joinedload(Case.project).joinedload(Project.customer),
@@ -3463,14 +3710,19 @@ def review_quality():
                 "due_at": due_at,
                 "is_overdue": is_overdue,
                 "collections": [],
+                "writing_files": [],
             }
         )
 
-    collections_by_case = collections_for_cases([row["case"].id for row in rows])
-    for row in rows:
-        row["collections"] = collections_by_case.get(row["case"].id, [])
+    if review_kind == _REVIEW_KIND_FINAL:
+        collections_by_case = collections_for_cases([row["case"].id for row in rows])
+        for row in rows:
+            row["collections"] = collections_by_case.get(row["case"].id, [])
+    else:
+        for row in rows:
+            row["writing_files"] = review_package_writing_materials(row["case"].id)
 
-    filter_url_kwargs = {}
+    filter_url_kwargs = {"kind": review_kind}
     if keyword:
         filter_url_kwargs["q"] = keyword
     if case_type_primary:
@@ -3487,8 +3739,11 @@ def review_quality():
         full_template="admin/review_quality.html",
         inner_template="admin/snippets/review_quality_inner.html",
         spa_endpoint="admin.review_quality",
-        spa_document_title="终审 — 琴岳专利管理系统",
-        page_title="终审",
+        spa_document_title="审核 — 琴岳专利管理系统",
+        page_title="审核",
+        review_kind=review_kind,
+        writing_count=writing_count,
+        final_count=final_count,
         review_rows=rows,
         pagination=pagination,
         total_pending=total_pending,
@@ -3532,7 +3787,7 @@ def review_quality_action(case_id: int):
         variant,
         **{
             key: request.form.get(key, "").strip()
-            for key in ("q", "case_type_primary", "assignee_id", "waiting", "urgency")
+            for key in ("kind", "q", "case_type_primary", "assignee_id", "waiting", "urgency")
             if request.form.get(key, "").strip()
         },
     )
@@ -3665,6 +3920,22 @@ def order_intake_status():
     return jsonify(ok=True, unread=unread, total=unread)
 
 
+@admin_bp.route("/assignment-nav/status")
+@login_required
+def assignment_nav_status():
+    """侧边栏轮询：待分配撰写师、待指定流程/收账、下单待确认件数。"""
+    _ensure_admin()
+    return jsonify(ok=True, **assignment_nav_counts())
+
+
+@admin_bp.route("/live-status")
+@login_required
+def live_status():
+    """跨端同步：红点件数与 cursor，供管理端及时跟上其他端提交。"""
+    _ensure_admin()
+    return jsonify(admin_live_payload())
+
+
 @admin_bp.route("/order-intake/<int:case_id>/action", methods=["POST"])
 @login_required
 def order_intake_action(case_id: int):
@@ -3699,15 +3970,75 @@ def order_intake_action(case_id: int):
 @admin_bp.route("/statutory-deadline")
 @login_required
 def statutory_deadline():
-    """法定期限占位页：后续与官方时间节点联动并触发自动提醒。"""
+    """全所官文期限看板：监控已上传来文的官方期限，并可催办当前负责人。"""
     _ensure_admin()
+    filters = normalize_board_filters(
+        window=request.args.get("window", ""),
+        kind=request.args.get("kind", ""),
+        owner_role=request.args.get("owner_role", ""),
+        notice_type=request.args.get("notice_type", ""),
+        q=request.args.get("q", ""),
+    )
+    open_items = list_open_deadline_items()
+    scoped = filter_deadline_items(
+        open_items,
+        window="all",
+        kind=filters["kind"],
+        owner_role=filters["owner_role"],
+        notice_type=filters["notice_type"],
+        q=filters["q"],
+    )
+    counts = window_counts(scoped)
+    rows = filter_deadline_items(
+        scoped,
+        window=filters["window"],
+        kind="",
+        owner_role="",
+        notice_type="",
+        q="",
+    )
+    filter_url_kwargs = board_filter_url_kwargs(filters)
     return render_spa_or_full(
-        full_template="admin/page.html",
-        inner_template="partials/role_placeholder_inner.html",
+        full_template="admin/statutory_deadline.html",
+        inner_template="admin/snippets/statutory_deadline_inner.html",
         spa_endpoint="admin.statutory_deadline",
         spa_document_title="官方期限管理 — 琴岳专利管理系统",
         page_title="官方期限管理",
-        page_desc="配置法定绝限期并自动生成期限任务。",
+        items=rows,
+        counts=counts,
+        filters=filters,
+        filter_url_kwargs=filter_url_kwargs,
+        kind_options=tuple(KIND_LABELS.items()),
+        owner_role_options=tuple(OWNER_ROLE_LABELS.items()),
+        window_options=tuple(WINDOW_LABELS.items()),
+        notice_type_options=OfficialNotice.TYPES,
+        attention_count=counts[WINDOW_7D],
+    )
+
+
+@admin_bp.route("/statutory-deadline/<int:notice_id>/urge", methods=["POST"])
+@login_required
+def statutory_deadline_urge(notice_id: int):
+    """催办当前官文负责人；过滤条件随表单带回列表。"""
+    _ensure_admin()
+    notice = get_notice(notice_id)
+    if notice is None:
+        abort(404)
+    ok, message = admin_urge_deadline(notice, current_user)
+    if ok:
+        db.session.commit()
+    filters = normalize_board_filters(
+        window=request.form.get("window", ""),
+        kind=request.form.get("kind", ""),
+        owner_role=request.form.get("owner_role", ""),
+        notice_type=request.form.get("notice_type", ""),
+        q=request.form.get("q", ""),
+    )
+    return redirect_with_qy_toast(
+        "admin.statutory_deadline",
+        message,
+        "success" if ok else "warning",
+        **board_filter_url_kwargs(filters),
     )
 
 
@@ -3744,15 +4075,21 @@ def official_doc_dispatch():
 @admin_bp.route("/staff-performance")
 @login_required
 def staff_performance():
-    """员工绩效占位页：后续聚合工时、案件量与质量指标。"""
+    """员工绩效：按职能分组，再按每人本月完成案件的类型展开。"""
     _ensure_admin()
+    year, month = case_statistics_month(
+        request.args.get("year", "").strip(),
+        request.args.get("month", "").strip(),
+    )
+    function_filter = staff_performance_function(request.args.get("function", "").strip())
+    report = staff_performance_data(year, month, function_filter=function_filter)
     return render_spa_or_full(
-        full_template="admin/page.html",
-        inner_template="partials/role_placeholder_inner.html",
+        full_template="admin/staff_performance.html",
+        inner_template="admin/snippets/staff_performance_inner.html",
         spa_endpoint="admin.staff_performance",
         spa_document_title="员工绩效 — 琴岳专利管理系统",
         page_title="员工绩效",
-        page_desc="统计每人完成量、驳回量、授权量与平均处理时长。",
+        report=report,
     )
 
 
@@ -4106,6 +4443,28 @@ def historical_archive():
     )
 
 
+def _render_staff_docs(*, form_error: str = "", form_title: str = "", form_note: str = "", form_audience: str = "all"):
+    """渲染内部资料库；上传失败时保留标题/说明/可见范围。"""
+    audience_filter = request.args.get("audience", "").strip()
+    documents = list_staff_documents(audience=audience_filter or None)
+    if form_audience not in {value for value, _label in StaffDocument.AUDIENCE_CHOICES}:
+        form_audience = "all"
+    return render_spa_or_full(
+        full_template="admin/staff_docs.html",
+        inner_template="admin/snippets/staff_docs_inner.html",
+        spa_endpoint="admin.staff_docs",
+        spa_document_title="内部资料库 — 琴岳专利管理系统",
+        page_title="内部资料库",
+        documents=documents,
+        audience_filter=StaffDocument.normalize_audience(audience_filter) or "",
+        audience_choices=StaffDocument.AUDIENCE_CHOICES,
+        form_error=form_error,
+        form_title=form_title,
+        form_note=form_note,
+        form_audience=form_audience,
+    )
+
+
 @admin_bp.route("/staff-docs", methods=["GET", "POST"])
 @login_required
 def staff_docs():
@@ -4120,21 +4479,15 @@ def staff_docs():
             uploader=current_user,
         )
         if error:
-            return redirect_with_qy_toast("admin.staff_docs", error, "warning")
+            return _render_staff_docs(
+                form_error=error,
+                form_title=request.form.get("title", ""),
+                form_note=request.form.get("note", ""),
+                form_audience=request.form.get("audience", "") or "all",
+            )
         return redirect_with_qy_toast("admin.staff_docs", "资料已上传。", "success")
 
-    audience_filter = request.args.get("audience", "").strip()
-    documents = list_staff_documents(audience=audience_filter or None)
-    return render_spa_or_full(
-        full_template="admin/staff_docs.html",
-        inner_template="admin/snippets/staff_docs_inner.html",
-        spa_endpoint="admin.staff_docs",
-        spa_document_title="内部资料库 — 琴岳专利管理系统",
-        page_title="内部资料库",
-        documents=documents,
-        audience_filter=StaffDocument.normalize_audience(audience_filter) or "",
-        audience_choices=StaffDocument.AUDIENCE_CHOICES,
-    )
+    return _render_staff_docs()
 
 
 @admin_bp.route("/staff-docs/<int:doc_id>")

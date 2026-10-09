@@ -2,6 +2,8 @@
 
 from uuid import uuid4
 
+import pytest
+
 from app import create_app
 from app.extensions import db
 from app.models import Customer, CustomerKind, User
@@ -44,13 +46,27 @@ def test_production_session_cookie_sets_secure_and_samesite(monkeypatch):
     assert "HttpOnly" in cookie
 
 
-def test_staff_session_ends_immediately_after_deactivate():
+@pytest.mark.parametrize(
+    ("staff_function", "home_path", "home_text"),
+    (
+        ("writer", "/staff/dashboard", "员工工作台"),
+        ("process", "/staff/process-dashboard", "流程工作台"),
+        ("business", "/staff/business-dashboard", "业务工作台"),
+    ),
+)
+def test_staff_session_ends_immediately_after_deactivate(
+    staff_function, home_path, home_text
+):
     app = create_app()
     suffix = uuid4().hex[:8]
     with app.app_context():
         admin = User(username=f"_admin_kick_{suffix}", role="admin")
         admin.set_password("secret")
-        staff = User(username=f"_staff_kick_{suffix}", role="staff")
+        staff = User(
+            username=f"_staff_kick_{staff_function}_{suffix}",
+            role="staff",
+            staff_function=staff_function,
+        )
         staff.set_password("secret")
         db.session.add_all([admin, staff])
         db.session.commit()
@@ -66,7 +82,7 @@ def test_staff_session_ends_immediately_after_deactivate():
         follow_redirects=True,
     )
     assert staff_login.status_code == 200
-    assert "员工工作台".encode("utf-8") in staff_login.data
+    assert home_text.encode("utf-8") in staff_login.data
 
     admin_client.post(
         "/auth/login",
@@ -83,7 +99,7 @@ def test_staff_session_ends_immediately_after_deactivate():
     with staff_client.session_transaction() as sess:
         assert sess.get("_user_id") == str(staff_id)
 
-    bounced = staff_client.get("/staff/dashboard", follow_redirects=False)
+    bounced = staff_client.get(home_path, follow_redirects=False)
     assert bounced.status_code in (302, 303)
     assert "/auth/login" in bounced.headers.get("Location", "")
 
@@ -93,7 +109,7 @@ def test_staff_session_ends_immediately_after_deactivate():
     login_page = staff_client.get("/auth/login")
     assert "员工账号已离职".encode("utf-8") in login_page.data
 
-    still_blocked = staff_client.get("/staff/dashboard", follow_redirects=False)
+    still_blocked = staff_client.get(home_path, follow_redirects=False)
     assert still_blocked.status_code in (302, 303)
 
 

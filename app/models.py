@@ -429,7 +429,7 @@ class OfficialNotice(db.Model):
         (TYPE_OA1, "审查意见通知书（一通）", True),
         (TYPE_OA2, "审查意见通知书（二通）", True),
         (TYPE_GRANT, "授权通知书", False),
-        (TYPE_FEE, "缴费通知", False),  # 第三项表示是否需要撰写师答复；缴费走业务收账。
+        (TYPE_FEE, "缴费通知", False),  # 第三项表示是否需要撰写师答复；官方缴费由流程办理，向客户收账另走业务。
         (TYPE_OTHER, "其他", True),
     )
     TYPE_VALUES = frozenset(item[0] for item in TYPES)
@@ -450,6 +450,9 @@ class OfficialNotice(db.Model):
     forwarded_to_label = db.Column(db.String(120), nullable=True)
     forwarded_at = db.Column(db.DateTime, nullable=True, index=True)
     received_at = db.Column(db.DateTime, nullable=True)
+    fee_paid_at = db.Column(db.DateTime, nullable=True, index=True)
+    fee_paid_proof_original_name = db.Column(db.String(255), nullable=True)
+    fee_paid_proof_stored_name = db.Column(db.String(255), nullable=True, unique=True, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     case = db.relationship("Case", back_populates="official_notices")
@@ -477,6 +480,11 @@ class OfficialNotice(db.Model):
         return self.notice_type in self.BILLING_TYPES
 
     @property
+    def fee_paid_complete(self) -> bool:
+        """已标记缴费且附有官方缴费证明。"""
+        return self.fee_paid_at is not None and bool((self.fee_paid_proof_stored_name or "").strip())
+
+    @property
     def uploader_display(self) -> str:
         from app.case_trace import display_trace
 
@@ -490,7 +498,7 @@ class OfficialNotice(db.Model):
 
 
 class CaseCollection(db.Model):
-    """收账记录：一案多笔；缴费通知转交后生成，业务交证明，流程按笔确认。"""
+    """收账记录：一案多笔；业务向客户收款并交证明，流程按笔确认。"""
 
     __tablename__ = "case_collections"
     __table_args__ = (db.UniqueConstraint("notice_id", name="uq_case_collections_notice_id"),)

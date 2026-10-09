@@ -229,6 +229,7 @@ def test_assigning_process_owner_does_not_change_writer_or_phase():
         data={"username": seeded["admin"], "password": "secret"},
         follow_redirects=True,
     )
+    pending_before = client.get("/admin/assignment-nav/status").get_json()["pending_process"]
     r = client.post(
         "/admin/process-assignment/assign",
         data={"case_id": target_id, "process_owner_id": free_id},
@@ -248,6 +249,10 @@ def test_assigning_process_owner_does_not_change_writer_or_phase():
             case_id=target_id, action="process_assigned", recipient_id=free_id
         ).one()
         assert log.recipient_id == free_id
+
+    after = client.get("/admin/assignment-nav/status").get_json()
+    assert after["ok"] is True
+    assert after["pending_process"] == pending_before - 1
 
 
 def test_process_page_refuses_writer_and_intake_cases():

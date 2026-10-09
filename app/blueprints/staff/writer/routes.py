@@ -34,6 +34,7 @@ from app.blueprints.staff.common.routes import (
     STAFF_NOTIFICATION_ACTIONABLE,
     STAFF_NOTIFICATION_ACTIONS,
     STAFF_NOTIFICATION_TYPE_GROUPS,
+    mark_staff_case_notifications_read,
     mark_staff_notification_read,
     notification_group_label,
     staff_review_notifications_query,
@@ -77,7 +78,7 @@ def _staff_material_changes_locked(task: Task) -> bool:
 def _writer_lock_toast(reason: str | None) -> str:
     if reason == "await_receipt":
         return "请先下载并接收审查意见或补正通知，再上传改正材料。"
-    return "案件已提交流程核对，当前材料已锁定；如被打回到撰写中可继续修改。"
+    return "案件已提交审核，当前材料已锁定；如被打回到撰写中可继续修改。"
 
 
 def _case_has_staff_writing_material(case_id: int) -> bool:
@@ -306,7 +307,7 @@ def case_detail_by_id(case_id: int):
             if material_changes_locked and open_reply_notice is None:
                 return redirect_with_qy_toast(
                     "staff.case_detail_by_id",
-                    "当前状态无法提交流程核对。",
+                    "当前状态无法提交审核。",
                     "warning",
                     case_id=case.id,
                 )
@@ -314,14 +315,14 @@ def case_detail_by_id(case_id: int):
                 if not has_staff_writing_since(case.id, open_reply_notice.received_at):
                     return redirect_with_qy_toast(
                         "staff.case_detail_by_id",
-                        "请先上传针对官方来文的改正材料，再提交流程核对。",
+                        "请先上传针对官方来文的改正材料，再提交审核。",
                         "warning",
                         case_id=case.id,
                     )
             elif not _case_has_staff_writing_material(case.id):
                 return redirect_with_qy_toast(
                     "staff.case_detail_by_id",
-                    "请先上传撰写材料后再提交流程核对。",
+                    "请先上传撰写材料后再提交审核。",
                     "warning",
                     case_id=case.id,
                 )
@@ -339,13 +340,13 @@ def case_detail_by_id(case_id: int):
                 db.session.commit()
                 return redirect_with_qy_toast(
                     "staff.case_detail_by_id",
-                    "已提交流程人员核对，材料已锁定。",
+                    "已提交管理员审核，材料已锁定。",
                     "success",
                     case_id=case.id,
                 )
             return redirect_with_qy_toast(
                 "staff.case_detail_by_id",
-                "当前状态无法提交流程核对。",
+                "当前状态无法提交审核。",
                 "warning",
                 case_id=case.id,
             )
@@ -377,7 +378,7 @@ def case_detail_by_id(case_id: int):
     latest_reject_log = (
         CaseReviewLog.query.filter(
             CaseReviewLog.case_id == case.id,
-            CaseReviewLog.action.in_(("reject", "process_reject")),
+            CaseReviewLog.action.in_(("reject", "process_reject", "writing_reject")),
         )
         .order_by(CaseReviewLog.created_at.desc(), CaseReviewLog.id.desc())
         .first()
@@ -744,6 +745,29 @@ def notifications_read_all():
     )
 
 
+@staff_bp.route("/notifications/<int:log_id>/ack", methods=["POST"])
+@login_required
+def notification_ack(log_id: int):
+    """标为已读但不跳转：同一案件发给本人的未读通知一并已读。"""
+    ensure_notifications_access()
+    log, updated = mark_staff_case_notifications_read(log_id)
+    if log is None:
+        abort(404)
+    if updated > 1:
+        message = "已将该案件相关通知标为已读。"
+    elif updated == 1:
+        message = "已标为已读。"
+    else:
+        message = "该通知已是已读。"
+    return redirect_with_qy_toast(
+        "staff.notifications",
+        message,
+        "success" if updated else "secondary",
+        status=request.form.get("status", "all"),
+        type=request.form.get("type", "all"),
+    )
+
+
 @staff_bp.route("/notifications/<int:log_id>/read")
 @login_required
 def notification_read(log_id: int):
@@ -759,7 +783,14 @@ def notification_read(log_id: int):
     if function == User.STAFF_FUNCTION_BUSINESS:
         if log.action == "intake_reject":
             return redirect(url_for("staff.business_orders", edit=case.id))
-        if log.action in ("billing_assigned", "official_forward", "official_urge", "collection_reject", "collection_ok"):
+        if log.action in (
+            "billing_assigned",
+            "official_forward",
+            "official_urge",
+            "collection_notify",
+            "collection_reject",
+            "collection_ok",
+        ):
             return redirect(url_for("staff.business_collection_case", case_id=case.id))
         return redirect(url_for("staff.business_orders"))
     if function == User.STAFF_FUNCTION_PROCESS:

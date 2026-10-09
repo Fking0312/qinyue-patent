@@ -310,3 +310,56 @@ def test_dashboard_renders_reminder_block():
     assert "完整日历" in text
     assert "qy-deadline-calendar-nav__arrow" not in text
     assert "qy-deadline-cal-grid is-compact is-readonly" in text
+
+
+def test_parse_calendar_month_falls_back_on_invalid_values():
+    from app.deadline_calendar import parse_calendar_month
+
+    now_cn = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=8)))
+    assert parse_calendar_month("abc", "99") == (now_cn.year, now_cn.month)
+    assert parse_calendar_month("1999", "0") == (now_cn.year, now_cn.month)
+    assert parse_calendar_month("2101", "13") == (now_cn.year, now_cn.month)
+    assert parse_calendar_month("2026", "9") == (2026, 9)
+
+
+def test_reminder_calendar_skips_gated_review_phases():
+    from app.deadline_calendar import reminder_calendar_context
+
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    due = datetime(2088, 4, 3, 4, 0, tzinfo=timezone.utc)
+    with app.app_context():
+        admin = User(username=f"_cal_gate_admin_{suffix}", role="admin")
+        admin.set_password("x")
+        customer = Customer(kind=CustomerKind.COMPANY, name=f"_cal_gate_c_{suffix}")
+        db.session.add_all([admin, customer])
+        db.session.flush()
+        project = Project(customer_id=customer.id, name=f"_cal_gate_p_{suffix}", due_at=due)
+        db.session.add(project)
+        db.session.flush()
+        open_case = Case(
+            project_id=project.id,
+            title=f"_cal_open_{suffix}",
+            application_no=f"CG1{suffix}",
+            expected_return_at=due,
+        )
+        gated_case = Case(
+            project_id=project.id,
+            title=f"_cal_gated_{suffix}",
+            application_no=f"CG2{suffix}",
+            expected_return_at=due,
+        )
+        db.session.add_all([open_case, gated_case])
+        db.session.flush()
+        db.session.add_all(
+            [
+                Task(case_id=open_case.id, phase_status=TaskPhase.IN_PROGRESS),
+                Task(case_id=gated_case.id, phase_status=TaskPhase.PENDING_REVIEW),
+            ]
+        )
+        db.session.commit()
+
+        ctx = reminder_calendar_context(admin, 2088, 4)
+        titles = [task.case.title for task in ctx["days_by_iso"].get("2088-04-03", {}).get("tasks", [])]
+        assert f"_cal_open_{suffix}" in titles
+        assert f"_cal_gated_{suffix}" not in titles

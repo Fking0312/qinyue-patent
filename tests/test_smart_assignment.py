@@ -1,5 +1,6 @@
 """智能派单：撰写师建议顺序的排序口径，以及页面与派单落库。"""
 
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote
 from uuid import uuid4
@@ -206,10 +207,61 @@ def test_smart_assignment_page_ranks_writers_and_hides_other_functions():
     assert "撰写师建议顺序" in text
     assert 'data-qy-scroll-key="smart-pending"' in text
     assert seeded["target_title"] in text
+    assert 'name="csrf_token"' in text
+    assert "/admin/smart-assignment/assign" in text
     assert "派单窗口" in text
     # 分配池只含在职撰写师。
     assert seeded["process_name"] not in text
     assert text.index(seeded["free_name"]) < text.index(seeded["busy_name"])
+
+
+def test_smart_assign_form_posts_csrf_token():
+    """本地默认开 CSRF；派给他必须带上表单里的 token，否则会整页 400。"""
+    app = create_app()
+    app.config["WTF_CSRF_ENABLED"] = True
+    with app.app_context():
+        seeded = _seed()
+        target_id = seeded["target_id"]
+        free_id = next(u.id for u in seeded["writers"] if u.username == seeded["free_name"])
+        admin_name = seeded["admin"]
+
+    client = app.test_client()
+    login_html = client.get("/auth/login").get_data(as_text=True)
+    login_token = re.search(r'name="csrf_token" value="([^"]+)"', login_html)
+    assert login_token
+    client.post(
+        "/auth/login",
+        data={
+            "username": admin_name,
+            "password": "secret",
+            "csrf_token": login_token.group(1),
+        },
+        follow_redirects=True,
+    )
+    page = client.get(f"/admin/smart-assignment?case_id={target_id}")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assign_token = re.search(r'name="csrf_token" value="([^"]+)"', html)
+    assert assign_token
+
+    blocked = client.post(
+        "/admin/smart-assignment/assign",
+        data={"case_id": target_id, "assignee_id": free_id},
+        follow_redirects=False,
+    )
+    assert blocked.status_code == 400
+    assert b"CSRF" in blocked.data
+
+    assigned = client.post(
+        "/admin/smart-assignment/assign",
+        data={
+            "case_id": target_id,
+            "assignee_id": free_id,
+            "csrf_token": assign_token.group(1),
+        },
+        follow_redirects=False,
+    )
+    assert assigned.status_code in (302, 303)
 
 
 def test_case_without_due_prompts_for_expected_return_instead_of_ranking():
@@ -244,6 +296,7 @@ def test_assigning_from_smart_page_takes_case_out_of_the_pool():
         data={"username": seeded["admin"], "password": "secret"},
         follow_redirects=True,
     )
+    pending_before = client.get("/admin/assignment-nav/status").get_json()["pending_assignment"]
     r = client.post(
         "/admin/smart-assignment/assign",
         data={"case_id": target_id, "assignee_id": free_id},
@@ -257,6 +310,10 @@ def test_assigning_from_smart_page_takes_case_out_of_the_pool():
         assert case.task.assignee_id == free_id
         assert case.task.phase_status == TaskPhase.IN_PROGRESS
         assert target_id not in [c.id for c in pending_assignment_cases()]
+
+    after = client.get("/admin/assignment-nav/status").get_json()
+    assert after["ok"] is True
+    assert after["pending_assignment"] == pending_before - 1
 
 
 def test_smart_page_refuses_to_assign_non_writer_staff():
@@ -478,6 +535,8 @@ def test_rejected_case_stuck_with_departed_writer_is_surfaced_not_auto_released(
     text = client.get("/admin/smart-assignment").data.decode("utf-8")
     assert "承办人已离职" in text
     assert seeded["case_title"] in text
+    assert 'name="csrf_token"' in text
+    assert "/admin/smart-assignment/release" in text
 
     released = client.post(
         "/admin/smart-assignment/release", data={"case_id": case_id}
@@ -564,3 +623,40 @@ def test_smart_assignment_page_denies_non_admin():
     )
     assert client.get("/admin/smart-assignment").status_code == 403
     assert client.post("/admin/smart-assignment/assign", data={}).status_code == 403
+    assert client.get("/admin/assignment-nav/status").status_code == 403
+
+
+def test_assignment_nav_badges_light_up_for_pending_pools():
+    app = create_app()
+    with app.app_context():
+        seeded = _seed()
+
+    client = app.test_client()
+    client.post(
+        "/auth/login",
+        data={"username": seeded["admin"], "password": "secret"},
+        follow_redirects=True,
+    )
+    page = client.get("/admin/dashboard")
+    assert page.status_code == 200
+    html = page.data
+    assert html.count(b"data-smart-assignment-badge") == 1
+    assert html.count(b"data-process-assignment-badge") == 1
+    assert html.count(b"data-billing-assignment-badge") == 1
+    assert html.count(b"data-dispatch-nav-badge") == 1
+    assert b"/admin/assignment-nav/status" in html
+
+    status = client.get("/admin/assignment-nav/status").get_json()
+    assert status["ok"] is True
+    assert status["pending_assignment"] >= 2
+    assert status["pending_process"] >= 1
+    assert status["pending_billing"] >= 1
+    assert status["unread"] == (
+        status["pending_assignment"]
+        + status["pending_process"]
+        + status["pending_billing"]
+        + status["pending_order_intake"]
+    )
+    assert f'待分配案件 {status["pending_assignment"]} 件'.encode() in html
+    assert f'待指定流程 {status["pending_process"]} 件'.encode() in html
+    assert f'待指定收账 {status["pending_billing"]} 件'.encode() in html

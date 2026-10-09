@@ -190,7 +190,7 @@ def save_case_material_upload(
 
 
 def user_may_download_case_material(user: User, case) -> bool:
-    """撰写师下自己承办的案件材料；本案流程负责人也可下载以便核对后交局。"""
+    """撰写师下自己承办的案件材料；本案流程负责人也可下载以便交局。"""
     if user is None or getattr(user, "role", None) != "staff":
         return False
     function = user.staff_function_normalized

@@ -2,6 +2,9 @@
 {% from "macros/case_type.html" import case_type_selector %}
 {% from "macros/task_phase.html" import task_phase_badge %}
 <div class="staff-page-inner p-3 p-md-4 qy-order-page">
+  {% if open_modal %}
+  <div hidden data-qy-open-modal="{{ open_modal }}"></div>
+  {% endif %}
   {% call page_header(page_title, page_desc, extra_class='qy-order-header') %}
     <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#qyOrderNewCustomerModal">新建客户</button>
     <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#qyOrderNewProjectModal">新建项目</button>
@@ -62,10 +65,17 @@
           <div class="small mb-0">{{ reject_note }}</div>
         </div>
         {% endif %}
-        <form method="post" action="{{ url_for('staff.business_create_case') }}" class="row g-3 qy-form-grid" id="qyOrderCaseForm" enctype="multipart/form-data">
+        <form method="post" action="{{ url_for('staff.business_create_case') }}" class="row g-3 qy-form-grid" id="qyOrderCaseForm" enctype="multipart/form-data" data-qy-spa-form>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           {% if editing_case %}
           <input type="hidden" name="case_id" value="{{ editing_case.id }}">
+          {% elif posted_case_id %}
+          <input type="hidden" name="case_id" value="{{ posted_case_id }}">
+          {% endif %}
+          {% if form_error %}
+          <div class="col-12">
+            <div class="alert alert-warning py-2 px-3 mb-0" role="alert" data-qy-page-toast="{{ form_error }}" data-qy-toast-variant="warning">{{ form_error }}</div>
+          </div>
           {% endif %}
           <div class="col-md-6">
             <label class="form-label mb-1" for="qyOrderCustomer">客户</label>
@@ -87,7 +97,7 @@
           </div>
           <div class="col-12">
             <label class="form-label mb-1" for="qyOrderTitle">案件标题</label>
-            <input id="qyOrderTitle" class="form-control" type="text" name="title" required maxlength="200" value="{{ editing_case.title if editing_case else '' }}">
+            <input id="qyOrderTitle" class="form-control" type="text" name="title" required maxlength="200" value="{{ form_title }}">
             <div class="form-text">同一项目下不能重复</div>
           </div>
           <div class="col-12">
@@ -96,7 +106,7 @@
           </div>
           <div class="col-md-4">
             <label class="form-label mb-1" for="qyOrderPatentNo">申请号</label>
-            <input id="qyOrderPatentNo" class="form-control" type="text" name="patent_application_no" maxlength="100" value="{{ editing_case.patent_application_no or '' if editing_case else '' }}">
+            <input id="qyOrderPatentNo" class="form-control" type="text" name="patent_application_no" maxlength="100" value="{{ form_patent_application_no }}">
           </div>
           <div class="col-md-4">
             <label class="form-label mb-1" for="qyOrderAt">下单时间</label>
@@ -108,11 +118,11 @@
           </div>
           <div class="col-12">
             <label class="form-label mb-1" for="qyOrderNote">备注</label>
-            <textarea id="qyOrderNote" class="form-control" name="case_note" rows="3">{{ editing_case.case_note or '' if editing_case else '' }}</textarea>
+            <textarea id="qyOrderNote" class="form-control" name="case_note" rows="3">{{ form_case_note }}</textarea>
           </div>
           <div class="col-12">
             <label class="form-label mb-1" for="qyOrderMaterialPort">案件交底材料上传端口</label>
-            <input id="qyOrderMaterialPort" class="form-control" type="url" name="material_upload_port" maxlength="255" placeholder="选填，外部网盘/收集表链接" value="{{ editing_case.material_upload_port or '' if editing_case else '' }}">
+            <input id="qyOrderMaterialPort" class="form-control" type="url" name="material_upload_port" maxlength="255" placeholder="选填，外部网盘/收集表链接" value="{{ form_material_upload_port }}">
             <div class="form-text">没有现成文件时，可填外部网盘/收集表链接给管理员打开。</div>
           </div>
           <div class="col-12">
@@ -141,7 +151,7 @@
                 </span>
                 <div>
                   <label class="form-label fw-semibold mb-0 qy-material-upload-title" for="qyOrderAttachments">上传交底材料</label>
-                  <div class="form-text mb-0">{% if editing_case %}可再补传文件，连同上面已有材料一起重新提交。{% else %}可直接把交底材料传到本系统，管理员确认时就能下载。{% endif %} 支持 pdf、Office、图片、压缩包等。</div>
+                  <div class="form-text mb-0">{% if editing_case %}可再补传文件，连同上面已有材料一起重新提交。{% else %}可直接把交底材料传到本系统，管理员确认时就能下载。{% endif %} 支持 pdf、Office、图片、压缩包等。{% if form_error %} 校验未通过时需重新选择本地文件。{% endif %}</div>
                 </div>
               </div>
               <input id="qyOrderAttachments" class="form-control" type="file" name="attachments" multiple>
@@ -214,36 +224,39 @@
   <div class="modal fade" id="qyOrderNewCustomerModal" tabindex="-1" aria-labelledby="qyOrderNewCustomerTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
-        <form method="post" action="{{ url_for('staff.business_create_customer') }}">
+        <form method="post" action="{{ url_for('staff.business_create_customer') }}" data-qy-spa-form>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="modal-header">
             <h2 class="modal-title h5" id="qyOrderNewCustomerTitle">新建客户</h2>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
           </div>
           <div class="modal-body">
+            {% if modal_error and open_modal == "qyOrderNewCustomerModal" %}
+            <div class="alert alert-warning py-2 px-3 mb-3" role="alert" data-qy-page-toast="{{ modal_error }}" data-qy-toast-variant="warning">{{ modal_error }}</div>
+            {% endif %}
             <div class="row g-3 qy-form-grid">
               <div class="col-12">
                 <label class="form-label mb-1" for="qyNewCustomerName">客户名称</label>
-                <input id="qyNewCustomerName" class="form-control" type="text" name="name" required maxlength="200">
+                <input id="qyNewCustomerName" class="form-control" type="text" name="name" required maxlength="200" value="{{ modal_customer_name }}">
               </div>
               <div class="col-md-6">
                 <label class="form-label mb-1" for="qyNewCustomerKind">客户类型</label>
                 <select id="qyNewCustomerKind" class="form-select" name="kind">
-                  <option value="{{ customer_kind_company }}">公司</option>
-                  <option value="{{ customer_kind_individual }}">个人</option>
+                  <option value="{{ customer_kind_company }}" {% if modal_customer_kind == customer_kind_company %}selected{% endif %}>公司</option>
+                  <option value="{{ customer_kind_individual }}" {% if modal_customer_kind == customer_kind_individual %}selected{% endif %}>个人</option>
                 </select>
               </div>
               <div class="col-md-6">
                 <label class="form-label mb-1" for="qyNewContactName">联系人</label>
-                <input id="qyNewContactName" class="form-control" type="text" name="contact_name" maxlength="120">
+                <input id="qyNewContactName" class="form-control" type="text" name="contact_name" maxlength="120" value="{{ modal_contact_name }}">
               </div>
               <div class="col-12">
                 <label class="form-label mb-1" for="qyNewContactPhone">电话</label>
-                <input id="qyNewContactPhone" class="form-control" type="text" name="contact_phone" maxlength="40">
+                <input id="qyNewContactPhone" class="form-control" type="text" name="contact_phone" maxlength="40" value="{{ modal_contact_phone }}">
               </div>
               <div class="col-12">
                 <label class="form-label mb-1" for="qyNewCustomerNote">备注</label>
-                <textarea id="qyNewCustomerNote" class="form-control" name="note" rows="2" maxlength="5000"></textarea>
+                <textarea id="qyNewCustomerNote" class="form-control" name="note" rows="2" maxlength="5000">{{ modal_customer_note }}</textarea>
               </div>
             </div>
           </div>
@@ -259,34 +272,37 @@
   <div class="modal fade" id="qyOrderNewProjectModal" tabindex="-1" aria-labelledby="qyOrderNewProjectTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
-        <form method="post" action="{{ url_for('staff.business_create_project') }}">
+        <form method="post" action="{{ url_for('staff.business_create_project') }}" data-qy-spa-form>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="modal-header">
             <h2 class="modal-title h5" id="qyOrderNewProjectTitle">新建项目</h2>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
           </div>
           <div class="modal-body">
+            {% if modal_error and open_modal == "qyOrderNewProjectModal" %}
+            <div class="alert alert-warning py-2 px-3 mb-3" role="alert" data-qy-page-toast="{{ modal_error }}" data-qy-toast-variant="warning">{{ modal_error }}</div>
+            {% endif %}
             <div class="row g-3 qy-form-grid">
               <div class="col-12">
                 <label class="form-label mb-1" for="qyNewProjectCustomer">绑定客户</label>
                 <select id="qyNewProjectCustomer" class="form-select" name="customer_id" required>
                   <option value="">请选择</option>
                   {% for customer in customers %}
-                  <option value="{{ customer.id }}" {% if selected_customer_id == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
+                  <option value="{{ customer.id }}" {% if (modal_project_customer_id or selected_customer_id) == customer.id|string %}selected{% endif %}>{{ customer.name }}</option>
                   {% endfor %}
                 </select>
               </div>
               <div class="col-12">
                 <label class="form-label mb-1" for="qyNewProjectName">项目名称</label>
-                <input id="qyNewProjectName" class="form-control" type="text" name="name" required maxlength="200">
+                <input id="qyNewProjectName" class="form-control" type="text" name="name" required maxlength="200" value="{{ modal_project_name }}">
               </div>
               <div class="col-12">
                 <label class="form-label mb-1" for="qyNewProjectDue">项目截止时间</label>
-                <input id="qyNewProjectDue" class="form-control" type="datetime-local" name="due_at">
+                <input id="qyNewProjectDue" class="form-control" type="datetime-local" name="due_at" value="{{ modal_project_due }}">
               </div>
               <div class="col-12">
                 <label class="form-label mb-1" for="qyNewProjectDesc">项目说明</label>
-                <textarea id="qyNewProjectDesc" class="form-control" name="description" rows="2" maxlength="1000"></textarea>
+                <textarea id="qyNewProjectDesc" class="form-control" name="description" rows="2" maxlength="1000">{{ modal_project_desc }}</textarea>
               </div>
             </div>
           </div>

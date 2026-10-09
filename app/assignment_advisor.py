@@ -19,7 +19,7 @@ from app.case_types import (
     normalize_case_type_code,
 )
 from app.extensions import db
-from app.models import Case, CaseCollection, CaseMaterial, CaseReviewLog, OfficialNotice, Project, Task, User
+from app.models import Case, CaseMaterial, CaseReviewLog, OfficialNotice, Project, Task, User
 from app.workflow import (
     INTAKE_PHASES,
     LEGACY_TERMINAL_PHASES,
@@ -88,17 +88,24 @@ def case_due_at(case: Case) -> datetime | None:
     return None
 
 
-def pending_assignment_cases() -> list[Case]:
+def pending_assignment_query():
     """待分配案件：任务处于待分配，或历史脏数据里根本没有任务行。
 
     退稿转入的内部案件仍然要能派单（客户端不可见，但所里可以自己重做），
     所以这里不按归属过滤，只在页面上标出内部案件。
     """
-    cases = (
+    return (
         Case.query.outerjoin(Task, Task.case_id == Case.id)
         .filter(or_(Task.id.is_(None), Task.phase_status == TaskPhase.PENDING_ASSIGNMENT))
-        .all()
     )
+
+
+def pending_assignment_count() -> int:
+    return pending_assignment_query().count()
+
+
+def pending_assignment_cases() -> list[Case]:
+    cases = pending_assignment_query().all()
 
     def sort_key(case: Case) -> tuple:
         due = _as_utc(case_due_at(case))
@@ -389,27 +396,17 @@ def pending_process_assignment_cases() -> list[Case]:
 
 
 def pending_billing_assignment_query():
-    """未指定（或原收账人员已不在岗）且已有缴费/收账的案件。
+    """未指定（或原收账人员已不在岗）且仍需要收账负责人的案件。
 
-    没有缴费通知也没有收账记录的案子不必塞进这个池子，管理员仍可在案件编辑里预指定。
-    下单待确认不进池。已完成且未退稿的历史案件不捞。
+    口径与指定流程人员一致：在办案件未填收账人员、或原收账人员离职/转岗后进池，
+    不必等缴费通知上传。下单待确认在确认页一并指定，不进这个池子。已完成且未退稿
+    的历史案件即使没留收账负责人也不捞。退稿后仍挂着已离职收账人员的，要能重新指定。
     """
     intake, terminal = _intake_and_terminal_phases()
-    fee_case_ids = db.session.query(OfficialNotice.case_id).filter(
-        OfficialNotice.notice_type.in_(tuple(OfficialNotice.BILLING_TYPES))
-    )
-    collection_case_ids = db.session.query(CaseCollection.case_id)
     return (
         Case.query.outerjoin(Task, Task.case_id == Case.id)
         .outerjoin(User, Case.billing_owner_id == User.id)
         .filter(or_(Task.id.is_(None), Task.phase_status.notin_(intake)))
-        .filter(
-            or_(
-                Case.billing_owner_id.isnot(None),
-                Case.id.in_(fee_case_ids),
-                Case.id.in_(collection_case_ids),
-            )
-        )
         .filter(
             or_(
                 Case.billing_owner_id.is_(None),

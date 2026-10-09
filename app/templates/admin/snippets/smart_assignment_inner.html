@@ -212,6 +212,7 @@
                     <td class="text-nowrap"><span class="qy-smart-stat-note">{{ row.next_due_at | qy_format_dt if row.next_due_at else "—" }}</span></td>
                     <td class="text-end">
                       <form method="post" action="{{ url_for('admin.smart_assignment_assign') }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="case_id" value="{{ selected_case.id }}">
                         <input type="hidden" name="assignee_id" value="{{ row.user.id }}">
                         <button class="btn btn-sm qy-smart-assign{% if row.is_least_busy or row.is_original_writer %} is-primary{% endif %}" type="submit">{% if row.is_original_writer %}派回原撰写师{% else %}派给他{% endif %}</button>
@@ -282,6 +283,7 @@
                 <td class="text-nowrap"><span class="qy-smart-stat-note">{{ case.task | effective_task_due | qy_format_dt if case.task else "—" }}</span></td>
                 <td class="text-end">
                   <form method="post" action="{{ url_for('admin.smart_assignment_release') }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="case_id" value="{{ case.id }}">
                     <button class="btn btn-sm btn-outline-secondary" type="submit">转入待分配</button>
                   </form>

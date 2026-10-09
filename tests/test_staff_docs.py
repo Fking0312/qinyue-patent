@@ -197,12 +197,14 @@ def test_admin_rejects_invalid_audience_and_missing_file():
         content_type="multipart/form-data",
         follow_redirects=False,
     )
-    assert missing_file.status_code in (302, 303)
-    assert "请选择要上传的文件" in unquote(missing_file.headers.get("Location", ""))
+    assert missing_file.status_code == 200
+    missing_html = missing_file.get_data(as_text=True)
+    assert "请选择要上传的文件" in missing_html
+    assert f"_sd_missing_{suffix}" in missing_html
 
     bad_audience = _upload(admin, title=f"_sd_bad_{suffix}", audience="client")
-    assert bad_audience.status_code in (302, 303)
-    assert "请选择可见范围" in unquote(bad_audience.headers.get("Location", ""))
+    assert bad_audience.status_code == 200
+    assert "请选择可见范围" in bad_audience.get_data(as_text=True)
 
     with app.app_context():
         assert StaffDocument.query.filter(StaffDocument.title.like(f"_sd_%_{suffix}")).count() == 0

@@ -270,6 +270,8 @@ def test_staff_function_login_redirects_and_forbidden_writer_pages():
         "/staff/task-board",
         "/staff/case-detail",
         "/staff/worklog",
+        "/staff/worklog/export",
+        "/staff/deadline-reminder",
         "/staff/business-dashboard",
     ):
         assert process_client.get(path).status_code == 403
@@ -428,8 +430,10 @@ def test_only_writers_enter_case_assignment_pool():
             "business_owner_id": str(process_id),
         },
     )
-    assert created.status_code == 302
-    assert "仅撰写师可进入案件分配池" in unquote(created.headers.get("Location", ""))
+    assert created.status_code == 200
+    created_html = created.get_data(as_text=True)
+    assert "仅撰写师可进入案件分配池" in created_html
+    assert title in created_html
 
     process_as_writer = http.post(
         "/admin/case-create",
@@ -440,10 +444,8 @@ def test_only_writers_enter_case_assignment_pool():
             "process_owner_id": str(writer_id),
         },
     )
-    assert process_as_writer.status_code == 302
-    assert "仅在职流程人员可指定为流程负责人" in unquote(
-        process_as_writer.headers.get("Location", "")
-    )
+    assert process_as_writer.status_code == 200
+    assert "仅在职流程人员可指定为流程负责人" in process_as_writer.get_data(as_text=True)
 
     business_as_billing = http.post(
         "/admin/case-create",
@@ -454,10 +456,8 @@ def test_only_writers_enter_case_assignment_pool():
             "billing_owner_id": str(writer_id),
         },
     )
-    assert business_as_billing.status_code == 302
-    assert "仅在职业务人员可指定为收账负责人" in unquote(
-        business_as_billing.headers.get("Location", "")
-    )
+    assert business_as_billing.status_code == 200
+    assert "仅在职业务人员可指定为收账负责人" in business_as_billing.get_data(as_text=True)
 
     ok = http.post(
         "/admin/case-create",
@@ -476,4 +476,81 @@ def test_only_writers_enter_case_assignment_pool():
         assert case.business_owner_id == writer_id
         assert case.process_owner_id == process_id
         assert case.process_owner_label
+        case_id = case.id
+
+    edit_payload = {
+        "project_id": str(project_id),
+        "title": title,
+        "case_type_code": "other",
+        "business_owner_id": str(writer_id),
+        "phase_status": "in_progress",
+    }
+    invalid_process_edit = http.post(
+        f"/admin/case-edit/{case_id}",
+        data={**edit_payload, "process_owner_id": str(writer_id)},
+    )
+    assert invalid_process_edit.status_code == 200
+    assert (
+        "仅在职流程人员可指定为流程负责人"
+        in invalid_process_edit.get_data(as_text=True)
+    )
+
+    invalid_billing_edit = http.post(
+        f"/admin/case-edit/{case_id}",
+        data={
+            **edit_payload,
+            "process_owner_id": str(process_id),
+            "billing_owner_id": str(process_id),
+        },
+    )
+    assert invalid_billing_edit.status_code == 200
+    assert (
+        "仅在职业务人员可指定为收账负责人"
+        in invalid_billing_edit.get_data(as_text=True)
+    )
+    with app.app_context():
+        case = db.session.get(Case, case_id)
+        assert case.process_owner_id == process_id
+        assert case.billing_owner_id is None
+
+
+def test_staff_function_change_takes_effect_in_existing_session():
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        admin = _make_user(username=f"_fn_switch_admin_{suffix}", role="admin")
+        staff = _make_user(
+            username=f"_fn_switch_staff_{suffix}",
+            role="staff",
+            staff_function=User.STAFF_FUNCTION_WRITER,
+        )
+        admin_name = admin.username
+        staff_name = staff.username
+        staff_id = staff.id
+
+    staff_http = app.test_client()
+    staff_http.post(
+        "/auth/login",
+        data={"username": staff_name, "password": "secret"},
+    )
+    assert staff_http.get("/staff/dashboard").status_code == 200
+
+    admin_http = app.test_client()
+    admin_http.post(
+        "/auth/login",
+        data={"username": admin_name, "password": "secret"},
+    )
+    changed = admin_http.post(
+        "/admin/role-permissions",
+        data={"user_id": str(staff_id), "staff_function": "process"},
+        follow_redirects=False,
+    )
+    assert changed.status_code in (302, 303)
+
+    # 同一登录会话在下一次请求重新读取账号职能；旧撰写入口立即被服务端拦截。
+    assert staff_http.get("/staff/dashboard").status_code == 403
+    assert staff_http.get("/staff/process-dashboard").status_code == 200
+    root = staff_http.get("/", follow_redirects=False)
+    assert root.status_code in (302, 303)
+    assert "/staff/process-dashboard" in root.headers["Location"]
 

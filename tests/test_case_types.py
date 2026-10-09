@@ -93,7 +93,10 @@ def test_case_type_create_filter_and_role_visibility():
         data={"project_id": str(project_id), "title": invalid_title},
         follow_redirects=False,
     )
-    assert invalid.status_code in (302, 303)
+    assert invalid.status_code == 200
+    invalid_html = invalid.get_data(as_text=True)
+    assert "请选择完整、有效的案件类型。" in invalid_html
+    assert invalid_title in invalid_html
     with app.app_context():
         assert Case.query.filter_by(title=invalid_title).first() is None
 

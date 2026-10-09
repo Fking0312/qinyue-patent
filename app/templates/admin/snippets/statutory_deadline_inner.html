@@ -1,0 +1,132 @@
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+<div class="staff-page-inner staff-page-inner--admin qy-admin-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  {% call page_header(page_title, extra_class='qy-admin-page-header') %}
+    <span class="badge rounded-pill text-bg-warning fs-6 align-self-center">临期与超期 {{ attention_count }} 件</span>
+  {% endcall %}
+  <p class="text-muted small mb-3">只监控流程人员已上传的官文官方期限，与所内返稿的「超时预警看板」分开。未上传来文没有官方期限。材料待审核时只展示、不催办员工。</p>
+
+  <div class="d-flex flex-wrap gap-2 mb-3" role="tablist" aria-label="官方期限紧急程度">
+    {% for value, label in window_options %}
+    <a
+      class="btn btn-sm {% if filters.window == value %}btn-primary{% else %}btn-outline-primary{% endif %}"
+      href="{{ url_for('admin.statutory_deadline', window=value, kind=filters.kind, owner_role=filters.owner_role, notice_type=filters.notice_type, q=filters.q) }}"
+      data-spa-endpoint="admin.statutory_deadline"
+    >{{ label }} · {{ counts[value] }}</a>
+    {% endfor %}
+  </div>
+
+  <section class="card border-0 shadow-sm qy-admin-filter-card mb-4" aria-labelledby="statutory-filter-title">
+    <div class="card-body p-3 p-md-4">
+      <h2 id="statutory-filter-title" class="h6 mb-3">筛选待办官文</h2>
+      <form method="get" action="{{ url_for('admin.statutory_deadline') }}" class="row g-2 align-items-end">
+        <input type="hidden" name="window" value="{{ filters.window }}">
+        <div class="col-12 col-md-6 col-xl-3">
+          <label class="form-label mb-1" for="statutoryKeyword">关键词</label>
+          <input id="statutoryKeyword" class="form-control" type="text" name="q" value="{{ filters.q }}" maxlength="200" placeholder="案件、序列号、来文或负责人">
+        </div>
+        <div class="col-6 col-md-3 col-xl-2">
+          <label class="form-label mb-1" for="statutoryKind">当前事项</label>
+          <select id="statutoryKind" class="form-select" name="kind">
+            <option value="">全部事项</option>
+            {% for value, label in kind_options %}
+            <option value="{{ value }}" {% if filters.kind == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-3 col-xl-2">
+          <label class="form-label mb-1" for="statutoryNoticeType">来文种类</label>
+          <select id="statutoryNoticeType" class="form-select" name="notice_type">
+            <option value="">全部种类</option>
+            {% for value, label, _needs_reply in notice_type_options %}
+            <option value="{{ value }}" {% if filters.notice_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-3 col-xl-2">
+          <label class="form-label mb-1" for="statutoryOwnerRole">负责职能</label>
+          <select id="statutoryOwnerRole" class="form-select" name="owner_role">
+            <option value="">全部职能</option>
+            {% for value, label in owner_role_options %}
+            <option value="{{ value }}" {% if filters.owner_role == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-xl-3 d-flex gap-2">
+          <a class="btn btn-outline-secondary flex-fill" href="{{ url_for('admin.statutory_deadline') }}" data-spa-endpoint="admin.statutory_deadline">重置</a>
+          <button class="btn btn-primary flex-fill" type="submit">查询</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  {% if items %}
+  <section class="card border-0 shadow-sm" aria-labelledby="statutory-list-title">
+    <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center gap-2">
+      <h2 id="statutory-list-title" class="h6 mb-0">官方期限待办</h2>
+      <span class="small text-muted">当前筛选 {{ items|length }} 件</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 qy-data-table">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">案件</th>
+              <th scope="col">来文</th>
+              <th scope="col">官方期限</th>
+              <th scope="col">当前事项</th>
+              <th scope="col">负责人</th>
+              <th scope="col">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr data-notice-id="{{ item.notice_id }}">
+              <td>
+                <a class="fw-semibold" href="{{ url_for('admin.case_detail', case_id=item.case_id) }}" data-spa-endpoint="admin.case_detail">{{ item.case_title }}</a>
+                <div class="small text-muted font-monospace">{{ item.application_no }}</div>
+                {% if item.customer_name and item.customer_name != "—" %}
+                <div class="small text-muted">{{ item.customer_name }}</div>
+                {% endif %}
+              </td>
+              <td class="text-nowrap">{{ item.notice_type_label }}</td>
+              <td class="text-nowrap {% if item.urgency == 'overdue' %}text-danger fw-semibold{% elif item.urgency == '3d' %}text-warning fw-semibold{% endif %}">
+                {{ item.official_due_at|qy_format_dt }}
+                <div class="small">{{ item.remaining_label }}</div>
+              </td>
+              <td>
+                <span class="badge text-bg-{% if item.urgency == 'overdue' %}danger{% elif item.urgency == '3d' %}warning{% elif item.kind == 'review' %}secondary{% else %}info{% endif %}">{{ item.kind_label }}</span>
+              </td>
+              <td class="text-nowrap small">
+                <div>{{ item.owner_label }}</div>
+                <div class="text-muted">{{ item.owner_role_label }}</div>
+              </td>
+              <td class="text-nowrap">
+                {% if item.urge_ready %}
+                <form method="post" action="{{ url_for('admin.statutory_deadline_urge', notice_id=item.notice_id) }}" data-qy-spa-form>
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  {% for key, value in filter_url_kwargs.items() %}
+                  <input type="hidden" name="{{ key }}" value="{{ value }}">
+                  {% endfor %}
+                  <button class="btn btn-sm btn-outline-danger" type="submit">催办</button>
+                </form>
+                {% elif item.kind == 'review' %}
+                <span class="text-muted small">管理员审核中</span>
+                {% elif item.cooldown_label %}
+                <span class="text-muted small">{{ item.cooldown_label }}</span>
+                {% else %}
+                <span class="text-muted small">未指定负责人</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  {% else %}
+    {% call empty_state("当前没有需要关注的官方期限", "默认只看已超期和 7 天内临期的未办结官文。可切换「全部待办」查看更远的期限。", icon="tasks") %}
+    {% endcall %}
+  {% endif %}
+</div>

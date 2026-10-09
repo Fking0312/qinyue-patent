@@ -63,7 +63,7 @@ LEGACY_DRAFT_PHASES = frozenset({"draft", "overdue_draft"})
 
 _OVERDUE_MAP = {
     TaskPhase.IN_PROGRESS: TaskPhase.OVERDUE_IN_PROGRESS,
-    # 待流程核对、待终审不因超期改写 phase_status
+    # 待管理审核、待终审不因超期改写 phase_status
     TaskPhase.PENDING_SUBMIT: TaskPhase.OVERDUE_PENDING_SUBMIT,
     TaskPhase.OFFICE_ACTION: TaskPhase.OVERDUE_OFFICE_ACTION,
     TaskPhase.ON_HOLD: TaskPhase.OVERDUE_ON_HOLD,
@@ -250,7 +250,7 @@ def is_writer_correction_cycle(case_id: int, *, open_reply_notice=None) -> bool:
     last_reject = (
         CaseReviewLog.query.filter(
             CaseReviewLog.case_id == case_id,
-            CaseReviewLog.action.in_(("reject", "process_reject")),
+            CaseReviewLog.action.in_(("reject", "process_reject", "writing_reject")),
         )
         .order_by(CaseReviewLog.created_at.desc(), CaseReviewLog.id.desc())
         .first()
@@ -266,15 +266,12 @@ def is_writer_correction_cycle(case_id: int, *, open_reply_notice=None) -> bool:
 
 
 def notify_process_of_revised_writing(case, operator, material, *, open_reply_notice=None) -> bool:
-    """撰写师上传改正材料后通知本案流程负责人。调用方负责 commit。"""
+    """撰写师上传改正材料时记留痕；不再通知流程人员（材料审核在管理端）。调用方负责 commit。"""
     from app.case_trace import add_review_log
 
     if case is None or operator is None or material is None:
         return False
     if not is_writer_correction_cycle(case.id, open_reply_notice=open_reply_notice):
-        return False
-    process_owner = _active_process_owner(case)
-    if process_owner is None:
         return False
     name = (material.original_name or "文件").strip() or "文件"
     note = (material.note or "").strip()
@@ -282,7 +279,6 @@ def notify_process_of_revised_writing(case, operator, material, *, open_reply_no
         case_id=case.id,
         action="writing_revised",
         operator=operator,
-        recipient=process_owner,
         note=f"{name}（{note}）" if note else name,
     )
     return True
@@ -292,8 +288,8 @@ def staff_submit_case_for_review(
     task: "Task", *, operator_id: int | None = None, correction: bool = False
 ) -> bool:
     """
-    撰写师提交给流程人员核对：撰写中（含已超期）→ 待流程核对。
-    必须已指定在职流程人员。返回是否发生状态变更。
+    撰写师提交给管理员审核：撰写中（含已超期）→ 待审核。
+    仍须已指定在职流程人员，审核通过后才有人递交官方。返回是否发生状态变更。
     """
     from app.case_trace import add_review_log, writing_material_submit_note
     from app.extensions import db
@@ -318,38 +314,35 @@ def staff_submit_case_for_review(
         case_id=task.case_id,
         action="submit_for_review",
         operator=operator,
-        recipient=process_owner,
         note=writing_material_submit_note(task.case_id, correction=correction),
     )
     return True
 
 
-def process_accept_writing(task: "Task", operator) -> tuple[bool, str]:
-    """流程确认撰写材料：待流程核对 → 待递交官方。"""
-    ok, message = _require_process_owner(task, operator)
-    if not ok:
-        return False, message
+def admin_approve_writing(task: "Task", operator) -> tuple[bool, str]:
+    """管理员通过撰写材料：待审核 → 待递交官方。调用方负责 commit。"""
+    if operator is None or getattr(operator, "role", None) != "admin":
+        return False, "只有管理员可以审核撰写材料。"
     if phase_for_workflow(task.phase_status) != TaskPhase.PENDING_REVIEW:
-        return False, "当前不是待流程核对，无法确认材料。"
+        return False, "当前不是待审核，无法通过材料。"
     from app.case_trace import add_review_log
 
     task.phase_status = TaskPhase.PENDING_SUBMIT
     add_review_log(
         case_id=task.case_id,
-        action="process_accept",
+        action="writing_approve",
         operator=operator,
-        recipient=task.assignee,
+        recipient=_active_process_owner(task.case),
     )
-    return True, "已确认材料，案件进入待递交官方。"
+    return True, "材料已通过，案件进入待递交官方。"
 
 
-def process_reject_writing(task: "Task", operator, *, note: str) -> tuple[bool, str]:
-    """流程打回撰写师：待流程核对 → 撰写中。"""
-    ok, message = _require_process_owner(task, operator)
-    if not ok:
-        return False, message
+def admin_reject_writing(task: "Task", operator, *, note: str) -> tuple[bool, str]:
+    """管理员打回撰写师：待审核 → 撰写中。调用方负责 commit。"""
+    if operator is None or getattr(operator, "role", None) != "admin":
+        return False, "只有管理员可以审核撰写材料。"
     if phase_for_workflow(task.phase_status) != TaskPhase.PENDING_REVIEW:
-        return False, "当前不是待流程核对，无法打回。"
+        return False, "当前不是待审核，无法打回。"
     reason = (note or "").strip()
     if not reason:
         return False, "打回时请填写原因。"
@@ -358,12 +351,22 @@ def process_reject_writing(task: "Task", operator, *, note: str) -> tuple[bool, 
     task.phase_status = TaskPhase.IN_PROGRESS
     add_review_log(
         case_id=task.case_id,
-        action="process_reject",
+        action="writing_reject",
         operator=operator,
         recipient=task.assignee,
         note=reason,
     )
     return True, "已打回撰写师修改。"
+
+
+def process_accept_writing(task: "Task", operator) -> tuple[bool, str]:
+    """旧入口：流程不再核对撰写材料。"""
+    return False, "撰写材料由管理员审核。审核通过后，请在此标记递交官方。"
+
+
+def process_reject_writing(task: "Task", operator, *, note: str) -> tuple[bool, str]:
+    """旧入口：流程不再打回撰写材料。"""
+    return False, "撰写材料由管理员审核，流程人员不能打回。"
 
 
 def process_mark_filed(task: "Task", operator) -> tuple[bool, str]:
@@ -429,14 +432,14 @@ _PHASE_LABELS: dict[str, str] = {
     TaskPhase.PENDING_ORDER_REVIEW: "待下单确认",
     TaskPhase.ORDER_REVISION: "下单待修改",
     TaskPhase.IN_PROGRESS: "撰写中",
-    TaskPhase.PENDING_REVIEW: "待流程核对",
+    TaskPhase.PENDING_REVIEW: "待审核",
     TaskPhase.PENDING_SUBMIT: "待递交官方",
     TaskPhase.AUTHORIZED_PENDING_PAYMENT: "授权待缴费",
     TaskPhase.OFFICE_ACTION: "官方处理中",
     TaskPhase.PENDING_FINAL_REVIEW: "待终审",
     TaskPhase.ON_HOLD: "暂停",
     TaskPhase.OVERDUE_IN_PROGRESS: "撰写中（已超期）",
-    TaskPhase.OVERDUE_PENDING_REVIEW: "待流程核对（已超期）",
+    TaskPhase.OVERDUE_PENDING_REVIEW: "待审核（已超期）",
     TaskPhase.OVERDUE_PENDING_SUBMIT: "待递交官方（已超期）",
     TaskPhase.OVERDUE_OFFICE_ACTION: "官方处理中（已超期）",
     TaskPhase.OVERDUE_ON_HOLD: "暂停（已超期）",
@@ -514,7 +517,7 @@ def _submit_for_review_before_approval(case: "Case", approval_at: datetime) -> d
     last_reject = (
         CaseReviewLog.query.filter(
             CaseReviewLog.case_id == case.id,
-            CaseReviewLog.action.in_(("reject", "process_reject")),
+            CaseReviewLog.action.in_(("reject", "process_reject", "writing_reject")),
             CaseReviewLog.created_at <= approval_at,
         )
         .order_by(CaseReviewLog.created_at.desc(), CaseReviewLog.id.desc())
@@ -603,7 +606,7 @@ _PENDING_FINAL_REVIEW_PHASES = frozenset({TaskPhase.PENDING_FINAL_REVIEW})
 
 
 def is_pending_review_phase(phase_status: str) -> bool:
-    """是否为待流程核对（含历史 overdue_pending_review）。"""
+    """是否为待管理审核撰写材料（含历史 overdue_pending_review）。"""
     return phase_status in _PENDING_REVIEW_PHASES
 
 
@@ -613,7 +616,7 @@ def is_pending_final_review_phase(phase_status: str) -> bool:
 
 
 def is_gated_review_phase(phase_status: str) -> bool:
-    """流程核对或管理终审：都不因超期改写 phase_status。"""
+    """待管理审核或待终审：都不因超期改写 phase_status。"""
     return is_pending_review_phase(phase_status) or is_pending_final_review_phase(phase_status)
 
 
@@ -672,7 +675,7 @@ def effective_task_phase(task: Task, *, now: datetime | None = None) -> str:
 def apply_task_overdue_status(task: Task, *, now: datetime | None = None) -> bool:
     """
     根据截止时间刷新 task.phase_status（超期视为独立状态）。
-    待流程核对、待终审不因超期改写状态，便于各自队列统一处理。
+    待审核、待终审不因超期改写状态，便于各自队列统一处理。
     返回是否发生了变更（便于提交前判断）。
     """
     now = now or _utcnow()

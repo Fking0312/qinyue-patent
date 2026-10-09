@@ -1,0 +1,166 @@
+{% from "admin/macros/staff_kind.html" import staff_kind_badge %}
+{% from "macros/page_header.html" import page_header %}
+{% from "macros/empty_state.html" import empty_state %}
+<div class="staff-page-inner staff-page-inner--admin qy-admin-page px-2 px-sm-3 px-md-4 py-3 py-md-4">
+  {% call page_header(page_title, extra_class='qy-admin-page-header') %}
+    <span class="badge rounded-pill text-bg-primary fs-6 align-self-center">在职 {{ report.active_count }} 人</span>
+  {% endcall %}
+  <p class="text-muted small mb-3">先按职能看团队，再看每个人本月完成的案件类型。撰写师看返稿，流程看办结，业务看下单确认，三种口径不要直接相加。</p>
+
+  <section class="qy-monthly-hero qy-perf-hero mb-4" aria-labelledby="qy-perf-title">
+    <div class="qy-monthly-hero__top">
+      <div>
+        <div class="qy-monthly-hero__eyebrow">STAFF PERFORMANCE</div>
+        <h2 id="qy-perf-title" class="h4 mb-1">{{ report.year }} 年 {{ report.month }} 月 · 员工绩效</h2>
+        <p class="mb-0">在职员工即使本月没有完成件也会列出；离职人员只在有本月业绩或在办案件时出现。</p>
+      </div>
+    </div>
+    <div class="qy-perf-hero__metrics">
+      {% for summary in report.summaries %}
+      <div class="qy-perf-hero__metric">
+        <span>{{ summary.label }} · {{ summary.completed_label }}</span>
+        <strong>{{ summary.completed_count }}</strong>
+        <small>
+          {% if summary.completed_count > summary.previous_count %}
+          较上月 +{{ summary.completed_count - summary.previous_count }}
+          {% elif summary.completed_count < summary.previous_count %}
+          较上月 −{{ summary.previous_count - summary.completed_count }}
+          {% else %}
+          与上月持平
+          {% endif %}
+        </small>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="d-flex flex-wrap gap-2 mb-3" role="tablist" aria-label="按职能查看绩效">
+    {% for option in report.function_options %}
+    <a
+      class="btn btn-sm {% if report.function_filter == option.value %}btn-primary{% else %}btn-outline-primary{% endif %}"
+      href="{{ url_for('admin.staff_performance', year=report.year, month=report.month, function=option.value) }}"
+      data-spa-endpoint="admin.staff_performance"
+    >{% if option.value == "all" %}{{ option.label }} · {{ option.staff_count }} 人{% else %}{{ option.label }} · {{ option.completed_count }}{% endif %}</a>
+    {% endfor %}
+  </div>
+
+  <section class="card border-0 shadow-sm qy-admin-filter-card mb-4" aria-labelledby="qy-perf-filter-title">
+    <div class="card-body p-3 p-md-4">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h2 id="qy-perf-filter-title" class="h6 mb-0">统计月份</h2>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.staff_performance', year=report.previous_year, month=report.previous_month, function=report.function_filter) }}" data-spa-endpoint="admin.staff_performance">上月</a>
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.staff_performance', year=report.current_year, month=report.current_month, function=report.function_filter) }}" data-spa-endpoint="admin.staff_performance">本月</a>
+        </div>
+      </div>
+      <form method="get" action="{{ url_for('admin.staff_performance') }}" class="row g-2 align-items-end">
+        <input type="hidden" name="function" value="{{ report.function_filter }}">
+        <div class="col-6 col-md-3">
+          <label class="form-label mb-1" for="staffPerformanceYear">年份</label>
+          <select id="staffPerformanceYear" class="form-select" name="year">
+            {% for year in report.available_years %}
+            <option value="{{ year }}" {% if year == report.year %}selected{% endif %}>{{ year }} 年</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label mb-1" for="staffPerformanceMonth">月份</label>
+          <select id="staffPerformanceMonth" class="form-select" name="month">
+            {% for month in range(1, 13) %}
+            <option value="{{ month }}" {% if month == report.month %}selected{% endif %}>{{ month }} 月</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-auto">
+          <button class="btn btn-primary w-100" type="submit">查询</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  {% if report.groups %}
+    {% for group in report.groups %}
+    <section class="qy-perf-group qy-perf-group--{{ group.function }} mb-4" data-perf-function="{{ group.function }}" aria-labelledby="qy-perf-{{ group.function }}-title">
+      <div class="qy-perf-group__head">
+        <div>
+          <h2 id="qy-perf-{{ group.function }}-title" class="h6 mb-1">{{ group.label }}</h2>
+          <p class="small text-muted mb-0">{{ group.hint }}</p>
+        </div>
+        <div class="qy-perf-group__totals">
+          <span>{{ group.staff_count }} 人</span>
+          <span>{{ group.completed_label }} {{ group.completed_count }}</span>
+          <span>在办 {{ group.in_progress_count }}</span>
+        </div>
+      </div>
+      {% if group.people %}
+      <div class="qy-perf-people">
+        {% for person in group.people %}
+        {% set user = person.user %}
+        <details class="qy-perf-person{% if not person.completed_count %} qy-perf-person--empty{% endif %}" data-perf-staff="{{ user.id }}" {% if person.completed_count %}open{% endif %}>
+          <summary class="qy-perf-person__summary">
+            <div class="qy-perf-person__who min-w-0">
+              <div class="qy-perf-person__name">
+                <span class="fw-semibold">{{ user|qy_user_label }}</span>
+                {{ staff_kind_badge(user) }}
+                {% if not user.is_active %}<span class="badge text-bg-secondary">离职</span>{% endif %}
+              </div>
+              {% if person.type_groups %}
+              <div class="qy-perf-type-chips" aria-label="完成案件类型">
+                {% for type_group in person.type_groups %}
+                <span>{{ type_group.label }} {{ type_group.count }}</span>
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+            <div class="qy-perf-person__stats">
+              <span><strong>{{ person.completed_count }}</strong>{{ person.completed_label }}</span>
+              <span><strong>{{ person.in_progress_count }}</strong>在办</span>
+              {% if person.reject_label %}
+              <span><strong>{{ person.reject_count }}</strong>{{ person.reject_label }}</span>
+              {% endif %}
+              {% if person.extra_label %}
+              <span><strong>{{ person.extra_count }}</strong>{{ person.extra_label }}</span>
+              {% endif %}
+              <span>{% if person.avg_days is none %}平均 —{% elif person.avg_days < 1 %}平均不足 1 天{% else %}平均 {{ person.avg_days }} 天{% endif %}</span>
+            </div>
+          </summary>
+          {% if person.type_groups %}
+          <div class="qy-perf-person__body">
+            {% for type_group in person.type_groups %}
+            <div class="qy-perf-type" data-perf-type="{{ type_group.key }}">
+              <h3 class="qy-perf-type__title">{{ type_group.label }} <small>{{ type_group.count }} 件</small></h3>
+              <ul class="qy-perf-cases list-unstyled mb-0">
+                {% for item in type_group.cases %}
+                <li>
+                  <a href="{{ url_for('admin.case_detail', case_id=item.id) }}" data-spa-endpoint="admin.case_detail">{{ item.title }}</a>
+                  <span class="qy-perf-cases__meta">
+                    <span>{{ item.application_no }}</span>
+                    <span>{{ item.customer_name }}</span>
+                    <span>{{ item.status }}</span>
+                    {% if item.done_at %}<span>{{ item.done_at|qy_format_dt }}</span>{% endif %}
+                  </span>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="qy-perf-person__body">
+            <p class="small text-muted mb-0">本月没有{{ person.completed_label }}案件。</p>
+          </div>
+          {% endif %}
+        </details>
+        {% endfor %}
+      </div>
+      {% else %}
+        {{ empty_state("本月暂无" + group.label, "还没有在职" + group.label + "，或本月没有可统计的完成案件。", icon="users", compact=true) }}
+      {% endif %}
+    </section>
+    {% endfor %}
+  {% else %}
+    {% call empty_state("暂无员工绩效", "先在账号分发里创建员工，派单或下单后即可按月查看。", icon="users") %}
+      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.accounts') }}" data-spa-endpoint="admin.accounts">去账号分发</a>
+    {% endcall %}
+  {% endif %}
+</div>

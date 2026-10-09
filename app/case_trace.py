@@ -30,11 +30,16 @@ CASE_TRACE_ACTIONS: tuple[str, ...] = (
     "billing_assigned",
     "official_forward",
     "official_urge",
+    "admin_urge",
+    "fee_paid",
+    "collection_notify",
     "collection_submit",
     "collection_ok",
     "collection_reject",
     "process_accept",
     "process_reject",
+    "writing_approve",
+    "writing_reject",
     "process_filed",
     "submit_final_review",
 )
@@ -49,7 +54,7 @@ TRACE_ACTION_FILTERS: tuple[str, ...] = (
 
 TRACE_ACTION_LABELS: dict[str, str] = {
     "assigned": "指派",
-    "submit_for_review": "提交流程核对",
+    "submit_for_review": "提交审核",
     "writing_revised": "上传改正材料",
     "approve": "终审通过",
     "reject": "终审打回",
@@ -62,11 +67,16 @@ TRACE_ACTION_LABELS: dict[str, str] = {
     "billing_assigned": "指定收账",
     "official_forward": "转交官文",
     "official_urge": "催办官文",
+    "admin_urge": "管理员催办",
+    "fee_paid": "官方缴费",
+    "collection_notify": "通知收账",
     "collection_submit": "提交收款证明",
     "collection_ok": "确认收款",
     "collection_reject": "打回收账",
     "process_accept": "流程确认",
     "process_reject": "流程打回",
+    "writing_approve": "材料审核通过",
+    "writing_reject": "材料审核打回",
     "process_filed": "已递交官方",
     "submit_final_review": "提交终审",
 }
@@ -86,11 +96,16 @@ TRACE_ACTION_TONES: dict[str, str] = {
     "billing_assigned": "info",
     "official_forward": "warning",
     "official_urge": "warning",
+    "admin_urge": "warning",
+    "fee_paid": "info",
+    "collection_notify": "info",
     "collection_submit": "primary",
     "collection_ok": "success",
     "collection_reject": "warning",
     "process_accept": "success",
     "process_reject": "warning",
+    "writing_approve": "success",
+    "writing_reject": "warning",
     "process_filed": "info",
     "submit_final_review": "primary",
 }
@@ -218,7 +233,7 @@ def writing_package_since(case_id: int, *, before_id: int | None = None) -> date
     times: list[datetime] = []
     log_query = CaseReviewLog.query.filter(
         CaseReviewLog.case_id == case_id,
-        CaseReviewLog.action.in_(("submit_for_review", "reject", "process_reject")),
+        CaseReviewLog.action.in_(("submit_for_review", "reject", "process_reject", "writing_reject")),
     )
     if before_id is not None:
         log_query = log_query.filter(CaseReviewLog.id < before_id)
@@ -268,7 +283,7 @@ def list_writing_materials_since(case_id: int, since: datetime | None) -> list:
 
 
 def review_package_writing_materials(case_id: int) -> list:
-    """当前待核对这一轮提交的撰写文件（不含以往轮次）。"""
+    """当前待审核这一轮提交的撰写文件（不含以往轮次）。"""
     from app.models import CaseReviewLog
 
     last_submit = (
@@ -302,7 +317,7 @@ def writing_material_submit_note(case_id: int, *, correction: bool = False) -> s
 
 
 def latest_writing_material_hints(case_id: int, *, limit: int = 3) -> list[str]:
-    """流程工作台待核对列表：本轮提交的撰写文件及备注。"""
+    """待递交列表：本轮提交的撰写文件及备注。"""
     lines: list[str] = []
     for material in reversed(review_package_writing_materials(case_id)):
         if len(lines) >= limit:
@@ -314,7 +329,7 @@ def latest_writing_material_hints(case_id: int, *, limit: int = 3) -> list[str]:
 
 
 def pending_revised_writing_hints(case_id: int) -> list[str]:
-    """撰写师已上传改正材料、尚未再次提交核对时，供流程案件页提示。"""
+    """撰写师已上传改正材料、尚未再次提交审核时的提示文案。"""
     from app.models import CaseReviewLog
 
     last_submit = (
@@ -373,9 +388,9 @@ def paginate_case_trace_logs(
     )
     if action_filter != "all":
         if action_filter == "approve":
-            query = query.filter(CaseReviewLog.action.in_(("approve", "intake_approve")))
+            query = query.filter(CaseReviewLog.action.in_(("approve", "intake_approve", "writing_approve", "process_accept")))
         elif action_filter == "reject":
-            query = query.filter(CaseReviewLog.action.in_(("reject", "intake_reject")))
+            query = query.filter(CaseReviewLog.action.in_(("reject", "intake_reject", "writing_reject", "process_reject")))
         elif action_filter == "assigned":
             query = query.filter(
                 CaseReviewLog.action.in_(("assigned", "process_assigned", "billing_assigned"))

@@ -9,7 +9,7 @@
   {% endcall %}
 
   {% if pending_total == 0 %}
-    {% call empty_state("暂无待指定收账的案件", "有缴费通知或收账记录、但尚未指定在职业务人员时会出现在这里。也可以在新建/编辑案件时预先指定。", icon="tasks") %}
+    {% call empty_state("暂无待指定收账的案件", "在办案件都已指定在职收账人员；新建案件未填、或原收账人员离职/转岗后会出现在这里。", icon="tasks") %}
       <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.case_create') }}" data-spa-endpoint="admin.case_create">新建案件</a>
     {% endcall %}
   {% else %}

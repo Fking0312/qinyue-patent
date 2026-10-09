@@ -1,6 +1,7 @@
-"""官方来文：流程人员从专利局系统下载后上传，按种类转交撰写师或收账人员。
+"""官方来文：流程人员从专利局系统下载后上传，按种类转交撰写师或自行办理缴费。
 
 与 case_materials / staff_documents 分开存盘。队列只统计当前流程负责人名下的案件。
+缴费通知留在流程侧办理官方缴费，不转交、不通知业务人员。
 """
 from __future__ import annotations
 
@@ -18,7 +19,6 @@ from app.models import Case, CaseCollection, OfficialNotice, Project, Task, User
 from app.workflow import (
     TaskPhase,
     apply_task_overdue_status,
-    is_pending_review_phase,
     is_terminal_phase,
     phase_for_workflow,
 )
@@ -29,6 +29,7 @@ UNRECEIVED_AFTER = timedelta(days=1)
 QUEUE_ALL = "all"
 QUEUE_PENDING_PROCESS = "pending_process"
 QUEUE_PENDING_FORWARD = "pending_forward"
+QUEUE_PENDING_FEE = "pending_fee"
 QUEUE_UNRECEIVED = "unreceived"
 QUEUE_PENDING_REPLY = "pending_reply"
 QUEUE_PENDING_SUBMIT = "pending_submit"
@@ -36,20 +37,20 @@ QUEUE_OFFICE_ACTION = "office_action"
 QUEUE_PENDING_COLLECTION = "pending_collection"
 PROCESS_QUEUES = (
     QUEUE_ALL,
-    QUEUE_PENDING_PROCESS,
     QUEUE_PENDING_SUBMIT,
     QUEUE_OFFICE_ACTION,
     QUEUE_PENDING_FORWARD,
+    QUEUE_PENDING_FEE,
     QUEUE_UNRECEIVED,
     QUEUE_PENDING_REPLY,
     QUEUE_PENDING_COLLECTION,
 )
 QUEUE_LABELS = {
     QUEUE_ALL: "全部案件",
-    QUEUE_PENDING_PROCESS: "待核对",
     QUEUE_PENDING_SUBMIT: "待递交",
     QUEUE_OFFICE_ACTION: "官方处理中",
     QUEUE_PENDING_FORWARD: "待转交",
+    QUEUE_PENDING_FEE: "待官方缴费",
     QUEUE_UNRECEIVED: "未接收",
     QUEUE_PENDING_REPLY: "待答复",
     QUEUE_PENDING_COLLECTION: "待确认收款",
@@ -58,7 +59,7 @@ QUEUE_LABELS = {
 _WRITING_PHASES = frozenset({TaskPhase.IN_PROGRESS, TaskPhase.OVERDUE_IN_PROGRESS})
 _PENDING_SUBMIT_PHASES = frozenset({TaskPhase.PENDING_SUBMIT, TaskPhase.OVERDUE_PENDING_SUBMIT})
 _OFFICE_ACTION_PHASES = frozenset({TaskPhase.OFFICE_ACTION, TaskPhase.OVERDUE_OFFICE_ACTION})
-# 需要撰写师答复的来文：把已交局/待核对等阶段拉回撰写中。用基础阶段，调用前先 phase_for_workflow。
+# 需要撰写师答复的来文：把已交局/待审核等阶段拉回撰写中。用基础阶段，调用前先 phase_for_workflow。
 _REPLY_RESET_PHASES = frozenset(
     {
         TaskPhase.PENDING_REVIEW,
@@ -112,8 +113,12 @@ def notice_is_unreceived(notice: OfficialNotice, *, now: datetime | None = None)
 
 def notice_queue(notice: OfficialNotice, case: Case | None = None) -> str | None:
     """单份官文所属队列；不进队列则 None。待递交按案件阶段，不按官文。"""
+    if notice.needs_billing:
+        if not notice.fee_paid_complete:
+            return QUEUE_PENDING_FEE
+        return None
     if notice.forwarded_at is None:
-        if notice.needs_writer_reply or notice.needs_billing:
+        if notice.needs_writer_reply:
             return QUEUE_PENDING_FORWARD
         return None
     if notice_is_unreceived(notice):
@@ -153,19 +158,19 @@ def process_queue_counts(user_id: int) -> dict[str, int]:
     notices = _process_notices_query(user_id).all()
     cases = process_owned_cases_query(user_id).all()
     pending_forward = 0
+    pending_fee = 0
     unreceived = 0
     pending_reply = 0
     for notice in notices:
         queue = notice_queue(notice, notice.case)
         if queue == QUEUE_PENDING_FORWARD:
             pending_forward += 1
+        elif queue == QUEUE_PENDING_FEE:
+            pending_fee += 1
         elif queue == QUEUE_UNRECEIVED:
             unreceived += 1
         elif queue == QUEUE_PENDING_REPLY:
             pending_reply += 1
-    pending_process = sum(
-        1 for case in cases if case.task is not None and is_pending_review_phase(case.task.phase_status)
-    )
     pending_submit = sum(
         1 for case in cases if case.task is not None and case.task.phase_status in _PENDING_SUBMIT_PHASES
     )
@@ -181,8 +186,8 @@ def process_queue_counts(user_id: int) -> dict[str, int]:
         .count()
     )
     return {
-        QUEUE_PENDING_PROCESS: pending_process,
         QUEUE_PENDING_FORWARD: pending_forward,
+        QUEUE_PENDING_FEE: pending_fee,
         QUEUE_UNRECEIVED: unreceived,
         QUEUE_PENDING_REPLY: pending_reply,
         QUEUE_PENDING_SUBMIT: pending_submit,
@@ -192,12 +197,12 @@ def process_queue_counts(user_id: int) -> dict[str, int]:
 
 
 def list_process_attention_cases(user_id: int, *, limit: int = 8) -> list[Case]:
-    """首页马上处理：待流程核对的案件。"""
+    """首页马上处理：待递交官方的案件。"""
     cases = process_owned_cases_query(user_id).all()
     pending = [
         case
         for case in cases
-        if case.task is not None and is_pending_review_phase(case.task.phase_status)
+        if case.task is not None and case.task.phase_status in _PENDING_SUBMIT_PHASES
     ]
 
     def _sort_key(case: Case):
@@ -209,15 +214,18 @@ def list_process_attention_cases(user_id: int, *, limit: int = 8) -> list[Case]:
 
 
 def list_process_attention_notices(user_id: int, *, limit: int = 8) -> list[OfficialNotice]:
-    """首页马上处理：未接收优先，其次待转交。"""
+    """首页马上处理：未接收优先，其次待转交、待官方缴费。"""
     notices = _process_notices_query(user_id).all()
     ranked: list[tuple[int, datetime, OfficialNotice]] = []
     for notice in notices:
         queue = notice_queue(notice, notice.case)
+        due_or_created = _as_utc(notice.official_due_at) or _as_utc(notice.created_at) or datetime.now(timezone.utc)
         if queue == QUEUE_UNRECEIVED:
             ranked.append((0, _as_utc(notice.forwarded_at) or datetime.now(timezone.utc), notice))
         elif queue == QUEUE_PENDING_FORWARD:
-            ranked.append((1, _as_utc(notice.official_due_at) or _as_utc(notice.created_at) or datetime.now(timezone.utc), notice))
+            ranked.append((1, due_or_created, notice))
+        elif queue == QUEUE_PENDING_FEE:
+            ranked.append((2, due_or_created, notice))
     ranked.sort(key=lambda item: (item[0], item[1], item[2].id))
     return [item[2] for item in ranked[:limit]]
 
@@ -238,12 +246,6 @@ def list_followup_cases(user_id: int, queue: str) -> list[Case]:
             case
             for case in cases
             if case.task is not None and case.task.phase_status in _PENDING_SUBMIT_PHASES
-        ]
-    if queue == QUEUE_PENDING_PROCESS:
-        return [
-            case
-            for case in cases
-            if case.task is not None and is_pending_review_phase(case.task.phase_status)
         ]
     if queue == QUEUE_OFFICE_ACTION:
         return [
@@ -276,6 +278,7 @@ def list_case_notices(case_id: int) -> list[OfficialNotice]:
         OfficialNotice.query.options(
             joinedload(OfficialNotice.uploaded_by),
             joinedload(OfficialNotice.forwarded_to),
+            joinedload(OfficialNotice.collection),
         )
         .filter_by(case_id=case_id)
         .order_by(OfficialNotice.created_at.desc(), OfficialNotice.id.desc())
@@ -335,12 +338,27 @@ def user_may_download_notice(user: User, notice: OfficialNotice) -> bool:
         and not notice.needs_billing
     ):
         return True
-    return (
+    if (
         user.staff_function_normalized == User.STAFF_FUNCTION_BUSINESS
         and notice.needs_billing
-        and notice.forwarded_at is not None
-        and (notice.forwarded_to_id == user.id or case.billing_owner_id == user.id)
-    )
+        and case.billing_owner_id == user.id
+    ):
+        if notice.forwarded_to_id == user.id:
+            return True
+        return CaseCollection.query.filter_by(notice_id=notice.id).first() is not None
+    return False
+
+
+def user_may_download_fee_proof(user: User, notice: OfficialNotice) -> bool:
+    """官方缴费证明只给本案流程负责人和管理员。"""
+    if not notice.needs_billing or not (notice.fee_paid_proof_stored_name or "").strip():
+        return False
+    if user.role == "admin":
+        return True
+    case = notice.case
+    if case is None:
+        return False
+    return user_may_manage_case_notices(user, case)
 
 
 def save_official_notice(
@@ -380,21 +398,60 @@ def save_official_notice(
 
 
 def delete_unforwarded_notice(notice: OfficialNotice, operator: User) -> tuple[bool, str]:
-    """未转交的官文可由流程负责人删除。"""
+    """未转交、未缴费、未通知收账的官文可由流程负责人删除。"""
     case = notice.case
     if case is None or not user_may_manage_case_notices(operator, case):
         return False, "不能删除这份官方来文。"
     if notice.forwarded_at is not None:
         return False, "已转交的来文不能删除。"
+    if notice.fee_paid_at is not None:
+        return False, "已标记官方缴费的来文不能删除。"
+    if notice.collection is not None or CaseCollection.query.filter_by(notice_id=notice.id).first() is not None:
+        return False, "已通知业务收账的缴费通知不能删除。"
     stored = notice.stored_name
+    proof_stored = notice.fee_paid_proof_stored_name
     notice_id = notice.id
     db.session.delete(notice)
     db.session.flush()
     try:
         (official_notices_dir() / stored).unlink(missing_ok=True)
+        if proof_stored:
+            (official_notices_dir() / proof_stored).unlink(missing_ok=True)
     except OSError:
         current_app.logger.exception("official_notice_file_cleanup notice_id=%s", notice_id)
     return True, "已删除未转交的官方来文。"
+
+
+def mark_fee_paid(
+    notice: OfficialNotice,
+    operator: User,
+    *,
+    file_storage: FileStorage | None,
+) -> tuple[bool, str]:
+    """流程负责人标记已向专利局缴费，必须同时提交缴费证明。调用方负责 commit。"""
+    case = notice.case
+    if case is None or not user_may_manage_case_notices(operator, case):
+        return False, "只有本案流程负责人可以标记官方缴费。"
+    if not notice.needs_billing:
+        return False, "只有缴费通知需要标记官方缴费。"
+    if notice.fee_paid_complete:
+        return False, "这份缴费通知已经标记过已缴费。"
+    if file_storage is None or not (file_storage.filename or "").strip():
+        return False, "请上传官方缴费证明。"
+    display_name, stored_name, error = persist_uploaded_file(official_notices_dir(), file_storage)
+    if error or not display_name or not stored_name:
+        return False, error or "请上传官方缴费证明。"
+    notice.fee_paid_proof_original_name = display_name
+    notice.fee_paid_proof_stored_name = stored_name
+    if notice.fee_paid_at is None:
+        notice.fee_paid_at = datetime.now(timezone.utc)
+    add_review_log(
+        case_id=case.id,
+        action="fee_paid",
+        operator=operator,
+        note=f"{notice.type_label} · {display_name}",
+    )
+    return True, "已标记官方缴费完成。"
 
 
 def forward_notice(
@@ -403,10 +460,12 @@ def forward_notice(
     *,
     internal_due_raw: str = "",
 ) -> tuple[bool, str]:
-    """转交官文：需答复的给撰写师，缴费通知给收账人员。未指定对应负责人则禁止。"""
+    """转交需答复的官文给撰写师。缴费通知留在流程侧，不转交业务人员。"""
     case = notice.case
     if case is None or not user_may_manage_case_notices(operator, case):
         return False, "只有本案流程负责人可以转交官方来文。"
+    if notice.needs_billing:
+        return False, "缴费通知由流程人员办理官方缴费，请使用「标记已缴费」。"
     if notice.forwarded_at is not None:
         return False, "这份来文已经转交过了。"
     try:
@@ -416,25 +475,6 @@ def forward_notice(
     if internal_due is None:
         internal_due = notice.official_due_at
     now = datetime.now(timezone.utc)
-    if notice.needs_billing:
-        from app.collections import case_billing_owner, ensure_collection_for_notice
-
-        billing = case_billing_owner(case)
-        if billing is None:
-            return False, "请先让管理员指定收账负责人。"
-        notice.forwarded_to_id = billing.id
-        notice.forwarded_to_label = user_trace_label(billing)
-        notice.forwarded_at = now
-        notice.internal_due_at = internal_due
-        ensure_collection_for_notice(notice)
-        add_review_log(
-            case_id=case.id,
-            action="official_forward",
-            operator=operator,
-            recipient=billing,
-            note=notice.type_label,
-        )
-        return True, f"已转交给收账人员 {billing.display_label}。"
 
     writer = case_writer(case)
     if writer is None:
@@ -464,7 +504,7 @@ def forward_notice_to_writer(
     *,
     internal_due_raw: str = "",
 ) -> tuple[bool, str]:
-    """兼容旧调用：按来文种类转交撰写师或收账人员。"""
+    """兼容旧调用：转交需答复来文给撰写师。"""
     return forward_notice(notice, operator, internal_due_raw=internal_due_raw)
 
 
@@ -473,6 +513,8 @@ def urge_notice(notice: OfficialNotice, operator: User) -> tuple[bool, str]:
     case = notice.case
     if case is None or not user_may_manage_case_notices(operator, case):
         return False, "只有本案流程负责人可以催办。"
+    if notice.needs_billing:
+        return False, "缴费通知由流程人员办理官方缴费，不转交业务人员，无需催办查收。"
     if notice.forwarded_at is None:
         return False, "请先转交。"
     if notice.received_at is not None:
@@ -480,10 +522,6 @@ def urge_notice(notice: OfficialNotice, operator: User) -> tuple[bool, str]:
     if not notice_is_unreceived(notice):
         return False, "转交未满一天，暂不催办。"
     recipient = notice.forwarded_to
-    if recipient is None and notice.needs_billing:
-        from app.collections import case_billing_owner
-
-        recipient = case_billing_owner(case)
     if recipient is None:
         recipient = case_writer(case)
     if recipient is None:
@@ -495,12 +533,11 @@ def urge_notice(notice: OfficialNotice, operator: User) -> tuple[bool, str]:
         recipient=recipient,
         note=notice.type_label,
     )
-    role_label = "收账人员" if notice.needs_billing else "撰写师"
-    return True, f"已催办{role_label}查收官方来文。"
+    return True, "已催办撰写师查收官方来文。"
 
 
 def reopen_task_for_writer_reply(task: Task | None) -> None:
-    """审查意见/补正等需答复来文：已交局或待核对的案件拉回撰写中，便于上传改正材料。"""
+    """审查意见/补正等需答复来文：已交局或待审核的案件拉回撰写中，便于上传改正材料。"""
     if task is None:
         return
     base = phase_for_workflow(task.phase_status)
@@ -512,7 +549,7 @@ def reopen_task_for_writer_reply(task: Task | None) -> None:
 
 
 def latest_open_writer_reply_notice(case_id: int, writer_id: int) -> OfficialNotice | None:
-    """撰写师尚未就最新一份需答复来文再次提交核对的那份官文。"""
+    """撰写师尚未就最新一份需答复来文再次提交审核的那份官文。"""
     from app.models import CaseReviewLog
 
     for notice in list_writer_notices(case_id, writer_id):

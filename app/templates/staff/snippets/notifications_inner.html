@@ -7,11 +7,11 @@
         <p class="mb-0">{% if current_user.staff_function_normalized == 'business' %}下单确认结果会显示在这里。{% elif current_user.staff_function_normalized == 'process' %}管理员指定你跟进的案件会显示在这里。{% else %}案件进展、审核结果与待办事项，都为您整理在这里。{% endif %}</p>
       </div>
       {% if unread_count %}
-      <form method="post" action="{{ url_for('staff.notifications_read_all') }}">
+      <form method="post" action="{{ url_for('staff.notifications_read_all') }}" data-qy-spa-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="status" value="{{ status_filter }}">
         <input type="hidden" name="type" value="{{ type_filter }}">
-        <button class="btn btn-light btn-sm qy-notification-read-all" type="submit">全部标为已读</button>
+        <button class="btn btn-light btn-sm qy-notification-read-all" type="submit">一键已读</button>
       </form>
       {% endif %}
     </div>
@@ -30,19 +30,29 @@
 
   <header class="d-flex flex-wrap align-items-center justify-content-between gap-2 pb-3 mb-3 border-bottom border-secondary-subtle">
     <h2 class="h6 mb-0 staff-page-title">消息动态</h2>
+    <div class="d-flex flex-wrap align-items-center gap-2">
     {% from "macros/staff_notification.html" import staff_notification_filters %}
     {{ staff_notification_filters(status_filter, type_filter, unread_count, actionable_count, action_counts, current_user) }}
+    {% if unread_count %}
+    <form method="post" action="{{ url_for('staff.notifications_read_all') }}" data-qy-spa-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="status" value="{{ status_filter }}">
+      <input type="hidden" name="type" value="{{ type_filter }}">
+      <button class="btn btn-sm btn-outline-primary" type="submit">一键已读</button>
+    </form>
+    {% endif %}
+    </div>
   </header>
 
   {% if notifications %}
-  {% from "macros/staff_notification.html" import staff_notification_item %}
+    {% from "macros/staff_notification.html" import staff_notification_item %}
   <div class="qy-notification-timeline">
     {% for group_label, group_items in notification_groups %}
     <section class="qy-notification-day-group">
       <div class="qy-notification-day-label"><span>{{ group_label }}</span><small>{{ group_items|length }} 条</small></div>
       <div class="list-group qy-notification-list shadow-sm">
         {% for notification in group_items %}
-        {{ staff_notification_item(notification, current_user) }}
+        {{ staff_notification_item(notification, current_user, status_filter, type_filter) }}
         {% endfor %}
       </div>
     </section>
@@ -74,9 +84,9 @@
         {% if current_user.staff_function_normalized == 'business' %}
           {% if status_filter == 'actionable' %}目前没有需要处理的下单打回。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}管理员确认或打回下单后，消息会显示在这里。{% endif %}
         {% elif current_user.staff_function_normalized == 'process' %}
-          {% if status_filter == 'actionable' %}目前没有需要核对的材料。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}撰写师提交材料或管理员指定你跟进后，消息会显示在这里。{% endif %}
+          {% if status_filter == 'actionable' %}目前没有需要递交或确认的事项。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}管理员通过材料或指定你跟进后，消息会显示在这里。{% endif %}
         {% else %}
-          {% if status_filter == 'actionable' %}目前没有需要处理的消息，工作节奏很好。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}案件分配、流程核对或终审结果会显示在这里。{% endif %}
+          {% if status_filter == 'actionable' %}目前没有需要处理的消息，工作节奏很好。{% elif status_filter == 'unread' %}所有消息都已查看。{% else %}案件分配、材料审核或终审结果会显示在这里。{% endif %}
         {% endif %}
       </div>
       <div class="d-flex flex-wrap justify-content-center gap-2">

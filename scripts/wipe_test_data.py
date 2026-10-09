@@ -21,6 +21,7 @@ from app.models import (
     LoginThrottle,
     OfficialNotice,
     Project,
+    StaffDocument,
     Task,
     User,
 )
@@ -77,6 +78,7 @@ def main() -> None:
         n_proof = CaseCollectionProof.query.delete()
         n_collection = CaseCollection.query.delete()
         n_notice = OfficialNotice.query.delete()
+        n_docs = StaffDocument.query.delete()
         materials = CaseMaterial.query.all()
         n_mat = len(materials)
         CaseMaterial.query.delete()
@@ -115,7 +117,7 @@ def main() -> None:
         print(
             f"login_throttles={n_throttle} download_logs={n_dl} review_logs={n_rv} "
             f"collection_proofs={n_proof} collections={n_collection} "
-            f"official_notices={n_notice} materials={n_mat}"
+            f"official_notices={n_notice} staff_documents={n_docs} materials={n_mat}"
         )
         print(f"tasks={n_task} cases={n_case} projects={n_proj} customers={n_cust}")
         print(f"deleted staff/client users={n_users}")
@@ -136,7 +138,8 @@ def _print_counts() -> None:
     print(f"cases={Case.query.count()} tasks={Task.query.count()} materials={CaseMaterial.query.count()}")
     print(
         f"download_logs={CaseMaterialDownloadLog.query.count()} review_logs={CaseReviewLog.query.count()} "
-        f"official_notices={OfficialNotice.query.count()} login_throttles={LoginThrottle.query.count()}"
+        f"official_notices={OfficialNotice.query.count()} staff_documents={StaffDocument.query.count()} "
+        f"login_throttles={LoginThrottle.query.count()}"
     )
 
 

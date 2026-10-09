@@ -28,7 +28,8 @@
 
   <section class="card border-0 shadow-sm mb-4" aria-labelledby="billing-notice-title">
     <div class="card-body">
-      <h2 id="billing-notice-title" class="h6 mb-3">缴费通知</h2>
+      <h2 id="billing-notice-title" class="h6 mb-3">缴费通知（参考）</h2>
+      <p class="text-muted small mb-3">官方缴费由流程人员向专利局办理。你只负责向客户收款并上传证明。</p>
       {% if notices %}
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-0">
@@ -37,7 +38,6 @@
               <th>种类</th>
               <th>文件</th>
               <th>官方期限</th>
-              <th>接收</th>
             </tr>
           </thead>
           <tbody>
@@ -48,20 +48,13 @@
                 <a href="{{ url_for('staff.official_notice_download', notice_id=notice.id) }}" download="{{ notice.original_name }}">{{ notice.original_name }}</a>
               </td>
               <td class="text-nowrap small">{{ notice.official_due_at|qy_format_dt if notice.official_due_at else "—" }}</td>
-              <td class="small">
-                {% if notice.received_at %}
-                <span class="text-success">已接收 {{ notice.received_at|qy_format_dt }}</span>
-                {% else %}
-                <span class="text-danger">尚未下载</span>
-                {% endif %}
-              </td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
       {% else %}
-      {{ empty_state('还没有转交给你的缴费通知', '流程人员转交后会显示在这里。', icon='folder', compact=True) }}
+      {{ empty_state('还没有用作参考的缴费通知', '官方缴费由流程人员办理，缴费通知不会转到这里。', icon='folder', compact=True) }}
       {% endif %}
     </div>
   </section>
@@ -144,7 +137,7 @@
       </div>
       {% endfor %}
       {% else %}
-      {{ empty_state('还没有收账记录', '流程人员转交缴费通知后会出现在这里。', icon='folder', compact=True) }}
+      {{ empty_state('还没有收账记录', '向客户收款的记录会显示在这里。', icon='folder', compact=True) }}
       {% endif %}
     </div>
   </section>

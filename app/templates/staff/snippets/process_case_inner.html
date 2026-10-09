@@ -45,7 +45,7 @@
   <section class="card border-0 shadow-sm mb-4" aria-labelledby="process-writing-title">
     <div class="card-body">
       <h2 id="process-writing-title" class="h6 mb-2">所内材料</h2>
-      <p class="text-muted small mb-3">撰写师提交后在这里核对。确认无误后进入待递交官方；格式或内容有问题可打回撰写师。</p>
+      <p class="text-muted small mb-3">撰写师材料由管理员审核。审核通过后，在这里下载并递交专利局。</p>
       {% if disclosure_material_files %}
       <div class="fw-semibold small mb-2">交底材料</div>
       <div class="table-responsive mb-3">
@@ -105,50 +105,8 @@
       <p class="text-muted small mb-3">撰写师尚未上传撰写材料。</p>
       {% endif %}
 
-      {% if revised_writing_hints|default([]) %}
-      <div class="alert alert-info py-2 px-3 small mb-3" role="status">
-        <div class="fw-semibold mb-1">撰写师已上传改正材料，尚未提交核对</div>
-        <p class="mb-2">可先查看下方文件与备注；撰写师提交核对后，即可在此确认或打回。</p>
-        <ul class="mb-0 ps-3">
-          {% for hint in revised_writing_hints %}
-          <li class="text-break">{{ hint }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-
-      {% if can_process_accept %}
-      <div class="alert alert-info py-2 px-3 small mb-3" role="status">
-        {% set hint_files = review_hint_files|default([]) %}
-        {% if hint_files and writing_material_files and hint_files|length < writing_material_files|length %}
-        <div class="fw-semibold mb-1">撰写师已提交改正材料，请查看本次新上传文件的备注后核对</div>
-        {% else %}
-        <div class="fw-semibold mb-1">撰写师已提交材料，请查看文件备注后核对</div>
-        {% endif %}
-        {% if hint_files %}
-        <ul class="mb-0 ps-3">
-          {% for file_item in hint_files %}
-          <li class="text-break">{{ file_item.original_name }}{% if file_item.note %}：{{ file_item.note }}{% endif %}</li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <div class="mb-0">本次提交未填写备注，请以文件本身为准。</div>
-        {% endif %}
-      </div>
-      <p class="small text-muted mb-2">确认后案件进入待递交官方，便于向专利局报送；格式或内容有问题可打回撰写师。</p>
-      <div class="qy-process-review-actions d-flex flex-wrap gap-2 align-items-center">
-        <form method="post" class="m-0">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="form_action" value="process_accept">
-          <button class="btn btn-primary" type="submit" {% if not writing_material_files %}disabled{% endif %} data-qy-confirm="确认待递交" data-qy-confirm-text="确认材料无误后，本案将进入待递交官方。" data-qy-confirm-ok="确认无误" data-qy-confirm-variant="primary">确认待递交</button>
-        </form>
-        <form method="post" class="qy-process-reject-form m-0">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="form_action" value="process_reject">
-          <input class="form-control qy-process-reject-note" type="text" name="reject_note" maxlength="500" required placeholder="打回原因（必填）" aria-label="打回原因">
-          <button class="btn btn-outline-danger" type="submit">打回撰写师</button>
-        </form>
-      </div>
+      {% if awaiting_admin_review %}
+      <p class="small text-muted mb-0">撰写材料待管理员审核。通过后本案进入待递交官方，你再向专利局递交。</p>
       {% elif can_mark_filed %}
       <form method="post" class="m-0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -162,12 +120,12 @@
       <form method="post" class="m-0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="form_action" value="submit_final_review">
-        <button class="btn btn-primary" type="submit" {% if collection_block %}disabled{% endif %} data-qy-confirm="提交管理终审" data-qy-confirm-text="确认本案官方往来与收账均已完成，将提交管理员终审办结。" data-qy-confirm-ok="确认提交" data-qy-confirm-variant="primary">提交管理终审</button>
+        <button class="btn btn-primary" type="submit" {% if collection_block %}disabled{% endif %} data-qy-confirm="提交管理终审" data-qy-confirm-text="确认本案官方往来与官方缴费均已完成，将提交管理员终审办结。" data-qy-confirm-ok="确认提交" data-qy-confirm-variant="primary">提交管理终审</button>
       </form>
       {% elif task and task.phase_status == 'pending_final_review' %}
       <p class="small text-muted mb-0">已提交管理终审，等待办结。</p>
       {% elif task and (task.phase_status == 'in_progress' or task.phase_status == 'overdue_in_progress') %}
-      <p class="small text-muted mb-0">撰写师处理中。提交核对后，你可以在这里确认或打回。</p>
+      <p class="small text-muted mb-0">撰写师处理中。管理员审核通过后，本案才会进入待递交官方。</p>
       {% endif %}
     </div>
   </section>
@@ -175,7 +133,7 @@
   <section class="card border-0 shadow-sm mb-4" aria-labelledby="process-upload-title">
     <div class="card-body">
       <h2 id="process-upload-title" class="h6 mb-3">上传官方来文</h2>
-      <p class="text-muted small mb-3">从专利局系统下载后在这里上传。官方期限必填。需要撰写师答复的来文转交给本案撰写师；缴费通知转交给收账人员，未指定收账人时不能转交。</p>
+      <p class="text-muted small mb-3">从专利局系统下载后在这里上传。官方期限必填。需要撰写师答复的来文转交给本案撰写师。缴费通知由你向专利局缴费，在下方「缴费确认」中标记已缴费并上传证明，不转交、不通知业务人员。</p>
       <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="form_action" value="upload_notice">
@@ -214,7 +172,7 @@
               <th>种类</th>
               <th>文件</th>
               <th>官方期限</th>
-              <th>转交 / 接收</th>
+              <th>处理进度</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -226,10 +184,14 @@
                 <div>{{ notice.type_label }}</div>
                 {% if queue == 'pending_forward' %}
                 <span class="badge text-bg-warning-subtle text-warning-emphasis border">待转交</span>
+                {% elif queue == 'pending_fee' %}
+                <span class="badge text-bg-warning-subtle text-warning-emphasis border">待官方缴费</span>
                 {% elif queue == 'unreceived' %}
                 <span class="badge text-bg-danger-subtle text-danger-emphasis border">未接收</span>
                 {% elif queue == 'pending_reply' %}
                 <span class="badge text-bg-primary-subtle text-primary-emphasis border">待答复</span>
+                {% elif notice.needs_billing and notice.fee_paid_complete %}
+                <span class="badge text-bg-success-subtle text-success-emphasis border">已缴费</span>
                 {% elif notice.forwarded_at %}
                 <span class="badge text-bg-success-subtle text-success-emphasis border">已转交</span>
                 {% endif %}
@@ -240,7 +202,19 @@
               </td>
               <td class="text-nowrap small">{{ notice.official_due_at|qy_format_dt if notice.official_due_at else "—" }}</td>
               <td class="small">
-                {% if notice.forwarded_at %}
+                {% if notice.needs_billing %}
+                {% if notice.fee_paid_complete %}
+                <div class="text-success">已官方缴费 {{ notice.fee_paid_at|qy_format_dt }}</div>
+                <div>
+                  缴费证明
+                  <a href="{{ url_for('staff.official_fee_proof_download', notice_id=notice.id) }}" download="{{ notice.fee_paid_proof_original_name }}">{{ notice.fee_paid_proof_original_name }}</a>
+                </div>
+                {% elif notice.fee_paid_at %}
+                <div class="text-warning">已标记缴费，请补交证明</div>
+                {% else %}
+                <div class="text-danger">待向专利局缴费</div>
+                {% endif %}
+                {% elif notice.forwarded_at %}
                 <div>转交 {{ notice.forwarded_to_display }}</div>
                 <div class="text-muted">{{ notice.forwarded_at|qy_format_dt }}</div>
                 {% if notice.received_at %}
@@ -254,7 +228,19 @@
               </td>
               <td>
                 <div class="d-flex flex-column gap-1">
-                  {% if not notice.forwarded_at %}
+                  {% if notice.needs_billing %}
+                  {% if not notice.fee_paid_complete %}
+                  <a class="btn btn-sm btn-outline-primary" href="#process-fee-title">去缴费确认</a>
+                  {% endif %}
+                  {% if not notice.fee_paid_at %}
+                  <form method="post" data-qy-confirm="删除官方来文" data-qy-confirm-text="仅可删除尚未缴费的来文，删除后需重新上传。" data-qy-confirm-ok="确认删除" data-qy-confirm-variant="danger">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="form_action" value="delete_notice">
+                    <input type="hidden" name="notice_id" value="{{ notice.id }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">删除</button>
+                  </form>
+                  {% endif %}
+                  {% elif not notice.forwarded_at %}
                   <form method="post" class="d-flex flex-wrap gap-1 align-items-end">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="form_action" value="forward_notice">
@@ -263,11 +249,7 @@
                       <label class="form-label mb-0 small" for="internalDue{{ notice.id }}">内部截止</label>
                       <input id="internalDue{{ notice.id }}" class="form-control form-control-sm" type="date" name="internal_due_at" value="{{ date_input_value(notice.official_due_at) }}">
                     </div>
-                    {% if notice.needs_billing %}
-                    <button class="btn btn-sm btn-primary" type="submit" {% if not billing_owner %}disabled title="尚未指定收账人员"{% endif %}>转交业务收账</button>
-                    {% else %}
                     <button class="btn btn-sm btn-primary" type="submit" {% if not writer %}disabled title="尚未指定撰写师"{% endif %}>转交撰写师</button>
-                    {% endif %}
                   </form>
                   <form method="post" data-qy-confirm="删除官方来文" data-qy-confirm-text="仅可删除尚未转交的来文，删除后需重新上传。" data-qy-confirm-ok="确认删除" data-qy-confirm-variant="danger">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -300,11 +282,75 @@
     </div>
   </section>
 
+  <section class="card border-0 shadow-sm mt-4" aria-labelledby="process-fee-title">
+    <div class="card-body">
+      <h2 id="process-fee-title" class="h6 mb-2">缴费确认</h2>
+      <p class="text-muted small mb-3">流程人员向专利局缴费。上传缴费通知后，在这里标记已缴费并提交证明。</p>
+      {% if fee_notices %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>缴费通知</th>
+              <th>官方期限</th>
+              <th>缴费状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for notice in fee_notices %}
+            <tr>
+              <td>
+                <div>{{ notice.type_label }}</div>
+                <a href="{{ url_for('staff.official_notice_download', notice_id=notice.id) }}" download="{{ notice.original_name }}">{{ notice.original_name }}</a>
+              </td>
+              <td class="text-nowrap small">{{ notice.official_due_at|qy_format_dt if notice.official_due_at else "—" }}</td>
+              <td class="small">
+                {% if notice.fee_paid_complete %}
+                <div class="text-success">已官方缴费 {{ notice.fee_paid_at|qy_format_dt }}</div>
+                <div>
+                  缴费证明
+                  <a href="{{ url_for('staff.official_fee_proof_download', notice_id=notice.id) }}" download="{{ notice.fee_paid_proof_original_name }}">{{ notice.fee_paid_proof_original_name }}</a>
+                </div>
+                {% elif notice.fee_paid_at %}
+                <div class="text-warning">已标记缴费，请补交证明</div>
+                {% else %}
+                <div class="text-danger">待向专利局缴费</div>
+                {% endif %}
+              </td>
+              <td>
+                {% if not notice.fee_paid_complete %}
+                <form method="post" enctype="multipart/form-data" class="d-flex flex-wrap gap-1 align-items-end">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="form_action" value="mark_fee_paid">
+                  <input type="hidden" name="notice_id" value="{{ notice.id }}">
+                  <div>
+                    <label class="form-label mb-0 small" for="feeProof{{ notice.id }}">缴费证明</label>
+                    <input id="feeProof{{ notice.id }}" class="form-control form-control-sm" type="file" name="fee_proof_file" required>
+                    <div class="form-text">必须上传向专利局缴费的证明，不能只点按钮。</div>
+                  </div>
+                  <button class="btn btn-sm btn-primary" type="submit">{% if notice.fee_paid_at %}补交缴费证明{% else %}标记已缴费{% endif %}</button>
+                </form>
+                {% else %}
+                <span class="small text-muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      {{ empty_state('还没有缴费通知', '从上方上传缴费通知后会出现在这里，由你向专利局缴费并上传证明。', icon='folder', compact=True) }}
+      {% endif %}
+    </div>
+  </section>
+
+  {% if collections %}
   <section class="card border-0 shadow-sm mt-4" aria-labelledby="process-collection-title">
     <div class="card-body">
-      <h2 id="process-collection-title" class="h6 mb-2">收账确认</h2>
-      <p class="text-muted small mb-3">缴费通知转交后，业务人员交证明。按笔确认；全部确认后才能提交终审。</p>
-      {% if collections %}
+      <h2 id="process-collection-title" class="h6 mb-2">客户回款核对</h2>
+      <p class="text-muted small mb-3">业务人员向客户收款后，在这里按笔核对证明。官方缴费在上方「缴费确认」办理。</p>
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-0">
           <thead>
@@ -359,7 +405,7 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="form_action" value="confirm_collection">
                     <input type="hidden" name="collection_id" value="{{ collection.id }}">
-                    <button class="btn btn-sm btn-primary" type="submit" data-qy-confirm="确认这笔收款" data-qy-confirm-text="确认后本笔收账办结，全部确认后才能提交终审。" data-qy-confirm-ok="确认收款" data-qy-confirm-variant="primary">确认收款</button>
+                    <button class="btn btn-sm btn-primary" type="submit" data-qy-confirm="确认这笔收款" data-qy-confirm-text="确认后本笔客户回款办结，全部确认后才能提交终审。" data-qy-confirm-ok="确认收款" data-qy-confirm-variant="primary">确认收款</button>
                   </form>
                   <form method="post" class="qy-process-reject-form m-0">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -378,9 +424,7 @@
           </tbody>
         </table>
       </div>
-      {% else %}
-      {{ empty_state('还没有收账记录', '转交缴费通知后，会在这里等待业务交证明。', icon='folder', compact=True) }}
-      {% endif %}
     </div>
   </section>
+  {% endif %}
 </div>

@@ -81,6 +81,14 @@ def _login(app, username: str):
     return client
 
 
+def _approve_writing(client, case_id: int):
+    return client.post(
+        f"/admin/case-detail/{case_id}",
+        data={"review_action": "approve"},
+        follow_redirects=False,
+    )
+
+
 def _toast(response) -> str:
     return unquote(response.headers.get("Location", ""))
 
@@ -357,6 +365,7 @@ def test_writer_can_upload_reply_after_receiving_oa_or_amendment():
 
     writer = _login(app, seeded["writer_name"])
     process = _login(app, seeded["process_name"])
+    admin = _login(app, seeded["admin_name"])
 
     first = writer.post(
         f"/staff/case-detail/{case_id}",
@@ -375,11 +384,7 @@ def test_writer_can_upload_reply_after_receiving_oa_or_amendment():
         data={"form_action": "submit_for_review"},
         follow_redirects=False,
     ).status_code in (302, 303)
-    assert process.post(
-        f"/staff/process-cases/{case_id}",
-        data={"form_action": "process_accept"},
-        follow_redirects=False,
-    ).status_code in (302, 303)
+    assert _approve_writing(admin, case_id).status_code in (302, 303)
     assert process.post(
         f"/staff/process-cases/{case_id}",
         data={"form_action": "process_filed"},
@@ -446,11 +451,8 @@ def test_writer_can_upload_reply_after_receiving_oa_or_amendment():
     )
     assert reply.status_code in (302, 303)
     assert "已上传" in _toast(reply)
-    reply_inbox = process.get("/staff/notifications").data.decode("utf-8")
-    assert "撰写师已上传改正材料" in reply_inbox
-    assert f"reply_oa_{suffix}.txt" in reply_inbox
     pending_process = process.get(f"/staff/process-cases/{case_id}").data.decode("utf-8")
-    assert "尚未提交核对" in pending_process
+    assert f"reply_oa_{suffix}.txt" in pending_process
     submitted = writer.post(
         f"/staff/case-detail/{case_id}",
         data={"form_action": "submit_for_review"},
@@ -465,7 +467,7 @@ def test_writer_can_upload_reply_after_receiving_oa_or_amendment():
             case_id=case_id, action="writing_revised"
         ).order_by(CaseReviewLog.id.desc()).first()
         assert revised_log is not None
-        assert revised_log.recipient_id == seeded["process_id"]
+        assert revised_log.recipient_id is None
         submit_logs = (
             CaseReviewLog.query.filter_by(case_id=case_id, action="submit_for_review")
             .order_by(CaseReviewLog.id.asc())
@@ -476,18 +478,12 @@ def test_writer_can_upload_reply_after_receiving_oa_or_amendment():
         assert f"reply_oa_{suffix}.txt" in latest_note
         assert f"first_{suffix}.txt" not in latest_note
 
+    assert _approve_writing(admin, case_id).status_code in (302, 303)
     process_inbox = process.get("/staff/notifications").data.decode("utf-8")
-    assert "改正材料已提交" in process_inbox
-    assert "提交改正材料" in process_inbox
+    assert "材料已通过，请递交官方" in process_inbox
     process_page = process.get(f"/staff/process-cases/{case_id}").data.decode("utf-8")
     assert f"reply_oa_{suffix}.txt" in process_page
-    assert "本次新上传" in process_page
-    assert "改正材料" in process_page or "待递交官方" in process_page
-    assert process.post(
-        f"/staff/process-cases/{case_id}",
-        data={"form_action": "process_accept"},
-        follow_redirects=False,
-    ).status_code in (302, 303)
+    assert "标记已递交官方" in process_page
     assert process.post(
         f"/staff/process-cases/{case_id}",
         data={"form_action": "process_filed"},
