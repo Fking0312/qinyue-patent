@@ -4925,6 +4925,150 @@ body.dark-mode.qy-home-page {
   background: linear-gradient(145deg, #dcecff 0%, #b8d8f5 52%, #86b7df 100%);
 }
 
+/* 首页动效：入场淡入上移、背景浮动光斑、特性卡 hover */
+@keyframes qyFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.qy-home-landing-inner > * {
+  opacity: 0;
+  animation: qyFadeUp 0.6s ease-out both;
+}
+
+.qy-home-landing-inner > .qy-home-brand {
+  animation-delay: 0s;
+}
+
+.qy-home-landing-inner > .qy-login-brand-title {
+  animation-delay: 0.1s;
+}
+
+.qy-home-landing-inner > .qy-login-brand-tagline {
+  animation-delay: 0.2s;
+}
+
+.qy-home-landing-inner > .qy-home-features {
+  animation-delay: 0.32s;
+}
+
+.qy-home-landing-inner > .qy-home-landing__actions {
+  animation-delay: 0.46s;
+}
+
+.qy-home-orbs {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.qy-home-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(6px);
+  will-change: transform;
+}
+
+.qy-home-orb--1 {
+  top: 10%;
+  left: 6%;
+  width: 36vmin;
+  height: 36vmin;
+  opacity: 0.55;
+  background: radial-gradient(circle at 32% 32%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 70%);
+  animation: qyOrbDrift1 26s ease-in-out infinite;
+}
+
+.qy-home-orb--2 {
+  right: 8%;
+  bottom: 12%;
+  width: 28vmin;
+  height: 28vmin;
+  opacity: 0.5;
+  background: radial-gradient(circle at 60% 60%, rgba(70, 146, 210, 0.32), rgba(70, 146, 210, 0) 70%);
+  animation: qyOrbDrift2 32s ease-in-out infinite;
+}
+
+.qy-home-orb--3 {
+  top: 56%;
+  left: 44%;
+  width: 18vmin;
+  height: 18vmin;
+  opacity: 0.45;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 70%);
+  animation: qyOrbDrift3 22s ease-in-out infinite;
+}
+
+@keyframes qyOrbDrift1 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(6vmin, 5vmin) scale(1.12);
+  }
+}
+
+@keyframes qyOrbDrift2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-7vmin, -5vmin) scale(1.08);
+  }
+}
+
+@keyframes qyOrbDrift3 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(5vmin, -6vmin) scale(1.15);
+  }
+}
+
+.qy-home-features li {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.qy-home-features li:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 30px rgba(30, 79, 134, 0.14);
+}
+
+.qy-home-features .qy-login-feature-icon {
+  transition: transform 0.2s ease;
+}
+
+.qy-home-features li:hover .qy-login-feature-icon {
+  transform: scale(1.08);
+}
+
+body.dark-mode.qy-home-page .qy-home-orb {
+  opacity: 0.3;
+}
+
+/* 尊重系统「减少动态效果」设置：关闭入场与漂移动画 */
+@media (prefers-reduced-motion: reduce) {
+  .qy-home-landing-inner > * {
+    opacity: 1;
+    animation: none;
+  }
+  .qy-home-orb {
+    animation: none;
+  }
+}
+
 /* ---------- 统一页头 / 空状态 / 案件详情 ---------- */
 .qy-page-header .staff-page-title {
   color: var(--qy-text-primary);
