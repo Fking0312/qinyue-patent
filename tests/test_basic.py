@@ -24,7 +24,8 @@ def test_homepage():
     response = client.get("/")
     assert response.status_code == 200
     assert "进入登录".encode("utf-8") in response.data
-    assert "让每一个案件进度".encode("utf-8") in response.data
+    assert "让每一个案件".encode("utf-8") in response.data
+    assert "进度都清晰可见".encode("utf-8") in response.data
     assert b"home-hero" not in response.data
 
 

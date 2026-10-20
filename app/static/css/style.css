@@ -5069,6 +5069,53 @@ body.dark-mode.qy-home-page .qy-home-orb {
   }
 }
 
+/* 首页排版：特性卡强调、底部页脚 */
+.qy-home-landing {
+  padding-bottom: clamp(4.5rem, 10vh, 7rem);
+}
+
+.qy-home-features li {
+  position: relative;
+  overflow: hidden;
+}
+
+.qy-home-features li::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #2d6fad 0%, #7bb7e7 100%);
+}
+
+.qy-home-features strong {
+  font-size: 0.95rem;
+}
+
+.qy-home-features small {
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.qy-home-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding: 1.1rem 1rem 1.25rem;
+  text-align: center;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: rgba(35, 75, 112, 0.6);
+}
+
+.qy-home-footer-divider {
+  margin: 0 0.5rem;
+  opacity: 0.55;
+}
+
 /* ---------- 统一页头 / 空状态 / 案件详情 ---------- */
 .qy-page-header .staff-page-title {
   color: var(--qy-text-primary);
