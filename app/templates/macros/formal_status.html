@@ -1,0 +1,11 @@
+{% macro formal_status_select(field_id, selected="", options=()) -%}
+<select id="{{ field_id }}" class="form-select" name="formal_status">
+  <option value="" {% if not selected %}selected{% endif %}>未填写</option>
+  {% for status in options %}
+  <option value="{{ status }}" {% if status == selected %}selected{% endif %}>{{ status }}</option>
+  {% endfor %}
+  {% if selected and selected not in options %}
+  <option value="{{ selected }}" selected>{{ selected }}</option>
+  {% endif %}
+</select>
+{%- endmacro %}

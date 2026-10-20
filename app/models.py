@@ -110,6 +110,9 @@ class Case(db.Model):
     ATTRIBUTION_CUSTOMER = "customer"
     ATTRIBUTION_INTERNAL = "internal"
 
+    # 形式状态：仅这四种可选（选填，留空表示未填写）。
+    FORMAL_STATUS_OPTIONS = ("实审", "授权", "驳回", "非正常")
+
     rejected_at = db.Column(db.DateTime, nullable=True, index=True)
     reject_note = db.Column(db.Text, nullable=True)
     attribution = db.Column(

@@ -1,5 +1,6 @@
 {% from "admin/macros/staff_kind.html" import staff_kind_optgroups %}
 {% from "macros/case_type.html" import case_type_selector %}
+{% from "macros/formal_status.html" import formal_status_select %}
 <div class="staff-page-inner p-3 p-md-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
@@ -41,7 +42,7 @@
         </div>
         <div class="col-md-4">
           <label class="form-label" for="caseFormalStatusInput">形式状态</label>
-          <input id="caseFormalStatusInput" class="form-control" type="text" name="formal_status" maxlength="80" placeholder="选填，如：已受理" value="{{ form_formal_status }}">
+          {{ formal_status_select("caseFormalStatusInput", form_formal_status, formal_status_options) }}
         </div>
         <div class="col-md-4">
           <label class="form-label" for="casePhaseInput">初始任务状态</label>
