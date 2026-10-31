@@ -1,12 +1,47 @@
+{% from "macros/dashboard_stat_icon.html" import dashboard_stat_icon %}
 <div class="staff-page-inner p-3 p-md-4">
   <header class="d-flex flex-wrap align-items-center justify-content-between gap-2 pb-3 mb-3 border-bottom border-secondary-subtle">
     <h1 class="h4 mb-0 staff-page-title">管理工作台</h1>
   </header>
 
-  {% include "partials/dashboard_stat_cards.html" %}
+  <section class="qy-admin-focus" aria-label="今日焦点">
+    <div class="qy-admin-focus-grid">
+      {% for card in dashboard_stat_cards if card.label in ['待审核', '待终审', '已超期', '官方期限'] %}
+      <a
+        class="qy-admin-focus-tile qy-admin-focus-tile--{{ card.tone }}{% if not card.value %} is-zero{% endif %}"
+        href="{{ url_for(card.endpoint, **card.endpoint_kwargs) }}"
+        data-spa-endpoint="{{ card.endpoint }}"
+      >
+        <span class="qy-admin-focus-icon">{{ dashboard_stat_icon(card.icon) }}</span>
+        <span class="qy-admin-focus-copy">
+          <span class="qy-admin-focus-label">{{ card.label }}</span>
+          <span class="qy-admin-focus-hint">{{ card.hint }}</span>
+        </span>
+        <span class="qy-admin-focus-value">{{ card.value }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
 
   <section aria-labelledby="admin-dashboard-reminder-title">
     <h2 id="admin-dashboard-reminder-title" class="h6 text-secondary mb-3">期限提醒</h2>
     {% include "partials/deadline_reminder_inner.html" %}
+  </section>
+
+  <section class="qy-admin-shortcuts" aria-label="快捷入口">
+    <h2 class="h6 text-secondary mb-2">快捷入口</h2>
+    <div class="qy-admin-shortcuts-row">
+      {% for card in dashboard_stat_cards if card.label in ['下单待确认', '本月新建', '待分配', '待指定流程', '待指定收账'] %}
+      <a
+        class="qy-admin-shortcut{% if not card.value %} is-zero{% endif %}"
+        href="{{ url_for(card.endpoint, **card.endpoint_kwargs) }}"
+        data-spa-endpoint="{{ card.endpoint }}"
+      >
+        <span class="qy-admin-shortcut-icon">{{ dashboard_stat_icon(card.icon) }}</span>
+        <span class="qy-admin-shortcut-label">{{ card.label }}</span>
+        <span class="qy-admin-shortcut-value">{{ card.value }}</span>
+      </a>
+      {% endfor %}
+    </div>
   </section>
 </div>

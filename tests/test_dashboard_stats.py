@@ -57,13 +57,9 @@ def test_admin_dashboard_renders_stat_cards():
     assert "待指定流程".encode() in page.data
     assert "待指定收账".encode() in page.data
     assert "官方期限".encode() in page.data
-    assert "待处理".encode() in page.data
-    assert "待分派".encode() in page.data
-    assert b"qy-dash-stat-group-title" in page.data
-    assert b"qy-dash-stat-card-icon" in page.data
-    assert b"qy-dash-stat-groups--stacked" in page.data
+    assert b"qy-admin-focus-tile" in page.data
+    assert b"qy-admin-shortcut" in page.data
     assert b'data-spa-endpoint="admin.statutory_deadline"' in page.data
-    assert b"qy-dash-stat-card" in page.data
     assert b'data-spa-endpoint="admin.review_quality"' in page.data
     assert b'data-spa-endpoint="admin.order_intake"' in page.data
     assert b'data-spa-endpoint="admin.process_assignment"' in page.data

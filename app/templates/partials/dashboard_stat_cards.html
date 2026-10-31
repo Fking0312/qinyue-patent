@@ -1,7 +1,7 @@
 {% from "macros/dashboard_stat_icon.html" import dashboard_stat_icon %}
 {% if dashboard_stat_groups %}
 {% set group_count = dashboard_stat_groups|length %}
-<div class="qy-dash-stat-groups qy-dash-stat-groups--{{ 'stacked' if group_count > 1 else 'single' }} mb-4" aria-label="工作台概览">
+<div class="qy-dash-stat-groups qy-dash-stat-groups--{{ 'stacked' if group_count > 1 else 'single' }}{% if dash_stat_compact %} qy-dash-stat-groups--compact{% endif %} mb-4" aria-label="工作台概览">
   {% for group_label, cards in dashboard_stat_groups %}
   <section class="qy-dash-stat-group" {% if group_label %}aria-labelledby="dash-stat-group-{{ loop.index }}"{% endif %}>
     {% if group_label %}

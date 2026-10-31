@@ -13,7 +13,12 @@ from app.overdue_reminder import (
     reminder_template_kwargs,
     tasks_for_reminder_scope,
 )
-from app.workflow import TaskPhase
+from app.workflow import (
+    TaskPhase,
+    effective_task_due_at,
+    effective_task_phase,
+    is_task_past_due,
+)
 
 
 def test_reminder_lists_overdue_without_mutating_phase():
@@ -303,7 +308,9 @@ def test_dashboard_renders_reminder_block():
     r = client.get("/staff/dashboard")
     assert r.status_code == 200
     text = r.data.decode("utf-8")
-    assert "暂无超期或临期任务" in text or "qy-reminder-table" in text
+    assert "qy-deadline-block--overdue" in text
+    assert "qy-deadline-block--due-soon" in text
+    assert "暂无超期任务" in text and "暂无临期任务" in text
     assert "qy-deadline-calendar-card--mini" in text
     assert "qy-deadline-calendar-card--readonly" in text
     assert "DEADLINE SCHEDULE" in text
@@ -363,3 +370,173 @@ def test_reminder_calendar_skips_gated_review_phases():
         titles = [task.case.title for task in ctx["days_by_iso"].get("2088-04-03", {}).get("tasks", [])]
         assert f"_cal_open_{suffix}" in titles
         assert f"_cal_gated_{suffix}" not in titles
+
+
+def test_task_due_at_overrides_case_and_project_due():
+    """任务自身截止时间优先于案件应返稿与项目截止时间。"""
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        cust = Customer(kind=CustomerKind.COMPANY, name=f"RC6-{suffix}")
+        db.session.add(cust)
+        db.session.flush()
+        proj = Project(
+            customer_id=cust.id,
+            name=f"RP6-{suffix}",
+            due_at=datetime.now(timezone.utc) + timedelta(days=30),
+        )
+        db.session.add(proj)
+        db.session.flush()
+        case = Case(
+            project_id=proj.id,
+            title="Case F",
+            application_no=f"CN209900000006.{suffix}",
+            expected_return_at=datetime.now(timezone.utc) + timedelta(days=20),
+        )
+        db.session.add(case)
+        db.session.flush()
+        # 任务自身截止已过期，优先于案件/项目更晚的截止
+        task = Task(
+            case_id=case.id,
+            phase_status=TaskPhase.IN_PROGRESS,
+            due_at=datetime.now(timezone.utc) - timedelta(days=1),
+        )
+        db.session.add(task)
+        admin = User(username=f"_rem_admin6_{suffix}", role="admin")
+        admin.set_password("x")
+        db.session.add(admin)
+        db.session.commit()
+        task_id = task.id
+
+        overdue, soon = reminder_lists(admin)
+        assert any(t.id == task_id for t in overdue)
+        assert not any(t.id == task_id for t in soon)
+
+
+def test_due_soon_outside_window_not_listed():
+    """截止时间超过临期窗口的任务既不进超期也不进临期。"""
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        cust = Customer(kind=CustomerKind.COMPANY, name=f"RC6B-{suffix}")
+        db.session.add(cust)
+        db.session.flush()
+        proj = Project(
+            customer_id=cust.id,
+            name=f"RP6B-{suffix}",
+            due_at=datetime.now(timezone.utc) + timedelta(days=8),
+        )
+        db.session.add(proj)
+        db.session.flush()
+        case = Case(project_id=proj.id, title="Case F2", application_no=f"CN209900000006B.{suffix}")
+        db.session.add(case)
+        db.session.flush()
+        task = Task(case_id=case.id, phase_status=TaskPhase.IN_PROGRESS)
+        db.session.add(task)
+        admin = User(username=f"_rem_admin6b_{suffix}", role="admin")
+        admin.set_password("x")
+        db.session.add(admin)
+        db.session.commit()
+        task_id = task.id
+
+        overdue, soon = reminder_lists(admin, due_soon_days=7)
+        assert not any(t.id == task_id for t in overdue)
+        assert not any(t.id == task_id for t in soon)
+
+
+def test_overdue_phase_mapping_and_gated_phases():
+    """可超期阶段映射到对应超期态；待审核/待终审不因超期改写。"""
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    now = datetime.now(timezone.utc)
+    with app.app_context():
+        cust = Customer(kind=CustomerKind.COMPANY, name=f"RC7-{suffix}")
+        db.session.add(cust)
+        db.session.flush()
+        proj = Project(customer_id=cust.id, name=f"RP7-{suffix}")
+        db.session.add(proj)
+        db.session.flush()
+        case = Case(project_id=proj.id, title="Case G", application_no=f"CN209900000007.{suffix}")
+        db.session.add(case)
+        db.session.flush()
+        task = Task(
+            case_id=case.id,
+            phase_status=TaskPhase.IN_PROGRESS,
+            due_at=now - timedelta(days=1),
+        )
+        db.session.add(task)
+        db.session.commit()
+
+        base_to_overdue = {
+            TaskPhase.IN_PROGRESS: TaskPhase.OVERDUE_IN_PROGRESS,
+            TaskPhase.PENDING_SUBMIT: TaskPhase.OVERDUE_PENDING_SUBMIT,
+            TaskPhase.OFFICE_ACTION: TaskPhase.OVERDUE_OFFICE_ACTION,
+            TaskPhase.ON_HOLD: TaskPhase.OVERDUE_ON_HOLD,
+        }
+        for base, expected in base_to_overdue.items():
+            task.phase_status = base
+            assert effective_task_phase(task, now=now) == expected
+
+        for gated in (TaskPhase.PENDING_REVIEW, TaskPhase.PENDING_FINAL_REVIEW):
+            task.phase_status = gated
+            assert effective_task_phase(task, now=now) == gated
+
+
+def test_reminder_lists_sorted_by_effective_due_date():
+    """超期列表按有效截止时间升序排列。"""
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        admin = User(username=f"_rem_admin8_{suffix}", role="admin")
+        admin.set_password("x")
+        cust = Customer(kind=CustomerKind.COMPANY, name=f"RC8-{suffix}")
+        db.session.add_all([admin, cust])
+        db.session.flush()
+        proj = Project(customer_id=cust.id, name=f"RP8-{suffix}")
+        db.session.add(proj)
+        db.session.flush()
+        now = datetime.now(timezone.utc)
+        dues = [now - timedelta(days=5), now - timedelta(days=1), now - timedelta(days=3)]
+        ids = []
+        for i, due in enumerate(dues):
+            case = Case(
+                project_id=proj.id,
+                title=f"Case H{i}",
+                application_no=f"CN209900000008{i}.{suffix}",
+            )
+            db.session.add(case)
+            db.session.flush()
+            task = Task(case_id=case.id, phase_status=TaskPhase.IN_PROGRESS, due_at=due)
+            db.session.add(task)
+            db.session.flush()
+            ids.append(task.id)
+        db.session.commit()
+
+        overdue, _ = reminder_lists(admin)
+        mine = [t for t in overdue if t.id in ids]
+        due_dates = [effective_task_due_at(t) for t in mine]
+        assert due_dates == sorted(due_dates)
+
+
+def test_is_task_past_due_is_strict():
+    """临界点：截止时间恰好等于当前时间不算超期。"""
+    app = create_app()
+    suffix = uuid4().hex[:8]
+    with app.app_context():
+        cust = Customer(kind=CustomerKind.COMPANY, name=f"RC9-{suffix}")
+        db.session.add(cust)
+        db.session.flush()
+        proj = Project(customer_id=cust.id, name=f"RP9-{suffix}")
+        db.session.add(proj)
+        db.session.flush()
+        case = Case(project_id=proj.id, title="Case I", application_no=f"CN209900000009.{suffix}")
+        db.session.add(case)
+        db.session.flush()
+        task = Task(case_id=case.id, phase_status=TaskPhase.IN_PROGRESS)
+        db.session.add(task)
+        db.session.commit()
+
+        due = datetime.now(timezone.utc)
+        task.due_at = due
+        assert is_task_past_due(task, now=due) is False
+        assert is_task_past_due(task, now=due + timedelta(seconds=1)) is True

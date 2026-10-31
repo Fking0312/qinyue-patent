@@ -6571,4 +6571,326 @@ body.dark-mode .qy-perf-type-chips span {
   }
 }
 
+/* ---------- 管理端首页：统计卡紧凑横排 ---------- */
+.qy-dash-stat-groups--compact {
+  gap: 0.6rem;
+}
+
+.qy-dash-stat-groups--compact .qy-dash-stat-group {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.6rem 0.8rem;
+}
+
+.qy-dash-stat-groups--compact .qy-dash-stat-group-title {
+  flex: 0 0 auto;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.qy-dash-stat-groups--compact .qy-dash-stats {
+  flex: 1 1 auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.qy-dash-stat-groups--compact .qy-dash-stat-card {
+  min-height: 0;
+  padding: 0.45rem 0.75rem;
+  gap: 0.6rem;
+}
+
+.qy-dash-stat-groups--compact .qy-dash-stat-card-icon {
+  flex: 0 0 1.9rem;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 0.6rem;
+}
+
+.qy-dash-stat-groups--compact .qy-dash-stat-card-icon svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.qy-dash-stat-groups--compact .qy-dash-stat-label {
+  font-size: 0.84rem;
+}
+
+.qy-dash-stat-groups--compact .qy-dash-stat-value {
+  font-size: 1.25rem;
+}
+
+.qy-dash-stat-groups--compact .qy-dash-stat-hint {
+  display: none;
+}
+
+@media (max-width: 991.98px) {
+  .qy-dash-stat-groups--compact .qy-dash-stat-group {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .qy-dash-stat-groups--compact .qy-dash-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .qy-dash-stat-groups--compact .qy-dash-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- 管理端首页：焦点卡 + 快捷入口 ---------- */
+.qy-admin-focus-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 1.5rem;
+}
+
+.qy-admin-focus-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1rem 1.1rem;
+  border-radius: 1rem;
+  border: 1px solid var(--qy-border-subtle);
+  background: linear-gradient(135deg, rgba(226, 232, 240, 0.5) 0%, var(--qy-card-data-bg) 62%);
+  box-shadow: var(--qy-shadow-sm);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.qy-admin-focus-tile:hover {
+  color: inherit;
+  transform: translateY(-2px);
+  box-shadow: var(--qy-shadow-md);
+}
+
+/* 图 2 风格：浅色渐变底 + 同色系浅描边（不再用左侧色条） */
+.qy-admin-focus-tile--primary,
+.qy-admin-focus-tile--info {
+  border-color: rgba(59, 125, 216, 0.22);
+  background: linear-gradient(135deg, rgba(59, 125, 216, 0.17) 0%, rgba(59, 125, 216, 0.05) 42%, var(--qy-card-data-bg) 72%);
+}
+
+.qy-admin-focus-tile--warning {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: linear-gradient(135deg, rgba(245, 176, 65, 0.26) 0%, rgba(245, 176, 65, 0.08) 42%, var(--qy-card-data-bg) 72%);
+}
+
+.qy-admin-focus-tile--danger {
+  border-color: rgba(220, 53, 69, 0.22);
+  background: linear-gradient(135deg, rgba(239, 108, 124, 0.22) 0%, rgba(239, 108, 124, 0.06) 42%, var(--qy-card-data-bg) 72%);
+}
+
+.qy-admin-focus-tile--primary:hover,
+.qy-admin-focus-tile--info:hover {
+  border-color: rgba(59, 125, 216, 0.4);
+}
+
+.qy-admin-focus-tile--warning:hover {
+  border-color: rgba(217, 119, 6, 0.42);
+}
+
+.qy-admin-focus-tile--danger:hover {
+  border-color: rgba(220, 53, 69, 0.4);
+}
+
+.qy-admin-focus-icon {
+  flex: 0 0 2.6rem;
+  width: 2.6rem;
+  height: 2.6rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(59, 125, 216, 0.16);
+  background: linear-gradient(135deg, rgba(59, 125, 216, 0.26) 0%, rgba(59, 125, 216, 0.09) 100%);
+  color: var(--qy-brand-600);
+}
+
+.qy-admin-focus-tile--warning .qy-admin-focus-icon {
+  border-color: rgba(217, 119, 6, 0.18);
+  background: linear-gradient(135deg, rgba(245, 176, 65, 0.58) 0%, rgba(245, 176, 65, 0.24) 100%);
+  color: #b45309;
+}
+
+.qy-admin-focus-tile--danger .qy-admin-focus-icon {
+  border-color: rgba(220, 53, 69, 0.18);
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.52) 0%, rgba(248, 113, 113, 0.2) 100%);
+  color: #dc2626;
+}
+
+.qy-admin-focus-icon svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+/* 图标宏自带内层色块；管理端外层容器已负责底色，这里只透传颜色，避免双层方块 */
+.qy-admin-focus-icon > .qy-dash-stat-card-icon,
+.qy-admin-shortcut-icon > .qy-dash-stat-card-icon {
+  display: contents;
+  background: none;
+  color: inherit;
+}
+
+.qy-admin-focus-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.qy-admin-focus-label {
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--qy-text-primary);
+  white-space: nowrap;
+}
+
+.qy-admin-focus-hint {
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--qy-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qy-admin-focus-value {
+  flex: 0 0 auto;
+  font-size: 1.9rem;
+  font-weight: 750;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--qy-text-primary);
+}
+
+.qy-admin-focus-tile--info .qy-admin-focus-value { color: var(--qy-info); }
+.qy-admin-focus-tile--warning .qy-admin-focus-value { color: var(--qy-warning); }
+.qy-admin-focus-tile--danger .qy-admin-focus-value { color: var(--qy-danger); }
+.qy-admin-focus-tile.is-zero .qy-admin-focus-value { color: var(--qy-text-muted); }
+
+body.dark-mode .qy-admin-focus-tile {
+  border-color: var(--qy-border-subtle);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.08) 0%, var(--qy-card-data-bg) 62%);
+}
+
+body.dark-mode .qy-admin-focus-tile--primary,
+body.dark-mode .qy-admin-focus-tile--info {
+  border-color: rgba(96, 165, 250, 0.26);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.2) 0%, var(--qy-card-data-bg) 66%);
+}
+
+body.dark-mode .qy-admin-focus-tile--warning {
+  border-color: rgba(217, 119, 6, 0.3);
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.22) 0%, var(--qy-card-data-bg) 66%);
+}
+
+body.dark-mode .qy-admin-focus-tile--danger {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.2) 0%, var(--qy-card-data-bg) 66%);
+}
+
+body.dark-mode .qy-admin-focus-icon {
+  border-color: rgba(96, 165, 250, 0.2);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.28) 0%, rgba(96, 165, 250, 0.1) 100%);
+  color: #93c5fd;
+}
+
+body.dark-mode .qy-admin-focus-tile--warning .qy-admin-focus-icon {
+  border-color: rgba(217, 119, 6, 0.26);
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.36) 0%, rgba(217, 119, 6, 0.14) 100%);
+  color: #fbbf24;
+}
+
+body.dark-mode .qy-admin-focus-tile--danger .qy-admin-focus-icon {
+  border-color: rgba(248, 113, 113, 0.26);
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.34) 0%, rgba(248, 113, 113, 0.14) 100%);
+  color: #fca5a5;
+}
+
+.qy-admin-shortcuts-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.qy-admin-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--qy-border-subtle);
+  background: var(--qy-card-data-bg);
+  box-shadow: var(--qy-shadow-xs);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.qy-admin-shortcut:hover {
+  color: inherit;
+  transform: translateY(-1px);
+  border-color: var(--qy-border-default);
+  box-shadow: var(--qy-shadow-sm);
+}
+
+.qy-admin-shortcut-icon {
+  width: 1.3rem;
+  height: 1.3rem;
+  display: grid;
+  place-items: center;
+  color: var(--qy-brand-600);
+}
+
+.qy-admin-shortcut-icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.qy-admin-shortcut-label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--qy-text-primary);
+  white-space: nowrap;
+}
+
+.qy-admin-shortcut-value {
+  min-width: 1.55rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--qy-brand-50);
+  color: var(--qy-brand-700);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.qy-admin-shortcut.is-zero .qy-admin-shortcut-value {
+  background: var(--qy-bg-muted);
+  color: var(--qy-text-muted);
+}
+
+@media (max-width: 991.98px) {
+  .qy-admin-focus-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 575.98px) {
+  .qy-admin-focus-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 

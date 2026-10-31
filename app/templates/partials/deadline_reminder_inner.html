@@ -201,11 +201,9 @@
   <h1 class="h4 mb-4 staff-page-title">{{ reminder_page_title }}</h1>
 {% endif %}
 
-{% set has_overdue = overdue_tasks and overdue_tasks|length > 0 %}
-{% set has_soon = due_soon_tasks and due_soon_tasks|length > 0 %}
 {% set reminder_interactive = reminder_page_title|length > 0 %}
 
-{% if has_overdue or has_soon %}
+{# 两张卡始终保留：无内容时各自显示空态，不再整块隐藏 #}
 <div class="qy-deadline-grid mb-4{% if not reminder_interactive %} qy-deadline-grid--readonly{% endif %}">
   {{ reminder_block(
     'overdue',
@@ -228,7 +226,6 @@
     reminder_interactive
   ) }}
 </div>
-{% endif %}
 
 {% if show_deadline_calendar_full and deadline_calendar_page_endpoint %}
 {% set cal_nav = deadline_calendar_nav_endpoint or deadline_calendar_page_endpoint %}
@@ -263,20 +260,6 @@
     {{ deadline_calendar_agenda_panel() }}
   </div>
 </section>
-{% endif %}
-
-{% if reminder_page_title and not has_overdue and not has_soon %}
-<div class="qy-deadline-empty">
-  <div class="qy-deadline-empty__icon" aria-hidden="true">
-    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-      <polyline points="22 4 12 14.01 9 11.01"></polyline>
-    </svg>
-  </div>
-  <p class="qy-deadline-empty__text mb-0">当前没有需要关注的超期或临期任务。</p>
-</div>
-{% elif not reminder_page_title and not has_overdue and not has_soon %}
-<p class="text-muted small mb-0">暂无超期或临期任务。</p>
 {% endif %}
 
 {% if show_deadline_calendar_mini and deadline_calendar_page_endpoint %}
