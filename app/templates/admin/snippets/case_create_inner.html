@@ -65,7 +65,7 @@
         <div class="col-md-4">
           <label class="form-label" for="caseProcessOwnerInput">流程人员</label>
           <select id="caseProcessOwnerInput" class="form-select" name="process_owner_id">
-            {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=selected_process_owner_id, empty_label="未指定") }}
+            {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=selected_process_owner_id or default_process_owner_id, empty_label="未指定") }}
           </select>
         </div>
         <div class="col-md-4">

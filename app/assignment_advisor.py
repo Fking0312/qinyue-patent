@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from flask import current_app, has_app_context
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import joinedload
 
@@ -336,6 +337,26 @@ def window_days(window_end: datetime | None, now: datetime | None = None) -> int
 
 def _intake_and_terminal_phases() -> tuple[tuple[str, ...], tuple[str, ...]]:
     return tuple(INTAKE_PHASES), tuple(TaskPhase.TERMINAL | LEGACY_TERMINAL_PHASES)
+
+
+def default_process_owner() -> User | None:
+    """漏选流程负责人时的兜底人选：全所唯一在职流程人员。
+
+    只有恰好一名在职流程人员时返回该员工；无人或多于一人返回 None。管理员确认
+    下单、新建案件时没选人，就用它补齐，避免案件掉进「待指定流程」池。一旦招到
+    第二位流程人员，兜底立即失效、回到人工必选，不会出现系统替管理员乱派单。
+    唯一流程人员休假期间可设 AUTO_ASSIGN_SOLE_PROCESS=0 临时关闭。
+    """
+    if has_app_context() and not current_app.config.get("AUTO_ASSIGN_SOLE_PROCESS", True):
+        return None
+    owners = [
+        user
+        for user in User.query.filter(User.role == "staff", User.is_active.is_(True)).all()
+        if user.is_assignable_process
+    ]
+    if len(owners) != 1:
+        return None
+    return owners[0]
 
 
 def pending_process_assignment_query():

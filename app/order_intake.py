@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
+from app.assignment_advisor import default_process_owner
 from app.case_trace import (
     add_review_log,
     stamp_assignee,
@@ -57,7 +58,7 @@ def apply_order_intake_review(
     writer_id: int | None = None,
     process_owner_id: int | None = None,
 ) -> tuple[bool, str, str]:
-    """确认或打回下单。通过须指定撰写师与流程人员，进入撰写中；打回 → 下单待修改。调用方负责 commit。"""
+    """确认或打回下单。通过须有撰写师与流程人员（全所唯一在职流程人员可自动补齐），进入撰写中；打回 → 下单待修改。调用方负责 commit。"""
     if task is None:
         return False, "该案件暂无任务，无法确认下单。", "warning"
     if not is_pending_order_review_phase(task.phase_status):
@@ -68,7 +69,13 @@ def apply_order_intake_review(
         if writer is None or not writer.is_assignable_writer:
             return False, "确认下单请指定在职撰写师。", "warning"
         process_owner = db.session.get(User, process_owner_id) if process_owner_id else None
+        auto_process = False
         if process_owner is None or not process_owner.is_assignable_process:
+            # 全所只有一名在职流程人员时自动指定，省掉每次确认都选人；
+            # 出现第二位后 default_process_owner() 返回 None，恢复人工必选。
+            process_owner = default_process_owner()
+            auto_process = process_owner is not None
+        if process_owner is None:
             return False, "确认下单请指定在职流程人员。", "warning"
         stamp_business_owner(case, writer)
         stamp_assignee(task, writer)
@@ -91,8 +98,12 @@ def apply_order_intake_review(
             action="process_assigned",
             operator=operator,
             recipient=process_owner,
+            note="按唯一在职流程人员自动指定" if auto_process else None,
         )
-        return True, "已确认下单，并指定撰写师与流程人员，案件进入撰写中。", "success"
+        message = "已确认下单，并指定撰写师与流程人员，案件进入撰写中。"
+        if auto_process:
+            message += "流程人员按唯一在职人员自动指定。"
+        return True, message, "success"
     if action == "reject":
         note = (reject_note or "").strip()
         if not note:

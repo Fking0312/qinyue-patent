@@ -538,7 +538,7 @@
             <div class="col-md-4">
               <label class="form-label mb-1" for="adminIntakeProcessInput">流程人员</label>
               <select id="adminIntakeProcessInput" class="form-select" name="process_owner_id" required>
-                {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=None, empty_label="请选择流程人员") }}
+                {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=default_process_owner_id, empty_label="请选择流程人员") }}
               </select>
             </div>
             <div class="col-md-4">

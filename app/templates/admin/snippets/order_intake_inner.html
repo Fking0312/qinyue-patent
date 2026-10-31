@@ -114,7 +114,7 @@
                     </select>
                     <label class="form-label mb-0 small" for="intakeProcess{{ row.case.id }}">流程人员</label>
                     <select id="intakeProcess{{ row.case.id }}" class="form-select form-select-sm" name="process_owner_id" required>
-                      {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=None, empty_label="请选择流程人员") }}
+                      {{ staff_kind_optgroups(process_staff_formal, process_staff_outsource, selected_id=default_process_owner_id, empty_label="请选择流程人员") }}
                     </select>
                     <button class="btn btn-sm btn-primary w-100" type="submit">确认下单</button>
                   </form>

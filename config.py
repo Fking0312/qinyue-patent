@@ -120,6 +120,13 @@ class Config:
     WTF_CSRF_ENABLED = os.getenv("WTF_CSRF_ENABLED", "1").lower() not in ("0", "false", "no")
     # SPA 长会话/可能久未刷新页面 → 不限定 token 有效期
     WTF_CSRF_TIME_LIMIT = None
+    # 全所只有一名在职流程人员时，确认下单/新建案件漏选流程负责人自动指定该员工；
+    # 招到第二位后自动失效、恢复人工必选。设 AUTO_ASSIGN_SOLE_PROCESS=0 可临时关闭。
+    AUTO_ASSIGN_SOLE_PROCESS = os.getenv("AUTO_ASSIGN_SOLE_PROCESS", "1").lower() not in (
+        "0",
+        "false",
+        "no",
+    )
 
     # 案件材料：单文件大小（默认 500MB，便于上传视频等大附件）；可用 QY_CASE_MATERIAL_MAX_MB 覆盖。
     _material_mb = max(1, int(os.getenv("QY_CASE_MATERIAL_MAX_MB", "500")))

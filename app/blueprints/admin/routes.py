@@ -60,6 +60,7 @@ from app.assignment_advisor import (
     billing_load_rows,
     case_due_at,
     case_workload_weight,
+    default_process_owner,
     departed_assignee_cases,
     original_billing_owner,
     original_process_owner,
@@ -363,6 +364,12 @@ def _process_staff_users_partitioned(*, include_id: int | None = None) -> tuple[
     formal = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_FORMAL]
     outsource = [u for u in users if u.staff_kind_normalized == User.STAFF_KIND_OUTSOURCE]
     return formal, outsource
+
+
+def _default_process_owner_id() -> int | None:
+    """唯一在职流程人员的主键：表单预选与漏选兜底共用；多人或无人时返回 None。"""
+    owner = default_process_owner()
+    return owner.id if owner is not None else None
 
 
 def _billing_staff_users_ordered(*, include_id: int | None = None) -> list[User]:
@@ -2450,6 +2457,7 @@ def _render_case_create(*, form_error: str = "", **form_values):
         selected_business_owner_id=form_values.get("selected_business_owner_id"),
         selected_process_owner_id=form_values.get("selected_process_owner_id"),
         selected_billing_owner_id=form_values.get("selected_billing_owner_id"),
+        default_process_owner_id=_default_process_owner_id(),
         form_error=form_error,
     )
 
@@ -2500,6 +2508,9 @@ def case_create():
         process_owner_id, po_err = _process_owner_id_from_form(process_owner_id_raw)
         if po_err:
             return _case_create_invalid(po_err)
+        if process_owner_id is None:
+            # 漏选流程负责人时按唯一在职流程人员补齐，避免新案件掉进待指定池。
+            process_owner_id = _default_process_owner_id()
         billing_owner_id, bill_err = _billing_owner_id_from_form(billing_owner_id_raw)
         if bill_err:
             return _case_create_invalid(bill_err)
@@ -2771,6 +2782,7 @@ def case_detail(case_id: int):
         staff_users_outsource=staff_outsource,
         process_staff_formal=process_formal,
         process_staff_outsource=process_outsource,
+        default_process_owner_id=_default_process_owner_id(),
         actual_return_at_input=_dt_input_value(case.actual_return_at),
         latest_reject_log=latest_reject_log,
         review_logs=review_logs_pagination.items,
@@ -2994,6 +3006,7 @@ def _render_case_edit(case: Case, task, *, form_error: str = "", **form_values):
         selected_business_owner_id=selected_business_owner_id,
         selected_process_owner_id=selected_process_owner_id,
         selected_billing_owner_id=selected_billing_owner_id,
+        default_process_owner_id=_default_process_owner_id(),
         order_at_input=order_at_input or "",
         expected_return_at_input=expected_return_at_input or "",
         actual_return_at_input=actual_return_at_input or "",
@@ -3052,6 +3065,9 @@ def case_edit(case_id: int):
         )
         if po_err:
             return _case_edit_invalid(case, task, po_err)
+        if process_owner_id is None and case.process_owner_id is None:
+            # 从未指定过流程负责人的案件按唯一在职流程人员补齐；显式清空已有负责人不覆盖。
+            process_owner_id = _default_process_owner_id()
         billing_owner_id, bill_err = _billing_owner_id_from_form(
             billing_owner_id_raw, allow_id=case.billing_owner_id
         )
@@ -3383,6 +3399,8 @@ def process_assignment_assign():
         return redirect_with_qy_toast(
             "admin.process_assignment", err, "warning", case_id=case.id
         )
+    if owner_id is None:
+        owner_id = _default_process_owner_id()
     if owner_id is None:
         return redirect_with_qy_toast(
             "admin.process_assignment", "请选择要指定的流程人员。", "warning", case_id=case.id
@@ -3909,6 +3927,7 @@ def order_intake():
         staff_users_outsource=staff_outsource,
         process_staff_formal=process_formal,
         process_staff_outsource=process_outsource,
+        default_process_owner_id=_default_process_owner_id(),
         filter_url_kwargs=filter_url_kwargs,
     )
 

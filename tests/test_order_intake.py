@@ -29,6 +29,14 @@ def _seed_intake_case(*, suffix: str, title: str, application_no: str):
         staff_function=User.STAFF_FUNCTION_PROCESS,
     )
     process.set_password("secret")
+    # 备用流程人员：全所只有一名在职流程人员时系统会自动兜底指定，本文件要保持
+    # 「多名流程人员 → 必须人工选」的场景，下面的漏选拒绝断言才继续有意义。
+    process_alt = User(
+        username=f"_intake_proc_alt_{suffix}",
+        role="staff",
+        staff_function=User.STAFF_FUNCTION_PROCESS,
+    )
+    process_alt.set_password("secret")
     business = User(
         username=f"_intake_biz_{suffix}",
         role="staff",
@@ -36,7 +44,7 @@ def _seed_intake_case(*, suffix: str, title: str, application_no: str):
     )
     business.set_password("secret")
     customer = Customer(kind=CustomerKind.COMPANY, name=f"_intake_customer_{suffix}")
-    db.session.add_all([admin, writer, process, business, customer])
+    db.session.add_all([admin, writer, process, process_alt, business, customer])
     db.session.flush()
     project = Project(customer_id=customer.id, name=f"_intake_project_{suffix}")
     db.session.add(project)
